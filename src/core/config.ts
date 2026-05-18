@@ -1,6 +1,10 @@
-import { readFileSync } from "fs";
+import { readFileSync, existsSync } from "fs";
 import { parse } from "yaml";
-import { join } from "path";
+import { join, dirname } from "path";
+import { fileURLToPath } from "url";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const PROJECT_ROOT = join(__dirname, "../..");
 
 export interface Config {
   server: { port: number; host: string; apiKey?: string };
@@ -31,7 +35,9 @@ let cached: Config | null = null;
 
 export function loadConfig(): Config {
   if (cached) return cached;
-  const configPath = join(process.cwd(), "config.yaml");
+  const cwdPath = join(process.cwd(), "config.yaml");
+  const rootPath = join(PROJECT_ROOT, "config.yaml");
+  const configPath = existsSync(cwdPath) ? cwdPath : rootPath;
   const raw = readFileSync(configPath, "utf-8");
   cached = parse(raw) as Config;
   return cached;
