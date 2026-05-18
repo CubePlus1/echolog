@@ -1,0 +1,29 @@
+server:
+  port: 19827
+  host: "0.0.0.0"
+
+database:
+  host: "localhost"
+  port: 5432
+  name: "clawlog"
+  user: "clawlog"
+  password: "clawlog"
+
+sync:
+  target: "/Users/example/code/Eoove-demo/docs/clawlog"
+  auto: false
+
+notifications:
+  enabled: true
+  mac: true
+  ntfy:
+    enabled: false
+    server: "https://ntfy.sh"
+    topic: "clawlog-example"
+  rules:
+    task_overtime_minutes: 120
+    idle_reminder_enabled: true
+    idle_check_start: "09:00"
+    idle_check_end: "18:00"
+    daily_report_time: "21:00"
+    end_of_day_time: "23:00"

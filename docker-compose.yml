@@ -1,0 +1,16 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: clawlog-db
+    environment:
+      POSTGRES_DB: clawlog
+      POSTGRES_USER: clawlog
+      POSTGRES_PASSWORD: clawlog
+    ports:
+      - "5432:5432"
+    volumes:
+      - clawlog_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+volumes:
+  clawlog_data:
