@@ -297,6 +297,41 @@ export async function getActiveRecords(): Promise<Record[]> {
     .orderBy(desc(records.startAt));
 }
 
+export interface EnrichedRecord extends Record {
+  lastResumedAt: Date | null;
+  liveDurationSeconds: number;
+}
+
+export async function getActiveRecordsEnriched(): Promise<EnrichedRecord[]> {
+  const db = getDb();
+  const active = await getActiveRecords();
+  const now = new Date();
+  const enriched: EnrichedRecord[] = [];
+
+  for (const r of active) {
+    const recordPauses = await db
+      .select()
+      .from(pauses)
+      .where(eq(pauses.recordId, r.id))
+      .orderBy(desc(pauses.pausedAt));
+
+    let lastResumedAt: Date | null = null;
+    if (r.status === "running" && recordPauses.length > 0) {
+      const lastPause = recordPauses.find((p) => p.resumedAt !== null);
+      if (lastPause) lastResumedAt = lastPause.resumedAt;
+    }
+
+    const liveDuration = await computeDuration(r, now);
+
+    enriched.push({
+      ...r,
+      lastResumedAt: lastResumedAt ?? (r.status === "running" ? r.startAt : null),
+      liveDurationSeconds: liveDuration,
+    });
+  }
+  return enriched;
+}
+
 export async function getRecord(id: string): Promise<Record | undefined> {
   const db = getDb();
   const [record] = await db

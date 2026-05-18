@@ -25,14 +25,22 @@ export default function TaskCard({
   const isPaused = record.status === "paused";
 
   const handlePauseResume = async () => {
-    if (isRunning) await api.pauseRecord(record.id);
-    else if (isPaused) await api.resumeRecord(record.id);
+    try {
+      if (isRunning) await api.pauseRecord(record.id);
+      else if (isPaused) await api.resumeRecord(record.id);
+    } catch (err: any) {
+      alert(err.message ?? "操作失败");
+    }
     onUpdate();
   };
 
   const handleStop = async () => {
     const result = window.prompt("结果总结（可留空）:");
-    await api.stopRecord(record.id, result ?? undefined);
+    try {
+      await api.stopRecord(record.id, result ?? undefined);
+    } catch (err: any) {
+      alert(err.message ?? "停止失败");
+    }
     onUpdate();
   };
 
@@ -58,9 +66,9 @@ export default function TaskCard({
           <h3 className="text-lg font-medium text-white">{record.title}</h3>
         </div>
         <Timer
-          startAt={record.startAt}
+          lastResumedAt={record.lastResumedAt ?? record.startAt}
           paused={isPaused}
-          baseSeconds={record.durationSeconds}
+          liveDurationSeconds={record.liveDurationSeconds ?? record.durationSeconds}
         />
       </div>
 

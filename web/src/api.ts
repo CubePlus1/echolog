@@ -24,6 +24,8 @@ export interface Record {
   durationSeconds: number;
   result: string | null;
   source: string;
+  lastResumedAt?: string | null;
+  liveDurationSeconds?: number;
 }
 
 export interface TodaySummary {

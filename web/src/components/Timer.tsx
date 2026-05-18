@@ -10,30 +10,31 @@ function formatDuration(seconds: number): string {
 }
 
 export default function Timer({
-  startAt,
+  lastResumedAt,
   paused,
-  baseSeconds,
+  liveDurationSeconds,
 }: {
-  startAt: string;
+  lastResumedAt: string | null;
   paused: boolean;
-  baseSeconds: number;
+  liveDurationSeconds: number;
 }) {
-  const [elapsed, setElapsed] = useState(0);
+  const [elapsed, setElapsed] = useState(liveDurationSeconds);
 
   useEffect(() => {
-    if (paused) {
-      setElapsed(baseSeconds);
+    if (paused || !lastResumedAt) {
+      setElapsed(liveDurationSeconds);
       return;
     }
-    const start = new Date(startAt).getTime();
+    const resumedMs = new Date(lastResumedAt).getTime();
+    const snapshotTime = Date.now();
     const tick = () => {
-      const now = Date.now();
-      setElapsed(baseSeconds + Math.floor((now - start) / 1000));
+      const sinceTick = Math.floor((Date.now() - snapshotTime) / 1000);
+      setElapsed(liveDurationSeconds + sinceTick);
     };
     tick();
     const id = setInterval(tick, 1000);
     return () => clearInterval(id);
-  }, [startAt, paused, baseSeconds]);
+  }, [lastResumedAt, paused, liveDurationSeconds]);
 
   return (
     <span className="font-mono text-2xl tabular-nums">

@@ -7,7 +7,7 @@ import {
   cancelRecord,
   editRecord,
   backfillRecord,
-  getActiveRecords,
+  getActiveRecordsEnriched,
   getRecord,
   getRecords,
   stopAllActive,
@@ -62,7 +62,7 @@ const backfillSchema = {
 export async function recordRoutes(app: FastifyInstance) {
   // W-8 fix: register static routes before parametric ones
   app.get("/api/records/active", async (_req, reply) => {
-    return reply.send(await getActiveRecords());
+    return reply.send(await getActiveRecordsEnriched());
   });
 
   app.post("/api/records", { schema: startSchema }, async (req, reply) => {
