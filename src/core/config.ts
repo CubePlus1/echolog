@@ -3,7 +3,7 @@ import { parse } from "yaml";
 import { join } from "path";
 
 export interface Config {
-  server: { port: number; host: string };
+  server: { port: number; host: string; apiKey?: string };
   database: {
     host: string;
     port: number;

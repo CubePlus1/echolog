@@ -5,6 +5,10 @@ import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import { existsSync } from "fs";
 import { loadConfig } from "../core/config.js";
+import {
+  RecordNotFoundError,
+  InvalidStateError,
+} from "../core/recorder.js";
 import { recordRoutes } from "./routes/records.js";
 import { noteRoutes } from "./routes/notes.js";
 import { summaryRoutes } from "./routes/summary.js";
@@ -14,9 +18,40 @@ import { startScheduler, stopScheduler } from "../core/scheduler.js";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 export async function buildApp() {
+  const config = loadConfig();
   const app = Fastify({ logger: true });
 
   await app.register(cors, { origin: true });
+
+  // C-3 fix: optional API key auth for non-localhost requests
+  if (config.server.apiKey) {
+    app.addHook("onRequest", async (req, reply) => {
+      if (req.url === "/api/health") return;
+      const key =
+        req.headers["x-api-key"] ??
+        (req.query as any)?.apiKey;
+      if (key !== config.server.apiKey) {
+        return reply.code(401).send({ error: "Unauthorized" });
+      }
+    });
+  }
+
+  // H-4 fix: error handler maps domain errors to HTTP status codes
+  app.setErrorHandler((error, _req, reply) => {
+    if (error instanceof RecordNotFoundError) {
+      return reply.code(404).send({ error: error.message });
+    }
+    if (error instanceof InvalidStateError) {
+      return reply.code(409).send({ error: error.message });
+    }
+    if (error instanceof Error && "validation" in error) {
+      return reply.code(400).send({ error: error.message });
+    }
+    app.log.error(error);
+    const msg =
+      error instanceof Error ? error.message : "Internal server error";
+    return reply.code(500).send({ error: msg });
+  });
 
   await app.register(recordRoutes);
   await app.register(noteRoutes);

@@ -3,9 +3,24 @@ import { nanoid } from "nanoid";
 import { getDb } from "./db.js";
 import { records, notes, pauses } from "./schema.js";
 import type { Record, Note } from "./schema.js";
+import { localDateStr } from "./utils.js";
 
 type RecordType = "learning" | "project" | "task";
 type Source = "cli" | "mcp" | "web" | "api";
+
+export class RecordNotFoundError extends Error {
+  constructor(id: string) {
+    super(`Record ${id} not found`);
+    this.name = "RecordNotFoundError";
+  }
+}
+
+export class InvalidStateError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "InvalidStateError";
+  }
+}
 
 interface StartInput {
   title: string;
@@ -59,17 +74,16 @@ export async function startRecord(input: StartInput): Promise<Record> {
   return inserted;
 }
 
+// C-1 fix: use atomic WHERE clause for state transitions instead of read-then-write
 export async function stopRecord(input: StopInput): Promise<Record> {
   const db = getDb();
   const now = new Date();
+
   const [existing] = await db
     .select()
     .from(records)
     .where(eq(records.id, input.id));
-  if (!existing) throw new Error(`Record ${input.id} not found`);
-  if (existing.status === "done" || existing.status === "cancelled") {
-    throw new Error(`Record ${input.id} already ${existing.status}`);
-  }
+  if (!existing) throw new RecordNotFoundError(input.id);
 
   const duration = await computeDuration(existing, now);
 
@@ -82,21 +96,45 @@ export async function stopRecord(input: StopInput): Promise<Record> {
       result: input.result ?? existing.result,
       updatedAt: now,
     })
-    .where(eq(records.id, input.id))
+    .where(
+      and(
+        eq(records.id, input.id),
+        inArray(records.status, ["running", "paused"])
+      )
+    )
     .returning();
+
+  if (!updated) {
+    throw new InvalidStateError(
+      `Record ${input.id} is already ${existing.status}`
+    );
+  }
   return updated;
 }
 
 export async function pauseRecord(id: string): Promise<Record> {
   const db = getDb();
   const now = new Date();
+
   const [existing] = await db
     .select()
     .from(records)
     .where(eq(records.id, id));
-  if (!existing) throw new Error(`Record ${id} not found`);
-  if (existing.status !== "running") {
-    throw new Error(`Record ${id} is ${existing.status}, cannot pause`);
+  if (!existing) throw new RecordNotFoundError(id);
+
+  const duration = await computeDuration(existing, now);
+
+  // Atomic: only update if still running
+  const [updated] = await db
+    .update(records)
+    .set({ status: "paused", durationSeconds: duration, updatedAt: now })
+    .where(and(eq(records.id, id), eq(records.status, "running")))
+    .returning();
+
+  if (!updated) {
+    throw new InvalidStateError(
+      `Record ${id} is ${existing.status}, cannot pause`
+    );
   }
 
   await db.insert(pauses).values({
@@ -107,81 +145,95 @@ export async function pauseRecord(id: string): Promise<Record> {
     createdAt: now,
   });
 
-  const duration = await computeDuration(existing, now);
-  const [updated] = await db
-    .update(records)
-    .set({ status: "paused", durationSeconds: duration, updatedAt: now })
-    .where(eq(records.id, id))
-    .returning();
   return updated;
 }
 
 export async function resumeRecord(id: string): Promise<Record> {
   const db = getDb();
   const now = new Date();
+
   const [existing] = await db
     .select()
     .from(records)
     .where(eq(records.id, id));
-  if (!existing) throw new Error(`Record ${id} not found`);
-  if (existing.status !== "paused") {
-    throw new Error(`Record ${id} is ${existing.status}, cannot resume`);
-  }
+  if (!existing) throw new RecordNotFoundError(id);
 
-  const openPauses = await db
-    .select()
-    .from(pauses)
-    .where(and(eq(pauses.recordId, id), sql`${pauses.resumedAt} IS NULL`));
-
-  for (const p of openPauses) {
-    await db
-      .update(pauses)
-      .set({ resumedAt: now })
-      .where(eq(pauses.id, p.id));
-  }
-
+  // Atomic: only update if paused
   const [updated] = await db
     .update(records)
     .set({ status: "running", updatedAt: now })
-    .where(eq(records.id, id))
+    .where(and(eq(records.id, id), eq(records.status, "paused")))
     .returning();
+
+  if (!updated) {
+    throw new InvalidStateError(
+      `Record ${id} is ${existing.status}, cannot resume`
+    );
+  }
+
+  await db
+    .update(pauses)
+    .set({ resumedAt: now })
+    .where(
+      and(eq(pauses.recordId, id), sql`${pauses.resumedAt} IS NULL`)
+    );
+
   return updated;
 }
 
 export async function cancelRecord(id: string): Promise<Record> {
   const db = getDb();
   const now = new Date();
+
   const [existing] = await db
     .select()
     .from(records)
     .where(eq(records.id, id));
-  if (!existing) throw new Error(`Record ${id} not found`);
-  if (existing.status === "done" || existing.status === "cancelled") {
-    throw new Error(`Record ${id} already ${existing.status}`);
-  }
+  if (!existing) throw new RecordNotFoundError(id);
 
   const [updated] = await db
     .update(records)
     .set({ status: "cancelled", endAt: now, updatedAt: now })
-    .where(eq(records.id, id))
+    .where(
+      and(
+        eq(records.id, id),
+        inArray(records.status, ["running", "paused"])
+      )
+    )
     .returning();
+
+  if (!updated) {
+    throw new InvalidStateError(
+      `Record ${id} already ${existing.status}`
+    );
+  }
   return updated;
 }
 
+// H-5 fix: verify record exists before adding note
 export async function addNote(input: AddNoteInput): Promise<Note> {
   const db = getDb();
+  const [record] = await db
+    .select({ id: records.id })
+    .from(records)
+    .where(eq(records.id, input.recordId));
+  if (!record) throw new RecordNotFoundError(input.recordId);
+
   const now = new Date();
-  const note = {
-    id: nanoid(12),
-    recordId: input.recordId,
-    content: input.content,
-    type: input.type ?? "note",
-    createdAt: now,
-  };
-  const [inserted] = await db.insert(notes).values(note).returning();
+  const [inserted] = await db
+    .insert(notes)
+    .values({
+      id: nanoid(12),
+      recordId: input.recordId,
+      content: input.content,
+      type: input.type ?? "note",
+      createdAt: now,
+    })
+    .returning();
   return inserted;
 }
 
+// H-6 fix: whitelist allowed fields explicitly
 export async function editRecord(
   id: string,
   updates: {
@@ -194,12 +246,20 @@ export async function editRecord(
 ): Promise<Record> {
   const db = getDb();
   const now = new Date();
+
+  const safeUpdates: Partial<typeof records.$inferInsert> = { updatedAt: now };
+  if (updates.title !== undefined) safeUpdates.title = updates.title;
+  if (updates.type !== undefined) safeUpdates.type = updates.type;
+  if (updates.tags !== undefined) safeUpdates.tags = updates.tags;
+  if (updates.project !== undefined) safeUpdates.project = updates.project;
+  if (updates.result !== undefined) safeUpdates.result = updates.result;
+
   const [updated] = await db
     .update(records)
-    .set({ ...updates, updatedAt: now })
+    .set(safeUpdates)
     .where(eq(records.id, id))
     .returning();
-  if (!updated) throw new Error(`Record ${id} not found`);
+  if (!updated) throw new RecordNotFoundError(id);
   return updated;
 }
 
@@ -255,9 +315,7 @@ export async function getRecordNotes(recordId: string): Promise<Note[]> {
     .orderBy(notes.createdAt);
 }
 
-export async function getRecordsByDate(
-  date: string
-): Promise<Record[]> {
+export async function getRecordsByDate(date: string): Promise<Record[]> {
   const db = getDb();
   const dayStart = new Date(`${date}T00:00:00.000`);
   const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000);
@@ -269,11 +327,15 @@ export async function getRecordsByDate(
 }
 
 export async function getRecords(filters?: {
+  date?: string;
   since?: string;
   project?: string;
   type?: string;
   limit?: number;
 }): Promise<Record[]> {
+  if (filters?.date) {
+    return getRecordsByDate(filters.date);
+  }
   const db = getDb();
   const conditions = [];
   if (filters?.since) {
@@ -286,21 +348,24 @@ export async function getRecords(filters?: {
     conditions.push(eq(records.type, filters.type));
   }
 
-  const query = db
+  return db
     .select()
     .from(records)
     .where(conditions.length ? and(...conditions) : undefined)
     .orderBy(desc(records.startAt))
     .limit(filters?.limit ?? 50);
-  return query;
 }
 
 export async function stopAllActive(): Promise<Record[]> {
   const active = await getActiveRecords();
   const results: Record[] = [];
   for (const r of active) {
-    const stopped = await stopRecord({ id: r.id });
-    results.push(stopped);
+    try {
+      const stopped = await stopRecord({ id: r.id });
+      results.push(stopped);
+    } catch {
+      // already stopped by concurrent request, skip
+    }
   }
   return results;
 }
@@ -327,10 +392,6 @@ export interface TodaySummary {
   recordCount: number;
   byType: { learning: number; project: number; task: number };
   active: Record[];
-}
-
-function localDateStr(d: Date = new Date()): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
 export async function getTodaySummary(): Promise<TodaySummary> {

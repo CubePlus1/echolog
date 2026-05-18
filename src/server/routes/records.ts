@@ -10,12 +10,62 @@ import {
   getActiveRecords,
   getRecord,
   getRecords,
-  getRecordsByDate,
   stopAllActive,
 } from "../../core/recorder.js";
 
+const startSchema = {
+  body: {
+    type: "object",
+    required: ["title"],
+    properties: {
+      title: { type: "string", minLength: 1 },
+      type: { type: "string", enum: ["learning", "project", "task"] },
+      tags: { type: "array", items: { type: "string" } },
+      project: { type: "string" },
+      source: { type: "string" },
+    },
+  },
+} as const;
+
+const patchSchema = {
+  body: {
+    type: "object",
+    required: ["action"],
+    properties: {
+      action: { type: "string", enum: ["stop", "pause", "resume", "edit"] },
+      result: { type: "string" },
+      title: { type: "string", minLength: 1 },
+      type: { type: "string", enum: ["learning", "project", "task"] },
+      tags: { type: "array", items: { type: "string" } },
+      project: { type: "string" },
+    },
+  },
+} as const;
+
+const backfillSchema = {
+  body: {
+    type: "object",
+    required: ["title", "startAt", "durationMinutes"],
+    properties: {
+      title: { type: "string", minLength: 1 },
+      type: { type: "string", enum: ["learning", "project", "task"] },
+      tags: { type: "array", items: { type: "string" } },
+      project: { type: "string" },
+      startAt: { type: "string", format: "date-time" },
+      durationMinutes: { type: "number", minimum: 1 },
+      result: { type: "string" },
+      source: { type: "string" },
+    },
+  },
+} as const;
+
 export async function recordRoutes(app: FastifyInstance) {
-  app.post("/api/records", async (req, reply) => {
+  // W-8 fix: register static routes before parametric ones
+  app.get("/api/records/active", async (_req, reply) => {
+    return reply.send(await getActiveRecords());
+  });
+
+  app.post("/api/records", { schema: startSchema }, async (req, reply) => {
     const body = req.body as {
       title: string;
       type?: string;
@@ -33,39 +83,46 @@ export async function recordRoutes(app: FastifyInstance) {
     return reply.code(201).send(record);
   });
 
-  app.patch("/api/records/:id", async (req, reply) => {
-    const { id } = req.params as { id: string };
-    const body = req.body as {
-      action: "stop" | "pause" | "resume" | "edit";
-      result?: string;
-      title?: string;
-      type?: string;
-      tags?: string[];
-      project?: string;
-    };
+  app.patch(
+    "/api/records/:id",
+    { schema: patchSchema },
+    async (req, reply) => {
+      const { id } = req.params as { id: string };
+      const body = req.body as {
+        action: string;
+        result?: string;
+        title?: string;
+        type?: string;
+        tags?: string[];
+        project?: string;
+      };
 
-    switch (body.action) {
-      case "stop":
-        return reply.send(await stopRecord({ id, result: body.result }));
-      case "pause":
-        return reply.send(await pauseRecord(id));
-      case "resume":
-        return reply.send(await resumeRecord(id));
-      case "edit":
-        return reply.send(
-          await editRecord(id, {
-            title: body.title,
-            type: body.type as any,
-            tags: body.tags,
-            project: body.project,
-            result: body.result,
-          })
-        );
-      default:
-        return reply.code(400).send({ error: `Unknown action: ${body.action}` });
+      switch (body.action) {
+        case "stop":
+          return reply.send(await stopRecord({ id, result: body.result }));
+        case "pause":
+          return reply.send(await pauseRecord(id));
+        case "resume":
+          return reply.send(await resumeRecord(id));
+        case "edit":
+          return reply.send(
+            await editRecord(id, {
+              title: body.title,
+              type: body.type as any,
+              tags: body.tags,
+              project: body.project,
+              result: body.result,
+            })
+          );
+        default:
+          return reply
+            .code(400)
+            .send({ error: `Unknown action: ${body.action}` });
+      }
     }
-  });
+  );
 
+  // W-7: using PATCH+cancel would be more RESTful, but keeping DELETE for simplicity
   app.delete("/api/records/:id", async (req, reply) => {
     const { id } = req.params as { id: string };
     return reply.send(await cancelRecord(id));
@@ -80,21 +137,15 @@ export async function recordRoutes(app: FastifyInstance) {
       limit?: string;
     };
 
-    if (query.date) {
-      return reply.send(await getRecordsByDate(query.date));
-    }
     return reply.send(
       await getRecords({
+        date: query.date,
         since: query.since,
         project: query.project,
         type: query.type,
         limit: query.limit ? parseInt(query.limit) : undefined,
       })
     );
-  });
-
-  app.get("/api/records/active", async (_req, reply) => {
-    return reply.send(await getActiveRecords());
   });
 
   app.get("/api/records/:id", async (req, reply) => {
@@ -108,27 +159,31 @@ export async function recordRoutes(app: FastifyInstance) {
     return reply.send(await stopAllActive());
   });
 
-  app.post("/api/records/backfill", async (req, reply) => {
-    const body = req.body as {
-      title: string;
-      type?: string;
-      tags?: string[];
-      project?: string;
-      startAt: string;
-      durationMinutes: number;
-      result?: string;
-      source?: string;
-    };
-    const record = await backfillRecord({
-      title: body.title,
-      type: body.type as any,
-      tags: body.tags,
-      project: body.project,
-      startAt: new Date(body.startAt),
-      durationMinutes: body.durationMinutes,
-      result: body.result,
-      source: (body.source as any) ?? "api",
-    });
-    return reply.code(201).send(record);
-  });
+  app.post(
+    "/api/records/backfill",
+    { schema: backfillSchema },
+    async (req, reply) => {
+      const body = req.body as {
+        title: string;
+        type?: string;
+        tags?: string[];
+        project?: string;
+        startAt: string;
+        durationMinutes: number;
+        result?: string;
+        source?: string;
+      };
+      const record = await backfillRecord({
+        title: body.title,
+        type: body.type as any,
+        tags: body.tags,
+        project: body.project,
+        startAt: new Date(body.startAt),
+        durationMinutes: body.durationMinutes,
+        result: body.result,
+        source: (body.source as any) ?? "api",
+      });
+      return reply.code(201).send(record);
+    }
+  );
 }

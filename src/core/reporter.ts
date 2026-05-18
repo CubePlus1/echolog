@@ -2,21 +2,14 @@ import { render } from "ejs";
 import { readFileSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
-import { getRecordsByDate, getRecordNotes, getTodaySummary } from "./recorder.js";
+import { getRecordsByDate, getRecordNotes } from "./recorder.js";
 import type { Record, Note } from "./schema.js";
+import { localDateStr, formatDuration } from "./utils.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 interface RecordWithNotes extends Record {
   notes: Note[];
-}
-
-function formatDuration(seconds: number): string {
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  if (h === 0) return `${m}m`;
-  if (m === 0) return `${h}h`;
-  return `${h}h ${m}m`;
 }
 
 function formatTime(date: Date): string {
@@ -30,10 +23,6 @@ function formatTime(date: Date): string {
 function percent(part: number, total: number): string {
   if (total === 0) return "0%";
   return `${Math.round((part / total) * 100)}%`;
-}
-
-function localDateStr(d: Date = new Date()): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
 export async function generateDailyReport(date?: string): Promise<string> {

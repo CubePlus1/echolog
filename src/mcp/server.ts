@@ -183,14 +183,44 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       case "pause_record": {
-        const record = await pauseRecord((args as any).id);
+        let id = (args as any).id;
+        if (!id) {
+          const active = await getActiveRecords();
+          const running = active.filter((r) => r.status === "running");
+          if (running.length === 1) id = running[0].id;
+          else
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: `有 ${running.length} 个运行中的任务，请指定 id: ${running.map((r) => `${r.id} (${r.title})`).join(", ")}`,
+                },
+              ],
+            };
+        }
+        const record = await pauseRecord(id);
         return {
           content: [{ type: "text", text: JSON.stringify(record, null, 2) }],
         };
       }
 
       case "resume_record": {
-        const record = await resumeRecord((args as any).id);
+        let id = (args as any).id;
+        if (!id) {
+          const active = await getActiveRecords();
+          const paused = active.filter((r) => r.status === "paused");
+          if (paused.length === 1) id = paused[0].id;
+          else
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: `有 ${paused.length} 个暂停的任务，请指定 id: ${paused.map((r) => `${r.id} (${r.title})`).join(", ")}`,
+                },
+              ],
+            };
+        }
+        const record = await resumeRecord(id);
         return {
           content: [{ type: "text", text: JSON.stringify(record, null, 2) }],
         };
@@ -227,7 +257,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       case "get_records": {
         const records = await getRecords({
-          since: (args as any).date,
+          date: (args as any).date,
           project: (args as any).project,
           type: (args as any).type,
         });
