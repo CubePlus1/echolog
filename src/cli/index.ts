@@ -13,6 +13,10 @@ function formatDuration(seconds: number): string {
   return `${h}h ${m}m`;
 }
 
+function localDateStr(d: Date = new Date()): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 function formatTime(iso: string): string {
   return new Date(iso).toLocaleTimeString("zh-CN", {
     hour: "2-digit",
@@ -167,7 +171,7 @@ program
   .command("today")
   .description("今日摘要")
   .action(async () => {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = localDateStr();
     const data = await api(`/api/summary/daily/${today}`);
     console.log(`📅 ${today}`);
     console.log(`  总时间: ${formatDuration(data.totalSeconds)} | 记录: ${data.recordCount}`);

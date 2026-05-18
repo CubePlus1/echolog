@@ -3,8 +3,12 @@ import { join } from "path";
 import { loadConfig } from "./config.js";
 import { generateDailyReport } from "./reporter.js";
 
+function localDateStr(d: Date = new Date()): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 export async function syncDaily(date?: string): Promise<string> {
-  const targetDate = date ?? new Date().toISOString().slice(0, 10);
+  const targetDate = date ?? localDateStr();
   const config = loadConfig();
   const targetDir = join(config.sync.target, "daily");
 

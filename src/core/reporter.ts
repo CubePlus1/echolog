@@ -32,8 +32,12 @@ function percent(part: number, total: number): string {
   return `${Math.round((part / total) * 100)}%`;
 }
 
+function localDateStr(d: Date = new Date()): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 export async function generateDailyReport(date?: string): Promise<string> {
-  const targetDate = date ?? new Date().toISOString().slice(0, 10);
+  const targetDate = date ?? localDateStr();
   const dayRecords = await getRecordsByDate(targetDate);
 
   const recordsWithNotes: RecordWithNotes[] = [];

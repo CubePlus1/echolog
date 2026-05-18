@@ -5,6 +5,6 @@ export default defineConfig({
   out: "./drizzle",
   dialect: "postgresql",
   dbCredentials: {
-    url: "postgres://clawlog:clawlog@localhost:5432/clawlog",
+    url: "postgres://clawlog:clawlog@localhost:5436/clawlog",
   },
 });

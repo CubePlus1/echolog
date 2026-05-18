@@ -259,8 +259,8 @@ export async function getRecordsByDate(
   date: string
 ): Promise<Record[]> {
   const db = getDb();
-  const dayStart = new Date(`${date}T00:00:00`);
-  const dayEnd = new Date(`${date}T23:59:59.999`);
+  const dayStart = new Date(`${date}T00:00:00.000`);
+  const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000);
   return db
     .select()
     .from(records)
@@ -329,8 +329,12 @@ export interface TodaySummary {
   active: Record[];
 }
 
+function localDateStr(d: Date = new Date()): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 export async function getTodaySummary(): Promise<TodaySummary> {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localDateStr();
   const todayRecords = await getRecordsByDate(today);
   const active = await getActiveRecords();
 

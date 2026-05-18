@@ -7,7 +7,7 @@ services:
       POSTGRES_USER: clawlog
       POSTGRES_PASSWORD: clawlog
     ports:
-      - "5432:5432"
+      - "5436:5432"
     volumes:
       - clawlog_data:/var/lib/postgresql/data
     restart: unless-stopped

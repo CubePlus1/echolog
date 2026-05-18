@@ -4,7 +4,7 @@ server:
 
 database:
   host: "localhost"
-  port: 5432
+  port: 5436
   name: "clawlog"
   user: "clawlog"
   password: "clawlog"
