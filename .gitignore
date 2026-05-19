@@ -3,4 +3,5 @@ dist/
 web/dist/
 *.tsbuildinfo
 .env
+config.yaml
 data/

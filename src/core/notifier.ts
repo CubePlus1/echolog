@@ -34,5 +34,5 @@ export async function notifyNtfy(title: string, message: string) {
 
 export function notify(title: string, message: string) {
   notifyMac(title, message);
-  notifyNtfy(title, message);
+  notifyNtfy(title, message).catch(() => {});
 }

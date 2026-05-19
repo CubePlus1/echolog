@@ -124,28 +124,29 @@ export async function pauseRecord(id: string): Promise<Record> {
 
   const duration = await computeDuration(existing, now);
 
-  // Atomic: only update if still running
-  const [updated] = await db
-    .update(records)
-    .set({ status: "paused", durationSeconds: duration, updatedAt: now })
-    .where(and(eq(records.id, id), eq(records.status, "running")))
-    .returning();
+  return await db.transaction(async (tx) => {
+    const [updated] = await tx
+      .update(records)
+      .set({ status: "paused", durationSeconds: duration, updatedAt: now })
+      .where(and(eq(records.id, id), eq(records.status, "running")))
+      .returning();
 
-  if (!updated) {
-    throw new InvalidStateError(
-      `Record ${id} is ${existing.status}, cannot pause`
-    );
-  }
+    if (!updated) {
+      throw new InvalidStateError(
+        `Record ${id} is ${existing.status}, cannot pause`
+      );
+    }
 
-  await db.insert(pauses).values({
-    id: nanoid(12),
-    recordId: id,
-    pausedAt: now,
-    resumedAt: null,
-    createdAt: now,
+    await tx.insert(pauses).values({
+      id: nanoid(12),
+      recordId: id,
+      pausedAt: now,
+      resumedAt: null,
+      createdAt: now,
+    });
+
+    return updated;
   });
-
-  return updated;
 }
 
 export async function resumeRecord(id: string): Promise<Record> {
@@ -158,27 +159,28 @@ export async function resumeRecord(id: string): Promise<Record> {
     .where(eq(records.id, id));
   if (!existing) throw new RecordNotFoundError(id);
 
-  // Atomic: only update if paused
-  const [updated] = await db
-    .update(records)
-    .set({ status: "running", updatedAt: now })
-    .where(and(eq(records.id, id), eq(records.status, "paused")))
-    .returning();
+  return await db.transaction(async (tx) => {
+    const [updated] = await tx
+      .update(records)
+      .set({ status: "running", updatedAt: now })
+      .where(and(eq(records.id, id), eq(records.status, "paused")))
+      .returning();
 
-  if (!updated) {
-    throw new InvalidStateError(
-      `Record ${id} is ${existing.status}, cannot resume`
-    );
-  }
+    if (!updated) {
+      throw new InvalidStateError(
+        `Record ${id} is ${existing.status}, cannot resume`
+      );
+    }
 
-  await db
-    .update(pauses)
-    .set({ resumedAt: now })
-    .where(
-      and(eq(pauses.recordId, id), sql`${pauses.resumedAt} IS NULL`)
-    );
+    await tx
+      .update(pauses)
+      .set({ resumedAt: now })
+      .where(
+        and(eq(pauses.recordId, id), sql`${pauses.resumedAt} IS NULL`)
+      );
 
-  return updated;
+    return updated;
+  });
 }
 
 export async function cancelRecord(id: string): Promise<Record> {

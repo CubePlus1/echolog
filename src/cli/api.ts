@@ -12,8 +12,10 @@ export async function api<T = any>(
   const url = `${baseUrl()}${path}`;
   let res: Response;
   try {
+    const config = loadConfig();
     const headers: Record<string, string> = { ...options?.headers as any };
     if (options?.body) headers["Content-Type"] = "application/json";
+    if (config.server.apiKey) headers["x-api-key"] = config.server.apiKey;
     res = await fetch(url, { ...options, headers });
   } catch {
     console.error(
