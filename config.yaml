@@ -5,12 +5,12 @@ server:
 database:
   host: "localhost"
   port: 5436
-  name: "clawlog"
-  user: "clawlog"
-  password: "clawlog"
+  name: "echolog"
+  user: "echolog"
+  password: "echolog"
 
 sync:
-  target: "/Users/example/code/Eoove-demo/docs/clawlog"
+  target: "/Users/example/code/Eoove-demo/docs/echolog"
   auto: false
 
 notifications:
@@ -19,7 +19,7 @@ notifications:
   ntfy:
     enabled: false
     server: "https://ntfy.sh"
-    topic: "clawlog-example"
+    topic: "echolog-example"
   rules:
     task_overtime_minutes: 120
     idle_reminder_enabled: true

@@ -18,7 +18,7 @@ import { generateDailyReport } from "../core/reporter.js";
 import { syncDaily } from "../core/syncer.js";
 
 const server = new Server(
-  { name: "clawlog", version: "0.1.0" },
+  { name: "echolog", version: "0.1.0" },
   { capabilities: { tools: {} } }
 );
 

@@ -1,10 +1,10 @@
 {
-  "name": "clawlog",
+  "name": "echolog",
   "version": "0.1.0",
   "description": "Local-first developer activity recorder and review engine",
   "type": "module",
   "bin": {
-    "cl": "./dist/cli/index.js"
+    "el": "./dist/cli/index.js"
   },
   "scripts": {
     "dev": "tsx src/server/app.ts",

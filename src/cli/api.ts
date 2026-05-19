@@ -12,13 +12,12 @@ export async function api<T = any>(
   const url = `${baseUrl()}${path}`;
   let res: Response;
   try {
-    res = await fetch(url, {
-      ...options,
-      headers: { "Content-Type": "application/json", ...options?.headers },
-    });
+    const headers: Record<string, string> = { ...options?.headers as any };
+    if (options?.body) headers["Content-Type"] = "application/json";
+    res = await fetch(url, { ...options, headers });
   } catch {
     console.error(
-      "无法连接到 ClawLog server。请先运行: cl daemon start"
+      "无法连接到 EchoLog server。请先运行: el daemon start"
     );
     process.exit(1);
   }

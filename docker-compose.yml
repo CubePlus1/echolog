@@ -1,16 +1,16 @@
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: clawlog-db
+    container_name: echolog-db
     environment:
-      POSTGRES_DB: clawlog
-      POSTGRES_USER: clawlog
-      POSTGRES_PASSWORD: clawlog
+      POSTGRES_DB: echolog
+      POSTGRES_USER: echolog
+      POSTGRES_PASSWORD: echolog
     ports:
       - "5436:5432"
     volumes:
-      - clawlog_data:/var/lib/postgresql/data
+      - echolog_data:/var/lib/postgresql/data
     restart: unless-stopped
 
 volumes:
-  clawlog_data:
+  echolog_data:

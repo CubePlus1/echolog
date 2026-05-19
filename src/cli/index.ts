@@ -3,7 +3,7 @@ import { Command } from "commander";
 import { api, post, patch, del } from "./api.js";
 
 const program = new Command();
-program.name("cl").description("ClawLog - 开发者行为记录工具").version("0.1.0");
+program.name("el").description("EchoLog - 开发者行为记录工具").version("0.1.0");
 
 function formatDuration(seconds: number): string {
   const h = Math.floor(seconds / 3600);
@@ -301,7 +301,7 @@ program
     console.log(`✗ 已取消: ${record.title}`);
   });
 
-// cl daemon start|stop|status|install
+// el daemon start|stop|status|install
 const daemon = program.command("daemon").description("管理后台服务");
 
 daemon.command("start").action(async () => {
@@ -310,11 +310,11 @@ daemon.command("start").action(async () => {
     await api("/api/health");
     console.log("服务已在运行中");
   } catch {
-    execSync("nohup tsx src/server/app.ts > /tmp/clawlog.log 2>&1 &", {
+    execSync("nohup tsx src/server/app.ts > /tmp/echolog.log 2>&1 &", {
       cwd: process.cwd(),
       stdio: "ignore",
     });
-    console.log("✓ ClawLog daemon 已启动");
+    console.log("✓ EchoLog daemon 已启动");
   }
 });
 
@@ -322,7 +322,7 @@ daemon.command("stop").action(async () => {
   const { execSync } = await import("child_process");
   try {
     execSync("pkill -f 'tsx src/server/app.ts'", { stdio: "ignore" });
-    console.log("✓ ClawLog daemon 已停止");
+    console.log("✓ EchoLog daemon 已停止");
   } catch {
     console.log("daemon 未在运行");
   }

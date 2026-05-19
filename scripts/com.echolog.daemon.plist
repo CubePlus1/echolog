@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
   <key>Label</key>
-  <string>com.clawlog.daemon</string>
+  <string>com.echolog.daemon</string>
   <key>ProgramArguments</key>
   <array>
     <string>/usr/local/bin/node</string>
@@ -18,8 +18,8 @@
   <key>KeepAlive</key>
   <true/>
   <key>StandardOutPath</key>
-  <string>/tmp/clawlog.stdout.log</string>
+  <string>/tmp/echolog.stdout.log</string>
   <key>StandardErrorPath</key>
-  <string>/tmp/clawlog.stderr.log</string>
+  <string>/tmp/echolog.stderr.log</string>
 </dict>
 </plist>

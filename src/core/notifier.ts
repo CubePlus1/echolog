@@ -6,7 +6,7 @@ export function notifyMac(title: string, message: string) {
   if (!config.notifications.enabled || !config.notifications.mac) return;
 
   notifier.notify({
-    title: `ClawLog: ${title}`,
+    title: `EchoLog: ${title}`,
     message,
     sound: "default",
     timeout: 10,
@@ -24,7 +24,7 @@ export async function notifyNtfy(title: string, message: string) {
   try {
     await fetch(url, {
       method: "POST",
-      headers: { Title: `ClawLog: ${title}` },
+      headers: { Title: `EchoLog: ${title}` },
       body: message,
     });
   } catch {

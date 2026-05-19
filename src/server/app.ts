@@ -87,7 +87,7 @@ async function main() {
   try {
     await app.listen({ port: config.server.port, host: config.server.host });
     console.log(
-      `ClawLog server running on http://${config.server.host}:${config.server.port}`
+      `EchoLog server running on http://${config.server.host}:${config.server.port}`
     );
   } catch (err) {
     app.log.error(err);

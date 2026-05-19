@@ -35,7 +35,7 @@ export default function App() {
     <div className="min-h-screen p-6 max-w-2xl mx-auto">
       <header className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-white">ClawLog</h1>
+          <h1 className="text-2xl font-bold text-white">EchoLog</h1>
           <p className="text-sm text-slate-400">
             {new Date().toLocaleDateString("zh-CN", {
               year: "numeric",
@@ -68,7 +68,7 @@ export default function App() {
             <p className="text-sm">
               点击「开始新任务」或使用{" "}
               <code className="bg-slate-800 px-1.5 py-0.5 rounded text-xs">
-                cl start "标题"
+                el start "标题"
               </code>
             </p>
           </div>
