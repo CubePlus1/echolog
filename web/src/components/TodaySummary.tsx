@@ -13,43 +13,118 @@ function percent(part: number, total: number): number {
   return Math.round((part / total) * 100);
 }
 
+const segments = [
+  { key: "learning" as const, label: "学习", color: "var(--learning)" },
+  { key: "project" as const, label: "项目", color: "var(--project)" },
+  { key: "task" as const, label: "任务", color: "var(--task)" },
+];
+
 export default function TodaySummary({ summary }: { summary: SummaryType }) {
   const { totalSeconds, recordCount, byType } = summary;
-
-  const segments = [
-    { label: "学习", seconds: byType.learning, color: "bg-emerald-500" },
-    { label: "项目", seconds: byType.project, color: "bg-blue-500" },
-    { label: "任务", seconds: byType.task, color: "bg-amber-500" },
-  ].filter((s) => s.seconds > 0);
+  const activeSegments = segments.filter((s) => byType[s.key] > 0);
 
   return (
-    <div className="bg-slate-800 rounded-xl p-5 border border-slate-700">
-      <h2 className="text-sm text-slate-400 mb-2">今日概览</h2>
-      <div className="flex items-baseline gap-3 mb-4">
-        <span className="text-3xl font-bold text-white">
-          {formatDuration(totalSeconds)}
+    <div
+      className="animate-fade-in"
+      style={{
+        background: "var(--surface)",
+        borderRadius: "var(--radius-card)",
+        border: "1px solid var(--border-subtle)",
+        padding: "24px",
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          alignItems: "baseline",
+          justifyContent: "space-between",
+          marginBottom: totalSeconds > 0 ? 20 : 0,
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "baseline", gap: 12 }}>
+          <span
+            style={{
+              fontFamily: "var(--font-heading)",
+              fontSize: "2.2rem",
+              fontWeight: 700,
+              letterSpacing: "-0.03em",
+              color: "var(--text)",
+            }}
+          >
+            {formatDuration(totalSeconds)}
+          </span>
+          <span
+            style={{
+              fontSize: "0.85rem",
+              color: "var(--text-tertiary)",
+            }}
+          >
+            {recordCount} 条记录
+          </span>
+        </div>
+        <span
+          style={{
+            fontFamily: "var(--font-heading)",
+            fontSize: "0.7rem",
+            fontWeight: 500,
+            letterSpacing: "0.06em",
+            textTransform: "uppercase",
+            color: "var(--text-tertiary)",
+          }}
+        >
+          today
         </span>
-        <span className="text-sm text-slate-400">{recordCount} 条记录</span>
       </div>
 
       {totalSeconds > 0 && (
         <>
-          <div className="flex h-3 rounded-full overflow-hidden mb-3">
-            {segments.map((s) => (
+          <div
+            style={{
+              display: "flex",
+              height: 6,
+              borderRadius: 99,
+              overflow: "hidden",
+              gap: 2,
+              marginBottom: 14,
+            }}
+          >
+            {activeSegments.map((s) => (
               <div
-                key={s.label}
-                className={`${s.color} transition-all`}
-                style={{ width: `${percent(s.seconds, totalSeconds)}%` }}
+                key={s.key}
+                style={{
+                  background: s.color,
+                  width: `${percent(byType[s.key], totalSeconds)}%`,
+                  borderRadius: 99,
+                  transition: "width 500ms ease-out",
+                }}
               />
             ))}
           </div>
-          <div className="flex gap-4">
-            {segments.map((s) => (
-              <div key={s.label} className="flex items-center gap-1.5">
-                <div className={`w-2.5 h-2.5 rounded-full ${s.color}`} />
-                <span className="text-xs text-slate-400">
-                  {s.label} {formatDuration(s.seconds)} (
-                  {percent(s.seconds, totalSeconds)}%)
+
+          <div style={{ display: "flex", gap: 20 }}>
+            {activeSegments.map((s) => (
+              <div
+                key={s.key}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                }}
+              >
+                <div
+                  style={{
+                    width: 8,
+                    height: 8,
+                    borderRadius: "50%",
+                    background: s.color,
+                    flexShrink: 0,
+                  }}
+                />
+                <span style={{ fontSize: "0.78rem", color: "var(--text-secondary)" }}>
+                  {s.label}{" "}
+                  <span style={{ color: "var(--text-tertiary)" }}>
+                    {formatDuration(byType[s.key])} ({percent(byType[s.key], totalSeconds)}%)
+                  </span>
                 </span>
               </div>
             ))}

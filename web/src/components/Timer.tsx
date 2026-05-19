@@ -25,7 +25,6 @@ export default function Timer({
       setElapsed(liveDurationSeconds);
       return;
     }
-    const resumedMs = new Date(lastResumedAt).getTime();
     const snapshotTime = Date.now();
     const tick = () => {
       const sinceTick = Math.floor((Date.now() - snapshotTime) / 1000);
@@ -37,7 +36,17 @@ export default function Timer({
   }, [lastResumedAt, paused, liveDurationSeconds]);
 
   return (
-    <span className="font-mono text-2xl tabular-nums">
+    <span
+      style={{
+        fontFamily: "var(--font-mono)",
+        fontSize: "1.75rem",
+        fontWeight: 600,
+        fontVariantNumeric: "tabular-nums",
+        letterSpacing: "-0.02em",
+        color: paused ? "var(--text-tertiary)" : "var(--text)",
+        transition: "color var(--transition)",
+      }}
+    >
       {formatDuration(elapsed)}
     </span>
   );
