@@ -77,4 +77,23 @@ export const api = {
     const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
     return request<Record[]>(`/records?date=${today}`);
   },
+
+  getRecords: (params?: { date?: string; since?: string; project?: string; type?: string; limit?: number }) => {
+    const sp = new URLSearchParams();
+    if (params?.date) sp.set("date", params.date);
+    if (params?.since) sp.set("since", params.since);
+    if (params?.project) sp.set("project", params.project);
+    if (params?.type) sp.set("type", params.type);
+    if (params?.limit) sp.set("limit", String(params.limit));
+    return request<Record[]>(`/records?${sp}`);
+  },
+
+  getDailySummary: (date: string) =>
+    request<{ date: string; totalSeconds: number; recordCount: number; byType: { learning: number; project: number; task: number }; records: Record[] }>(`/summary/daily/${date}`),
+
+  generateReport: (date?: string) =>
+    request<{ date: string; markdown: string }>("/reports/daily", {
+      method: "POST",
+      body: JSON.stringify({ date }),
+    }),
 };

@@ -97,3 +97,102 @@ input, select, textarea, button {
 .animate-slide-up {
   animation: slide-up 350ms ease-out both;
 }
+
+.report-content {
+  font-family: var(--font-body);
+  line-height: 1.7;
+  color: var(--text-secondary);
+}
+.report-content h1 {
+  font-family: var(--font-heading);
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: var(--text);
+  margin: 0 0 20px;
+  letter-spacing: -0.02em;
+}
+.report-content h2 {
+  font-family: var(--font-heading);
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text);
+  margin: 28px 0 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.report-content h3 {
+  font-family: var(--font-heading);
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin: 20px 0 8px;
+}
+.report-content p {
+  margin: 4px 0;
+  font-size: 0.85rem;
+}
+.report-content strong {
+  color: var(--text);
+  font-weight: 600;
+}
+.report-content code {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  background: var(--surface);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+.report-content ul {
+  list-style: none;
+  padding: 0;
+  margin: 6px 0;
+}
+.report-content li {
+  font-size: 0.85rem;
+  padding: 3px 0 3px 16px;
+  position: relative;
+}
+.report-content li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 11px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--border);
+}
+.report-content table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+  margin: 10px 0;
+}
+.report-content td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+}
+.report-content tr:first-child td {
+  font-weight: 600;
+  color: var(--text-tertiary);
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.report-content details {
+  margin-top: 24px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-btn);
+  overflow: hidden;
+}
+.report-content summary {
+  padding: 10px 14px;
+  font-size: 0.82rem;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  background: var(--surface);
+}
+.report-content details[open] summary {
+  border-bottom: 1px solid var(--border-subtle);
+}
