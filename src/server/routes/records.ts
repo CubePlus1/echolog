@@ -8,6 +8,7 @@ import {
   editRecord,
   backfillRecord,
   getActiveRecordsEnriched,
+  resolveSoleActiveRecord,
   getRecord,
   getRecords,
   stopAllActive,
@@ -64,6 +65,47 @@ export async function recordRoutes(app: FastifyInstance) {
   app.get("/api/records/active", async (_req, reply) => {
     return reply.send(await getActiveRecordsEnriched());
   });
+
+  app.patch(
+    "/api/records/active",
+    { schema: patchSchema },
+    async (req, reply) => {
+      const body = req.body as {
+        action: string;
+        result?: string;
+        title?: string;
+        type?: string;
+        tags?: string[];
+        project?: string;
+      };
+      const record = await resolveSoleActiveRecord(body.action as any);
+
+      switch (body.action) {
+        case "stop":
+          return reply.send(
+            await stopRecord({ id: record.id, result: body.result })
+          );
+        case "pause":
+          return reply.send(await pauseRecord(record.id));
+        case "resume":
+          return reply.send(await resumeRecord(record.id));
+        case "edit":
+          return reply.send(
+            await editRecord(record.id, {
+              title: body.title,
+              type: body.type as any,
+              tags: body.tags,
+              project: body.project,
+              result: body.result,
+            })
+          );
+        default:
+          return reply
+            .code(400)
+            .send({ error: `Unknown action: ${body.action}` });
+      }
+    }
+  );
 
   app.post("/api/records", { schema: startSchema }, async (req, reply) => {
     const body = req.body as {
@@ -123,6 +165,11 @@ export async function recordRoutes(app: FastifyInstance) {
   );
 
   // W-7: using PATCH+cancel would be more RESTful, but keeping DELETE for simplicity
+  app.delete("/api/records/active", async (_req, reply) => {
+    const record = await resolveSoleActiveRecord("cancel");
+    return reply.send(await cancelRecord(record.id));
+  });
+
   app.delete("/api/records/:id", async (req, reply) => {
     const { id } = req.params as { id: string };
     return reply.send(await cancelRecord(id));

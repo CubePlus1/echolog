@@ -55,26 +55,13 @@ program
       console.log(`✓ 已停止 ${records.length} 个任务`);
       return;
     }
-    if (!id) {
-      const active = await api("/api/records/active");
-      if (active.length === 0) {
-        console.log("没有运行中的任务");
-        return;
+    const record = await patch(
+      id ? `/api/records/${id}` : "/api/records/active",
+      {
+        action: "stop",
+        result: opts.note,
       }
-      if (active.length === 1) {
-        id = active[0].id;
-      } else {
-        console.log("多个任务运行中，请指定 id:");
-        for (const r of active) {
-          console.log(`  ${r.id}  ${r.title}  (${r.status})`);
-        }
-        return;
-      }
-    }
-    const record = await patch(`/api/records/${id}`, {
-      action: "stop",
-      result: opts.note,
-    });
+    );
     console.log(`✓ 已停止: ${record.title} [${formatDuration(record.durationSeconds)}]`);
   });
 
@@ -83,16 +70,10 @@ program
   .command("pause [id]")
   .description("暂停任务")
   .action(async (id) => {
-    if (!id) {
-      const active = await api("/api/records/active");
-      const running = active.filter((r: any) => r.status === "running");
-      if (running.length === 1) id = running[0].id;
-      else {
-        console.log("请指定任务 id");
-        return;
-      }
-    }
-    const record = await patch(`/api/records/${id}`, { action: "pause" });
+    const record = await patch(
+      id ? `/api/records/${id}` : "/api/records/active",
+      { action: "pause" }
+    );
     console.log(`⏸ 已暂停: ${record.title}`);
   });
 
@@ -101,16 +82,10 @@ program
   .command("resume [id]")
   .description("恢复任务")
   .action(async (id) => {
-    if (!id) {
-      const active = await api("/api/records/active");
-      const paused = active.filter((r: any) => r.status === "paused");
-      if (paused.length === 1) id = paused[0].id;
-      else {
-        console.log("请指定任务 id");
-        return;
-      }
-    }
-    const record = await patch(`/api/records/${id}`, { action: "resume" });
+    const record = await patch(
+      id ? `/api/records/${id}` : "/api/records/active",
+      { action: "resume" }
+    );
     console.log(`▶ 已恢复: ${record.title}`);
   });
 
@@ -149,19 +124,16 @@ program
   .option("-b, --blocker", "标记为阻塞项")
   .option("-x, --next", "标记为后续行动")
   .action(async (id, content, opts) => {
+    let path: string;
     if (!content && id) {
       // cl note "content" without id
-      const active = await api("/api/records/active");
-      if (active.length === 1) {
-        content = id;
-        id = active[0].id;
-      } else {
-        console.log("多个任务运行中，请指定 id");
-        return;
-      }
+      content = id;
+      path = "/api/records/active/notes";
+    } else {
+      path = `/api/records/${id}/notes`;
     }
     const type = opts.blocker ? "blocker" : opts.next ? "next" : "note";
-    await post(`/api/records/${id}/notes`, { content, type });
+    await post(path, { content, type });
     const label = type === "blocker" ? "阻塞" : type === "next" ? "后续" : "笔记";
     console.log(`✓ 已添加${label}: ${content}`);
   });
@@ -289,15 +261,9 @@ program
   .command("cancel [id]")
   .description("取消任务")
   .action(async (id) => {
-    if (!id) {
-      const active = await api("/api/records/active");
-      if (active.length === 1) id = active[0].id;
-      else {
-        console.log("请指定任务 id");
-        return;
-      }
-    }
-    const record = await del(`/api/records/${id}`);
+    const record = await del(
+      id ? `/api/records/${id}` : "/api/records/active"
+    );
     console.log(`✗ 已取消: ${record.title}`);
   });
 

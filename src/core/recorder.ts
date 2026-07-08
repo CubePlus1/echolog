@@ -7,10 +7,17 @@ import { localDateStr } from "./utils.js";
 
 type RecordType = "learning" | "project" | "task";
 type Source = "cli" | "mcp" | "web" | "api";
+type ActiveAction = "stop" | "pause" | "resume" | "edit" | "note" | "cancel";
+
+export interface ActiveCandidate {
+  id: string;
+  title: string;
+  status: string;
+}
 
 export class RecordNotFoundError extends Error {
-  constructor(id: string) {
-    super(`Record ${id} not found`);
+  constructor(id: string, message = `Record ${id} not found`) {
+    super(message);
     this.name = "RecordNotFoundError";
   }
 }
@@ -19,6 +26,16 @@ export class InvalidStateError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "InvalidStateError";
+  }
+}
+
+export class AmbiguousActiveError extends Error {
+  candidates: ActiveCandidate[];
+
+  constructor(candidates: ActiveCandidate[]) {
+    super("多个活跃记录，需指定 id");
+    this.name = "AmbiguousActiveError";
+    this.candidates = candidates;
   }
 }
 
@@ -297,6 +314,38 @@ export async function getActiveRecords(): Promise<Record[]> {
     .from(records)
     .where(inArray(records.status, ["running", "paused"]))
     .orderBy(desc(records.startAt));
+}
+
+export async function resolveSoleActiveRecord(
+  action: ActiveAction
+): Promise<Record> {
+  const db = getDb();
+  const statuses =
+    action === "resume"
+      ? ["paused"]
+      : action === "stop" || action === "pause"
+        ? ["running"]
+        : ["running", "paused"];
+
+  const candidates = await db
+    .select()
+    .from(records)
+    .where(inArray(records.status, statuses))
+    .orderBy(desc(records.startAt));
+
+  if (candidates.length === 0) {
+    throw new RecordNotFoundError("active", "没有可操作的活跃记录");
+  }
+  if (candidates.length > 1) {
+    throw new AmbiguousActiveError(
+      candidates.map((r) => ({
+        id: r.id,
+        title: r.title,
+        status: r.status,
+      }))
+    );
+  }
+  return candidates[0];
 }
 
 export interface EnrichedRecord extends Record {

@@ -8,6 +8,7 @@ import { loadConfig } from "../core/config.js";
 import {
   RecordNotFoundError,
   InvalidStateError,
+  AmbiguousActiveError,
 } from "../core/recorder.js";
 import { recordRoutes } from "./routes/records.js";
 import { noteRoutes } from "./routes/notes.js";
@@ -43,6 +44,11 @@ export async function buildApp() {
     }
     if (error instanceof InvalidStateError) {
       return reply.code(409).send({ error: error.message });
+    }
+    if (error instanceof AmbiguousActiveError) {
+      return reply
+        .code(409)
+        .send({ error: error.message, candidates: error.candidates });
     }
     if (error instanceof Error && "validation" in error) {
       return reply.code(400).send({ error: error.message });
