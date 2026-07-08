@@ -7,7 +7,13 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = join(__dirname, "../..");
 
 export interface Config {
-  server: { port: number; host: string; apiKey?: string };
+  server: {
+    port: number;
+    host: string;
+    apiKey?: string;
+    serveWeb?: boolean;
+    corsOrigins?: string[];
+  };
   database: {
     host: string;
     port: number;
@@ -44,7 +50,9 @@ export function loadConfig(): Config {
   const rootPath = join(PROJECT_ROOT, "config.yaml");
   const configPath = existsSync(cwdPath) ? cwdPath : rootPath;
   const raw = readFileSync(configPath, "utf-8");
-  cached = parse(raw) as Config;
+  const parsed = parse(raw) as Config;
+  parsed.server.serveWeb = parsed.server.serveWeb ?? true;
+  cached = parsed;
   return cached;
 }
 

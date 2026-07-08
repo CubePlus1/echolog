@@ -25,7 +25,9 @@ export async function buildApp() {
   const config = loadConfig();
   const app = Fastify({ logger: true });
 
-  await app.register(cors, { origin: true });
+  await app.register(cors, {
+    origin: config.server.corsOrigins ?? false,
+  });
 
   // API key auth: only guards /api/*; loopback (本机 CLI / 本机浏览器) 豁免
   if (config.server.apiKey) {
@@ -80,19 +82,21 @@ export async function buildApp() {
     timestamp: new Date().toISOString(),
   }));
 
-  const webRoot = join(__dirname, "../../web");
-  if (existsSync(join(webRoot, "index.html"))) {
-    await app.register(fastifyStatic, {
-      root: webRoot,
-      prefix: "/",
-      wildcard: false,
-    });
-    app.setNotFoundHandler((req, reply) => {
-      if (req.url.startsWith("/api/")) {
-        return reply.code(404).send({ error: "Not found" });
-      }
-      return reply.sendFile("index.html");
-    });
+  if (config.server.serveWeb) {
+    const webRoot = join(__dirname, "../../web");
+    if (existsSync(join(webRoot, "index.html"))) {
+      await app.register(fastifyStatic, {
+        root: webRoot,
+        prefix: "/",
+        wildcard: false,
+      });
+      app.setNotFoundHandler((req, reply) => {
+        if (req.url.startsWith("/api/")) {
+          return reply.code(404).send({ error: "Not found" });
+        }
+        return reply.sendFile("index.html");
+      });
+    }
   }
 
   return app;

@@ -4,6 +4,14 @@ server:
   # 非本机请求访问 /api/* 需携带此 key（X-API-Key 头或 ?apiKey= 参数）；本机请求豁免。
   # 留空或删除此行则完全关闭鉴权。生成方式：openssl rand -hex 24
   apiKey: "change-me"
+  # serveWeb: false 表示此进程只提供 /api 纯 JSON 接口，不托管静态 Web UI。
+  # serveWeb: false
+  # corsOrigins 是允许跨源浏览器访问的 origin 白名单数组；默认不允许跨源。
+  # 同源请求和非浏览器客户端不受影响。
+  # 从另一台机器的浏览器访问 Web UI 时，需要同时配置 apiKey 和 corsOrigins。
+  # corsOrigins:
+  #   - "http://localhost:5173"
+  #   - "http://192.168.1.10:5173"
 
 database:
   host: "localhost"
