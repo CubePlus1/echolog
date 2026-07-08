@@ -20,6 +20,34 @@ Managed by Trellis. Edits outside this block are preserved; edits inside may be 
 
 <!-- TRELLIS:END -->
 
+# Trellis 工作流速查（agent 必读）
+
+本仓库用 Trellis 管理任务与规范（详见 `.trellis/workflow.md`）。如果你的平台没有加载 Trellis 上下文（比如你只能读到本文件），按下面的命令自助：
+
+```bash
+# 我现在该干什么 —— 先看有没有进行中的任务
+python3 .trellis/scripts/task.py current
+python3 .trellis/scripts/task.py list
+
+# 任务生命周期（先规划、批准后才动代码；一个里程碑一个 commit）
+python3 .trellis/scripts/task.py create "<标题>" --slug <slug>   # 建任务目录
+#   → 填 <task>/prd.md（需求+验收标准）；复杂任务再写 design.md、implement.md
+python3 .trellis/scripts/task.py start <slug>                    # 状态 → in_progress，才可实现
+python3 .trellis/scripts/task.py archive <slug>                  # 完成后归档（自动 commit）
+
+# 阶段指引与规范
+python3 .trellis/scripts/get_context.py --mode phase --step 2.1  # 某一步的详细指引
+python3 .trellis/scripts/get_context.py --mode packages          # 列出 spec 层
+
+# 会话结束记 journal（用实际 commit hash）
+python3 .trellis/scripts/add_session.py --title "..." --commit "<hash1,hash2>" --summary "..."
+
+# 跨会话记忆（之前怎么讨论/解决的）
+trellis mem search "<关键词>"
+```
+
+写代码前必读对应层的规范：`.trellis/spec/backend/`（改 CLI 先看 `cli-agent-contract.md`，错误处理看 `error-handling.md`）；前端看 `.trellis/spec/frontend/`。任务上下文的阅读顺序：`implement.jsonl` 清单 → `prd.md` → `design.md` → `implement.md`。
+
 # EchoLog 运行手册（agent 必读）
 
 EchoLog 是本机的活动记录服务。作为 agent，你通过 **`el` CLI** 使用它（已在 PATH，`/opt/homebrew/bin/el`）；`el --help` 与各子命令 `--help` 就是完整的工具说明书。需要机器可读输出加 `--json`；成功退出码 0，任何错误非 0（错误信息在 stderr 或 JSON 错误体 `{"error", ...}`）。HTTP 契约见 `docs/API.md`。
