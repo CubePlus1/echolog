@@ -1,5 +1,25 @@
 import { loadConfig } from "../core/config.js";
 
+const CONNECTION_ERROR = "无法连接到 EchoLog server。请先运行: el daemon start";
+
+export class ApiError extends Error {
+  constructor(
+    public readonly status: number,
+    public readonly body: unknown,
+    message: string
+  ) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
+export class ConnectionError extends Error {
+  constructor() {
+    super(CONNECTION_ERROR);
+    this.name = "ConnectionError";
+  }
+}
+
 function baseUrl(): string {
   const config = loadConfig();
   return `http://localhost:${config.server.port}`;
@@ -18,16 +38,16 @@ export async function api<T = any>(
     if (config.server.apiKey) headers["x-api-key"] = config.server.apiKey;
     res = await fetch(url, { ...options, headers });
   } catch {
-    console.error(
-      "无法连接到 EchoLog server。请先运行: el daemon start"
-    );
-    process.exit(1);
+    throw new ConnectionError();
   }
 
   if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
+    const body = await res.clone().json().catch(async () => {
+      const text = await res.text().catch(() => "");
+      return text ? { error: text } : {};
+    });
     const msg = (body as any).error ?? (body as any).message ?? res.statusText;
-    throw new Error(`API error ${res.status}: ${msg}`);
+    throw new ApiError(res.status, body, `API error ${res.status}: ${msg}`);
   }
   return res.json() as T;
 }
