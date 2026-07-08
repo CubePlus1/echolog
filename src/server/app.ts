@@ -82,22 +82,28 @@ export async function buildApp() {
     timestamp: new Date().toISOString(),
   }));
 
-  if (config.server.serveWeb) {
-    const webRoot = join(__dirname, "../../web");
-    if (existsSync(join(webRoot, "index.html"))) {
-      await app.register(fastifyStatic, {
-        root: webRoot,
-        prefix: "/",
-        wildcard: false,
-      });
-      app.setNotFoundHandler((req, reply) => {
-        if (req.url.startsWith("/api/")) {
-          return reply.code(404).send({ error: "Not found" });
-        }
-        return reply.sendFile("index.html");
-      });
-    }
+  const webRoot = join(__dirname, "../../web");
+  const hasWebUi = Boolean(
+    config.server.serveWeb && existsSync(join(webRoot, "index.html"))
+  );
+
+  if (hasWebUi) {
+    await app.register(fastifyStatic, {
+      root: webRoot,
+      prefix: "/",
+      wildcard: false,
+    });
   }
+
+  app.setNotFoundHandler((req, reply) => {
+    if (req.url.startsWith("/api/")) {
+      return reply.code(404).send({ error: "Not found" });
+    }
+    if (hasWebUi) {
+      return reply.sendFile("index.html");
+    }
+    return reply.code(404).send();
+  });
 
   return app;
 }

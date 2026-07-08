@@ -15,10 +15,4 @@ export default defineConfig([
     sourcemap: true,
     banner: { js: "#!/usr/bin/env node" },
   },
-  {
-    entry: ["src/mcp/server.ts"],
-    outDir: "dist/mcp",
-    format: "esm",
-    sourcemap: true,
-  },
 ]);

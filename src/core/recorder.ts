@@ -6,7 +6,7 @@ import type { Record, Note } from "./schema.js";
 import { localDateStr } from "./utils.js";
 
 type RecordType = "learning" | "project" | "task";
-type Source = "cli" | "mcp" | "web" | "api";
+type Source = "cli" | "web" | "api";
 type ActiveAction = "stop" | "pause" | "resume" | "edit" | "note" | "cancel";
 
 export interface ActiveCandidate {

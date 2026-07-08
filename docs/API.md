@@ -1,12 +1,12 @@
 # EchoLog HTTP API
 
-EchoLog server（默认 `http://<host>:19827`）暴露一组 REST 接口，可以从任何地方用 HTTP 请求读写自己的记录。Web 前端、CLI（`el`）、MCP 都走同一组接口。
+EchoLog server（默认 `http://<host>:19827`）暴露一组 REST 接口，可以从任何地方用 HTTP 请求读写自己的记录。Web 前端与 CLI（`el`）都走同一组 REST 接口；智能体通过 CLI 使用 EchoLog。
 
 ## 鉴权
 
 在 `config.yaml` 中设置 `server.apiKey` 后：
 
-- **本机请求（127.0.0.1 / ::1）豁免** —— 本机浏览器、CLI、MCP 无需任何配置；
+- **本机请求（127.0.0.1 / ::1）豁免** —— 本机浏览器、CLI 无需任何配置；
 - **非本机请求访问 `/api/*` 必须带 key**，两种方式任选：
   - 请求头：`X-API-Key: <key>`
   - 查询参数：`?apiKey=<key>`
@@ -25,7 +25,15 @@ curl -H "X-API-Key: $ECHOLOG_KEY" "http://<host>:19827/api/records?limit=20"
 
 `server.corsOrigins` 是允许跨源浏览器访问的 origin 白名单数组。默认不允许跨源；同源请求和非浏览器客户端（如 CLI、curl）不受影响。
 
-如果要从另一台机器的浏览器访问 Web UI，需要同时配置 `server.apiKey` 和 `server.corsOrigins`：前者保护非本机 `/api/*`，后者允许该浏览器所在 origin 发起跨源请求。
+浏览器访问本 server 托管的 Web UI 属同源，仅需 `server.apiKey` 保护非本机 `/api/*`。只有当前端与 API 不同源时（例如独立开发服务器提供前端），才需要配置 `server.corsOrigins` 允许该前端 origin 发起跨源请求。
+
+## 智能体如何使用 EchoLog
+
+有 shell 的 agent 直接使用 `el` CLI。`el --help` 是工具说明书，子命令 help 会列出语义、取值与示例。
+
+需要机器可读结果时，优先使用支持 `--json` 的命令（例如 `el status --json`、`el log --json`、`el start <title> --json`）。命令成功返回 0；连接失败、鉴权失败、找不到记录、唯一活跃记录存在歧义等错误场景返回非 0，错误信息写到 stderr 或 JSON 错误体。
+
+未来如果需要 Model Context Protocol 适配层，可以基于现有 HTTP API 以瘦客户端形式重建；业务逻辑仍由 REST API 与 core 承载。
 
 ## 数据模型
 
@@ -42,7 +50,7 @@ curl -H "X-API-Key: $ECHOLOG_KEY" "http://<host>:19827/api/records?limit=20"
 | `status` | string | `running` \| `paused` \| `done` \| `cancelled` |
 | `durationSeconds` | number | 净时长（不含暂停） |
 | `result` | string \| null | 结果总结 |
-| `source` | string | `cli` \| `mcp` \| `web` \| `api` |
+| `source` | string | `cli` \| `web` \| `api` |
 
 **Note**：`{ id, recordId, content, type: note|blocker|next, createdAt }`
 

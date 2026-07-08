@@ -8,7 +8,8 @@ server:
   # serveWeb: false
   # corsOrigins 是允许跨源浏览器访问的 origin 白名单数组；默认不允许跨源。
   # 同源请求和非浏览器客户端不受影响。
-  # 从另一台机器的浏览器访问 Web UI 时，需要同时配置 apiKey 和 corsOrigins。
+  # 浏览器访问本 server 托管的 Web UI 属同源，仅需 apiKey。
+  # 仅当前端与 API 不同源时（例如独立开发服务器提供前端）才需要配置 corsOrigins。
   # corsOrigins:
   #   - "http://localhost:5173"
   #   - "http://192.168.1.10:5173"
