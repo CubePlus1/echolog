@@ -22,7 +22,7 @@ database:
   password: "echolog"
 
 sync:
-  target: "/Users/example/code/Eoove-demo/docs/echolog"
+  target: "/path/to/your/notes/echolog"
   auto: false
 
 # 屏幕前台应用采样（仅 macOS；被动记录哪个应用用了多久）
@@ -38,7 +38,7 @@ notifications:
   ntfy:
     enabled: false
     server: "https://ntfy.sh"
-    topic: "echolog-example"
+    topic: "echolog-change-me"
   rules:
     task_overtime_minutes: 120
     idle_reminder_enabled: true

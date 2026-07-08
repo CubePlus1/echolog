@@ -1,3 +1,8 @@
+# Work records stay local-only (tasks archive + developer journals);
+# the repo keeps only the methodology (workflow.md, spec/, scripts/, agents/)
+tasks/
+workspace/
+
 # Developer identity (local only)
 .developer
 
