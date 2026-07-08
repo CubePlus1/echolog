@@ -1,12 +1,68 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="zh-CN">
   <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>EchoLog</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>回声志 · EchoLog</title>
+    <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
+    <!-- 尘埃粒子层 -->
+    <canvas id="dust" aria-hidden="true"></canvas>
+
+    <!-- 序幕 -->
+    <div class="prologue" id="prologue">
+      <div class="prologue-inner">
+        <h1 class="prologue-title">回声志</h1>
+        <p class="prologue-sub">凡所记录，皆成回响</p>
+        <p class="prologue-epigraph">一事一记，一日一页。
+所志者非帝王将相，
+乃你亲手度过的每一寸光阴。</p>
+        <button class="open-book" id="openBook" type="button">
+          <span class="open-book-seal">启</span>
+          <span class="open-book-text">开卷</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- 主舞台 -->
+    <main class="stage" id="stage" hidden>
+      <header class="stage-head">
+        <div class="stage-brand">
+          <span class="stage-seal">志</span>
+          <div>
+            <h2>回声志</h2>
+            <p>EchoLog · 凡所记录，皆成回响</p>
+          </div>
+        </div>
+        <div class="stage-meta">
+          <span id="pageIndicator">— / —</span>
+          <span class="live-dot" id="liveDot" title="有任务进行中" hidden></span>
+        </div>
+      </header>
+
+      <!-- 3D 书本 -->
+      <section class="book-scene" id="bookScene" aria-label="立体史书">
+        <div class="book" id="book">
+          <div class="book-spine" aria-hidden="true"></div>
+          <div class="book-edge-left" aria-hidden="true"></div>
+          <div class="book-edge-right" aria-hidden="true"></div>
+          <div class="pages" id="pages"><!-- 页由 JS 生成 --></div>
+        </div>
+      </section>
+
+      <!-- 翻页控制 -->
+      <div class="controls">
+        <button class="nav-btn" id="prevBtn" type="button" aria-label="上一页">‹ 前页</button>
+        <div class="timeline" id="timeline" role="tablist" aria-label="年代"></div>
+        <button class="nav-btn" id="nextBtn" type="button" aria-label="下一页">后页 ›</button>
+      </div>
+
+      <footer class="stage-foot">
+        <span>← → 翻页 · 拖动或滚轮亦可 · 移动鼠标可环视 · End 直达今日</span>
+      </footer>
+    </main>
+
+    <script src="/app.js"></script>
   </body>
 </html>

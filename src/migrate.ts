@@ -49,6 +49,32 @@ const MIGRATIONS = [
       );
     `,
   },
+  {
+    name: "002_screen_tracking",
+    sql: `
+      CREATE TABLE IF NOT EXISTS app_usage (
+        id              TEXT PRIMARY KEY,
+        bundle_id       TEXT NOT NULL,
+        app_name        TEXT NOT NULL,
+        start_at        TIMESTAMPTZ NOT NULL,
+        end_at          TIMESTAMPTZ NOT NULL,
+        seconds         INTEGER NOT NULL DEFAULT 0
+      );
+
+      CREATE TABLE IF NOT EXISTS app_rules (
+        id              TEXT PRIMARY KEY,
+        app_match       TEXT NOT NULL,
+        label           TEXT NOT NULL,
+        start_minute    INTEGER,
+        end_minute      INTEGER,
+        weekdays        INTEGER[],
+        priority        INTEGER NOT NULL DEFAULT 0,
+        created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_app_usage_start_at ON app_usage(start_at);
+    `,
+  },
 ];
 
 async function migrate() {

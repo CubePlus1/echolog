@@ -8,8 +8,7 @@
   },
   "scripts": {
     "dev": "tsx src/server/app.ts",
-    "build": "tsup && pnpm --filter web build",
-    "build:server": "tsup",
+    "build": "tsup",
     "cli": "tsx src/cli/index.ts",
     "mcp": "tsx src/mcp/server.ts",
     "migrate": "tsx src/migrate.ts",

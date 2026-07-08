@@ -1,6 +1,9 @@
 server:
   port: 19827
   host: "0.0.0.0"
+  # 非本机请求访问 /api/* 需携带此 key（X-API-Key 头或 ?apiKey= 参数）；本机请求豁免。
+  # 留空或删除此行则完全关闭鉴权。生成方式：openssl rand -hex 24
+  apiKey: "change-me"
 
 database:
   host: "localhost"
@@ -12,6 +15,13 @@ database:
 sync:
   target: "/Users/example/code/Eoove-demo/docs/echolog"
   auto: false
+
+# 屏幕前台应用采样（仅 macOS；被动记录哪个应用用了多久）
+# idle_seconds：无键鼠输入超过此秒数视为离开；前台应用在播放视频/通话时不受此限
+tracker:
+  enabled: true
+  sample_seconds: 5
+  idle_seconds: 180
 
 notifications:
   enabled: true

@@ -16,6 +16,11 @@ export interface Config {
     password: string;
   };
   sync: { target: string; auto: boolean };
+  tracker?: {
+    enabled?: boolean;
+    sample_seconds?: number;
+    idle_seconds?: number;
+  };
   notifications: {
     enabled: boolean;
     mac: boolean;
