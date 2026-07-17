@@ -5,6 +5,7 @@ import {
   timestamp,
   index,
   check,
+  foreignKey,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
@@ -19,6 +20,7 @@ export const records = pgTable(
       .notNull()
       .default(sql`'{}'::text[]`),
     project: text("project"),
+    parentId: text("parent_id"),
     startAt: timestamp("start_at", { withTimezone: true }).notNull(),
     endAt: timestamp("end_at", { withTimezone: true }),
     status: text("status").notNull(),
@@ -36,6 +38,12 @@ export const records = pgTable(
     index("idx_records_status").on(table.status),
     index("idx_records_start_at").on(table.startAt),
     index("idx_records_project").on(table.project),
+    index("idx_records_parent_id").on(table.parentId),
+    foreignKey({
+      columns: [table.parentId],
+      foreignColumns: [table.id],
+      name: "records_parent_id_fkey",
+    }).onDelete("set null"),
     check(
       "records_type_check",
       sql`${table.type} IN ('learning','project','task')`

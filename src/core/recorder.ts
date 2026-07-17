@@ -1,4 +1,4 @@
-import { eq, and, inArray, gte, lt, desc, sql } from "drizzle-orm";
+import { eq, and, inArray, gte, lt, desc, asc, isNull, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { getDb } from "./db.js";
 import { records, notes, pauses } from "./schema.js";
@@ -44,6 +44,7 @@ interface StartInput {
   type?: RecordType;
   tags?: string[];
   project?: string;
+  parentId?: string | null;
   source?: Source;
 }
 
@@ -63,14 +64,71 @@ interface BackfillInput {
   type?: RecordType;
   tags?: string[];
   project?: string;
+  parentId?: string | null;
   startAt: Date;
   durationMinutes: number;
   result?: string;
   source?: Source;
 }
 
+export interface SubtaskProgress {
+  total: number;
+  done: number;
+  active: number;
+  cancelled: number;
+  percent: number;
+}
+
+export interface SubtaskOverview {
+  parent: Record;
+  subtasks: Record[];
+  progress: SubtaskProgress;
+}
+
+async function validateParentAssignment(
+  recordId: string | undefined,
+  parentId: string | null | undefined
+): Promise<void> {
+  if (parentId === undefined || parentId === null) return;
+  if (recordId && recordId === parentId) {
+    throw new InvalidStateError("记录不能成为自己的父任务");
+  }
+
+  const db = getDb();
+  const [parent] = await db
+    .select()
+    .from(records)
+    .where(eq(records.id, parentId));
+  if (!parent) {
+    throw new RecordNotFoundError(parentId, `父任务 ${parentId} 不存在`);
+  }
+  if (parent.status === "cancelled") {
+    throw new InvalidStateError("不能挂到已取消的父任务");
+  }
+  if (!recordId) return;
+
+  const visited = new Set<string>([parent.id]);
+  let ancestorId = parent.parentId;
+  while (ancestorId) {
+    if (ancestorId === recordId) {
+      throw new InvalidStateError("父子任务关系不能形成环");
+    }
+    if (visited.has(ancestorId)) {
+      throw new InvalidStateError("现有父子任务关系包含环，无法改挂");
+    }
+    visited.add(ancestorId);
+    const [ancestor] = await db
+      .select({ parentId: records.parentId })
+      .from(records)
+      .where(eq(records.id, ancestorId));
+    if (!ancestor) break;
+    ancestorId = ancestor.parentId;
+  }
+}
+
 export async function startRecord(input: StartInput): Promise<Record> {
   const db = getDb();
+  await validateParentAssignment(undefined, input.parentId);
   const now = new Date();
   const record = {
     id: nanoid(12),
@@ -78,6 +136,7 @@ export async function startRecord(input: StartInput): Promise<Record> {
     type: input.type ?? "task",
     tags: input.tags ?? [],
     project: input.project ?? null,
+    parentId: input.parentId ?? null,
     startAt: now,
     endAt: null,
     status: "running" as const,
@@ -261,9 +320,11 @@ export async function editRecord(
     tags?: string[];
     project?: string;
     result?: string;
+    parentId?: string | null;
   }
 ): Promise<Record> {
   const db = getDb();
+  await validateParentAssignment(id, updates.parentId);
   const now = new Date();
 
   const safeUpdates: Partial<typeof records.$inferInsert> = { updatedAt: now };
@@ -272,6 +333,7 @@ export async function editRecord(
   if (updates.tags !== undefined) safeUpdates.tags = updates.tags;
   if (updates.project !== undefined) safeUpdates.project = updates.project;
   if (updates.result !== undefined) safeUpdates.result = updates.result;
+  if (updates.parentId !== undefined) safeUpdates.parentId = updates.parentId;
 
   const [updated] = await db
     .update(records)
@@ -284,6 +346,7 @@ export async function editRecord(
 
 export async function backfillRecord(input: BackfillInput): Promise<Record> {
   const db = getDb();
+  await validateParentAssignment(undefined, input.parentId);
   const now = new Date();
   const endAt = new Date(
     input.startAt.getTime() + input.durationMinutes * 60_000
@@ -294,6 +357,7 @@ export async function backfillRecord(input: BackfillInput): Promise<Record> {
     type: input.type ?? "task",
     tags: input.tags ?? [],
     project: input.project ?? null,
+    parentId: input.parentId ?? null,
     startAt: input.startAt,
     endAt,
     status: "done" as const,
@@ -392,6 +456,38 @@ export async function getRecord(id: string): Promise<Record | undefined> {
   return record;
 }
 
+export async function getDirectSubtasks(parentId: string): Promise<Record[]> {
+  const db = getDb();
+  return db
+    .select()
+    .from(records)
+    .where(eq(records.parentId, parentId))
+    .orderBy(asc(records.startAt));
+}
+
+export async function getSubtaskOverview(id: string): Promise<SubtaskOverview> {
+  const parent = await getRecord(id);
+  if (!parent) throw new RecordNotFoundError(id);
+  const subtasks = await getDirectSubtasks(id);
+  const done = subtasks.filter((r) => r.status === "done").length;
+  const cancelled = subtasks.filter((r) => r.status === "cancelled").length;
+  const active = subtasks.filter(
+    (r) => r.status === "running" || r.status === "paused"
+  ).length;
+  const effectiveTotal = subtasks.length - cancelled;
+  return {
+    parent,
+    subtasks,
+    progress: {
+      total: subtasks.length,
+      done,
+      active,
+      cancelled,
+      percent: effectiveTotal > 0 ? Math.round((done / effectiveTotal) * 100) : 0,
+    },
+  };
+}
+
 export async function getRecordNotes(recordId: string): Promise<Note[]> {
   const db = getDb();
   return db
@@ -417,6 +513,7 @@ export async function getRecords(filters?: {
   since?: string;
   project?: string;
   type?: string;
+  parentId?: string | null;
   limit?: number;
 }): Promise<Record[]> {
   if (filters?.date) {
@@ -432,6 +529,13 @@ export async function getRecords(filters?: {
   }
   if (filters?.type) {
     conditions.push(eq(records.type, filters.type));
+  }
+  if (filters?.parentId !== undefined) {
+    conditions.push(
+      filters.parentId === null
+        ? isNull(records.parentId)
+        : eq(records.parentId, filters.parentId as string)
+    );
   }
 
   return db

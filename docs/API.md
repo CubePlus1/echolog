@@ -46,6 +46,7 @@ curl -H "X-API-Key: $ECHOLOG_KEY" "http://<host>:19827/api/records?limit=20"
 | `type` | string | `learning` \| `project` \| `task` |
 | `tags` | string[] | 标签 |
 | `project` | string \| null | 所属项目 |
+| `parentId` | string \| null | 父任务记录 id；null 表示根任务 |
 | `startAt` / `endAt` | ISO 时间 | 开始 / 结束（进行中为 null） |
 | `status` | string | `running` \| `paused` \| `done` \| `cancelled` |
 | `durationSeconds` | number | 净时长（不含暂停） |
@@ -72,8 +73,12 @@ curl "http://localhost:19827/api/records?limit=100"
 # 某一天（本地日期）
 curl "http://localhost:19827/api/records?date=2026-07-04"
 
-# 某时刻之后 / 按项目 / 按类型（可组合）
+# 某时刻之后 / 按项目 / 按类型 / 按父任务（可组合）
 curl "http://localhost:19827/api/records?since=2026-07-01T00:00:00+08:00&project=eoove&type=learning"
+
+# 直接子任务；parentId=root 查询根任务
+curl "http://localhost:19827/api/records?parentId=<parent-id>"
+curl "http://localhost:19827/api/records?parentId=root"
 
 # 单条
 curl "http://localhost:19827/api/records/<id>"
@@ -82,7 +87,41 @@ curl "http://localhost:19827/api/records/<id>"
 curl "http://localhost:19827/api/records/active"
 ```
 
-查询参数：`date`（YYYY-MM-DD，设置后忽略其余过滤）、`since`（ISO 时间）、`project`、`type`、`limit`。
+查询参数：`date`（YYYY-MM-DD，设置后忽略其余过滤）、`since`（ISO 时间）、`project`、`type`、`parentId`（记录 id 或 `root`）、`limit`。
+
+### 父任务与子任务
+
+创建或补录时通过 `parentId` 把记录挂到父任务；编辑时传字符串可改挂，传 `null` 可提升为根任务。父任务必须存在且不能是已取消记录，关系不能自指或形成环。
+
+```bash
+# 创建子任务
+curl -X POST http://localhost:19827/api/records \
+  -H "Content-Type: application/json" \
+  -d '{"title":"实现登录接口","type":"task","parentId":"<parent-id>"}'
+
+# 改挂 / 清除父任务
+curl -X PATCH http://localhost:19827/api/records/<id> \
+  -H "Content-Type: application/json" -d '{"action":"edit","parentId":"<new-parent-id>"}'
+curl -X PATCH http://localhost:19827/api/records/<id> \
+  -H "Content-Type: application/json" -d '{"action":"edit","parentId":null}'
+
+# 父任务、直接子任务与进度
+curl http://localhost:19827/api/records/<id>/subtasks
+```
+
+`GET /api/records/<id>/subtasks` 返回：
+
+```json
+{
+  "parent": { "id": "parent", "title": "大任务", "parentId": null },
+  "subtasks": [
+    { "id": "child", "title": "小任务", "parentId": "parent", "status": "done" }
+  ],
+  "progress": { "total": 1, "done": 1, "active": 0, "cancelled": 0, "percent": 100 }
+}
+```
+
+`percent` 按 `done / (total - cancelled)` 计算；没有有效子任务时为 0。父任务不会因为子任务完成而自动改变状态。
 
 ### 开始 / 控制记录
 
@@ -90,7 +129,7 @@ curl "http://localhost:19827/api/records/active"
 # 开始一条记录（只有 title 必填；type 默认 task，source 默认 api）→ 201
 curl -X POST http://localhost:19827/api/records \
   -H "Content-Type: application/json" \
-  -d '{"title":"读《史记》三十页","type":"learning","tags":["读书"],"project":"修身"}'
+  -d '{"title":"读《史记》三十页","type":"learning","tags":["读书"],"project":"修身","parentId":null}'
 
 # 暂停 / 继续 / 停止（可附结果）/ 编辑
 curl -X PATCH http://localhost:19827/api/records/<id> \
