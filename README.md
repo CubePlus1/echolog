@@ -9,6 +9,7 @@
 ## 功能
 
 - **活动记录**：`start / stop / pause / resume / cancel`，类型 `learning | project | task`，标签、项目归属、结果总结；多任务并行
+- **父子任务**：一个大任务可挂多层小任务；服务端防止自指/成环，CLI 与 Web 可创建、查询并查看直接子任务进度
 - **笔记**：给任意记录追加 `note | blocker | next`
 - **补录与编辑**：`el add --at --for`、`el edit`
 - **屏幕使用**（macOS）：每 5 秒采样前台应用，落成连续片段；分类规则在**查询时**计算——改规则即可追溯重分全部历史
@@ -45,6 +46,8 @@ node dist/cli/index.js status
 
 ```bash
 el start "读《史记》三十页" --type learning -t 读书
+el start "整理人物关系" --parent <父任务id>
+el subtasks <父任务id>          # 直接子任务 + 完成进度
 el note "卡在第三章" -b        # 给唯一活跃任务加阻塞项，无需 id
 el stop -n "读毕，摘记三条"
 el today
