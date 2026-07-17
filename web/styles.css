@@ -993,6 +993,8 @@ body {
 
 /* ---------- 控制区 ---------- */
 .controls {
+  position: relative;
+  z-index: 20;
   display: flex;
   align-items: center;
   justify-content: center;

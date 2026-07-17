@@ -113,6 +113,30 @@ src/cli (el, HTTP 瘦客户端) ─┘
 
 一切能力沉在服务端：客户端不复刻推断/校验逻辑，新客户端（包括未来的 MCP 适配层）以 HTTP 瘦客户端形式接入即可。开发工作流由 [Trellis](.trellis/workflow.md) 管理，编码规范见 `.trellis/spec/`。
 
+## 产品路线与任务管理
+
+EchoLog 的近期方向不是做普通的工时计时器，而是成为本地优先、面向 AI agent 的个人工作记忆与复盘系统：既记录做过什么，也帮助回看能力如何积累、下一步往哪里走。
+
+### 当前路线
+
+- **P0 · 可视化交互稳定性**：修复立体书界面左侧“前页”按钮无法按下或无法翻页的问题。
+  - GitHub：[P0 Issue #3](https://github.com/CubePlus1/echolog/issues/3)
+  - Trellis：`.trellis/tasks/07-17-p0-visual-left-button/`
+- **P1 · 个人成长路径可视化**：以时间、项目、标签、学习主题、结果、阻塞项和下一步为证据，生成可回溯的成长时间轴。
+  - GitHub：[P1 Issue #2](https://github.com/CubePlus1/echolog/issues/2)
+  - Trellis：`.trellis/tasks/07-17-p1-growth-path-visualization/`
+
+### 三处任务同步规则
+
+README 维护产品方向和里程碑，Trellis 维护实施上下文和验收标准，GitHub Issue 维护公开追踪与关闭记录。后续开发必须遵守：
+
+1. 开始前确认三处指向同一个任务；认领 GitHub Issue，并执行 `python3 .trellis/scripts/task.py start <slug>` 激活 Trellis task。
+2. 一个会话只保留一个当前激活的 Trellis task；独立交付物拆成父任务下的子任务，不把多个目标混在一个实现清单里。
+3. 完成后先验证验收标准，再关闭 GitHub Issue、归档 Trellis task，并更新 README 状态；历史 Issue 和归档任务保留，不直接删除。
+4. 三处内容冲突时，以已验证的实现和 Trellis task 为准，并在同一变更中同步修正 README 与 Issue。
+
+总任务追踪：[EchoLog 产品路线与 P0/P1 闭环 #1](https://github.com/CubePlus1/echolog/issues/1)。
+
 ## License
 
 [MIT](LICENSE)

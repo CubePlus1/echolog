@@ -845,8 +845,14 @@
   const INTERACTIVE = "input, textarea, select, button, .entry-text, .toc-scroll";
 
   function setupInput() {
-    $("prevBtn").addEventListener("click", prev);
-    $("nextBtn").addEventListener("click", next);
+    // 事件委托让控制按钮不受 3D 书页重排影响；controls 位于 book-scene
+    // 之后，但仍显式阻止默认行为，避免点击被拖拽/翻页手势吞掉。
+    $("pageControls").addEventListener("click", (e) => {
+      const btn = e.target instanceof Element ? e.target.closest("[data-nav]") : null;
+      if (!btn || btn.disabled) return;
+      e.preventDefault();
+      btn.dataset.nav === "prev" ? prev() : next();
+    });
 
     window.addEventListener("keydown", (e) => {
       if ($("stage").hidden) return;
@@ -949,19 +955,19 @@
       await loading;
       buildBook(false);
       startLoops();
+      // 先确定可见页，再展示舞台；不让用户在开卷动画期间看到一个
+      // 仍停在第 0 页、因此被 disabled 的左侧按钮。
+      const h = location.hash;
+      if (h === "#today") gotoLive();
+      else if (h === "#screen" || h === "#rules") {
+        const idx = state.faces.findIndex((f) => f.type === h.slice(1));
+        flipTo(idx >= 0 ? faceToFlip(idx) : 1);
+      } else {
+        flipTo(1);
+      }
       $("prologue").classList.add("gone");
       $("stage").hidden = false;
       state.opened = true;
-      // 开卷动画：翻开扉页露出目录；深链则直达对应页
-      setTimeout(() => {
-        const h = location.hash;
-        if (h === "#today") return gotoLive();
-        if (h === "#screen" || h === "#rules") {
-          const idx = state.faces.findIndex((f) => f.type === h.slice(1));
-          if (idx >= 0) return flipTo(faceToFlip(idx));
-        }
-        flipTo(1);
-      }, 700);
     });
 
     // 深链：/#open、/#toc 直达目录；/#today 今日总览；/#screen 屏中光阴；/#rules 立例

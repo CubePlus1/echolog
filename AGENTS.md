@@ -94,3 +94,13 @@ docker ps | grep echolog-db
 - 记录的写操作一律走 `el`（或 `/api/*`），**禁止直接写数据库**。
 - 省略 id 的 `el stop/pause/resume/note/cancel` 由服务端匹配唯一活跃记录；歧义时返回 409 和候选列表，按提示带 id 重试。
 - 改动 `src/cli/` 前先读 `.trellis/spec/backend/cli-agent-contract.md`。
+
+## EchoLog 任务同步与认领规范
+
+产品路线和任务必须在 README、Trellis、GitHub Issue 三处保持可追踪的一致关系：
+
+1. README 只维护方向、优先级和里程碑；Trellis task 维护 PRD、设计、实现清单、负责人和验收；GitHub Issue 维护公开讨论、依赖和关闭记录。
+2. 开发前先确认三处是否指向同一个任务，认领对应 Issue，并执行 `python3 .trellis/scripts/task.py start <slug>`。未认领、未激活的任务不得直接改代码。
+3. 一个会话只保留一个当前激活任务；一个父任务下可以挂独立可验收的子任务。完成的任务必须先通过验收，再关闭 Issue、归档 Trellis task，并更新 README。
+4. “清除”只清除活跃状态，不删除历史：使用 `task.py finish/archive` 和关闭 Issue，保留归档任务、Issue 和提交记录。
+5. 三处冲突时，以已验证实现和 Trellis task 为准，必须在同一变更中同步修正文档和 Issue。
