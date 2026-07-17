@@ -100,6 +100,7 @@
   /* ============ 数据 ============ */
 
   const data = {
+    records: [],   // 全部记录（父子关系与表单候选）
     history: [],   // done/cancelled 记录，升序
     active: [],    // running/paused（enriched）
     summary: null, // 今日总览
@@ -109,6 +110,70 @@
     ok: false,     // 是否成功连上后端
   };
 
+  function applyRecords(records) {
+    data.records = records;
+    data.history = records
+      .filter((r) => r.status === "done" || r.status === "cancelled")
+      .sort((a, b) => new Date(a.startAt) - new Date(b.startAt));
+  }
+
+  const recordById = (id) => id ? data.records.find((r) => r.id === id) || null : null;
+  const directChildren = (id) => data.records.filter((r) => r.parentId === id);
+
+  function recordDepth(record) {
+    let depth = 0;
+    let cursor = record;
+    const visited = new Set([record.id]);
+    while (cursor.parentId && depth < 8) {
+      if (visited.has(cursor.parentId)) break;
+      visited.add(cursor.parentId);
+      cursor = recordById(cursor.parentId);
+      if (!cursor) break;
+      depth++;
+    }
+    return depth;
+  }
+
+  function subtaskProgress(id) {
+    const children = directChildren(id);
+    const done = children.filter((r) => r.status === "done").length;
+    const cancelled = children.filter((r) => r.status === "cancelled").length;
+    const active = children.filter((r) => r.status === "running" || r.status === "paused").length;
+    const effectiveTotal = children.length - cancelled;
+    return {
+      children,
+      done,
+      cancelled,
+      active,
+      total: children.length,
+      percent: effectiveTotal > 0 ? Math.round((done / effectiveTotal) * 100) : 0,
+    };
+  }
+
+  function orderHierarchically(records) {
+    const ids = new Set(records.map((r) => r.id));
+    const byParent = new Map();
+    for (const record of records) {
+      const key = record.parentId && ids.has(record.parentId) ? record.parentId : null;
+      if (!byParent.has(key)) byParent.set(key, []);
+      byParent.get(key).push(record);
+    }
+    for (const group of byParent.values()) {
+      group.sort((a, b) => new Date(b.startAt) - new Date(a.startAt));
+    }
+    const ordered = [];
+    const seen = new Set();
+    const visit = (record) => {
+      if (seen.has(record.id)) return;
+      seen.add(record.id);
+      ordered.push(record);
+      for (const child of byParent.get(record.id) || []) visit(child);
+    };
+    for (const root of byParent.get(null) || []) visit(root);
+    for (const record of records) visit(record);
+    return ordered;
+  }
+
   async function loadAll() {
     const [records, active, summary, screen, rules] = await Promise.all([
       api("/records?limit=1000"),
@@ -117,9 +182,7 @@
       api("/screen/today").catch(() => null),
       api("/screen/rules").catch(() => []),
     ]);
-    data.history = records
-      .filter((r) => r.status === "done" || r.status === "cancelled")
-      .sort((a, b) => new Date(a.startAt) - new Date(b.startAt));
+    applyRecords(records);
     data.active = active;
     data.summary = summary;
     data.screen = screen;
@@ -129,12 +192,14 @@
   }
 
   async function loadLive() {
-    const [active, summary, screen, rules] = await Promise.all([
+    const [records, active, summary, screen, rules] = await Promise.all([
+      api("/records?limit=1000"),
       api("/records/active"),
       api("/summary/today"),
       api("/screen/today").catch(() => data.screen),
       api("/screen/rules").catch(() => data.rules),
     ]);
+    applyRecords(records);
     data.active = active;
     data.summary = summary;
     data.screen = screen;
@@ -145,7 +210,8 @@
   // 活动集签名：变了才整本重排
   function liveSignature() {
     return JSON.stringify([
-      data.active.map((r) => [r.id, r.status, r.title, r.project, r.tags]),
+      data.active.map((r) => [r.id, r.status, r.title, r.project, r.tags, r.parentId]),
+      data.records.map((r) => [r.id, r.status, r.title, r.parentId, r.updatedAt]),
       data.summary ? data.summary.recordCount : 0,
     ]);
   }
@@ -177,6 +243,7 @@
       cancelled,
       date: `${cnMonth(d.getMonth() + 1)}${cnNum(d.getDate())}日 · 周${WEEKDAYS[d.getDay()]} · ${fmtClockHM(d)}${end ? "—" + fmtClockHM(end) : ""}`,
       title: r.title,
+      parentId: r.parentId,
       typeLabel: info.label,
       project: r.project,
       tags: r.tags || [],
@@ -233,12 +300,14 @@
       faces.push({ type: "summary" });
       faces.push({ type: "screen" });
       faces.push({ type: "rules" });
-      for (const r of data.active) {
+      for (const r of orderHierarchically(data.active)) {
         tocFace.active.push({
           id: r.id,
           title: r.title,
           status: r.status,
           base: r.liveDurationSeconds ?? r.durationSeconds,
+          parentId: r.parentId,
+          depth: recordDepth(r),
           faceIndex: faces.length,
         });
         faces.push({ type: "active", record: r });
@@ -260,6 +329,57 @@
 
   /* ============ 渲染一面 ============ */
 
+  function statusMark(status) {
+    if (status === "done") return "毕";
+    if (status === "running") return "行";
+    if (status === "paused") return "憩";
+    return "罢";
+  }
+
+  function statusText(status) {
+    if (status === "done") return "已毕";
+    if (status === "running") return "进行中";
+    if (status === "paused") return "已暂停";
+    return "已作废";
+  }
+
+  function renderParentLink(parentId) {
+    if (!parentId) return "";
+    const parent = recordById(parentId);
+    const title = parent ? parent.title : parentId;
+    return `<button class="hier-parent" type="button" data-goto-record="${escA(parentId)}">
+      <span class="hier-branch">隶</span>
+      <span>隶于 ${esc(title)}</span>
+    </button>`;
+  }
+
+  function renderSubtaskPanel(recordId) {
+    const progress = subtaskProgress(recordId);
+    if (progress.total === 0) return "";
+    const effectiveTotal = progress.total - progress.cancelled;
+    const visible = progress.children.slice(0, 4);
+    const rows = visible.map((child) =>
+      `<button class="subtask-row" type="button" data-goto-record="${escA(child.id)}">
+        <span class="subtask-mark ${escA(child.status)}">${statusMark(child.status)}</span>
+        <span class="subtask-title">${esc(child.title)}</span>
+        <span class="subtask-state">${statusText(child.status)}</span>
+      </button>`
+    ).join("");
+    const rest = progress.total > visible.length
+      ? `<div class="subtask-rest">另有 ${progress.total - visible.length} 项，见目录</div>`
+      : "";
+    return `<section class="subtask-panel" aria-label="直接子任务">
+      <div class="subtask-head">
+        <span>支 脉</span>
+        <span>${progress.done}/${effectiveTotal} · ${progress.percent}%</span>
+      </div>
+      <div class="subtask-meter" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${progress.percent}">
+        <span style="width:${progress.percent}%"></span>
+      </div>
+      <div class="subtask-list">${rows}${rest}</div>
+    </section>`;
+  }
+
   function renderFace(face) {
     if (!face || face.type === "blank") return `<div class="leaf-inner"></div>`;
 
@@ -278,7 +398,8 @@
 
     if (face.type === "toc") {
       const act = face.active.map((a) =>
-        `<button class="toc-row" type="button" data-goto="${a.faceIndex}">
+        `<button class="toc-row toc-hier-row${a.parentId ? " is-child" : ""}" type="button" data-goto="${a.faceIndex}" style="--hier-depth:${Math.min(a.depth || 0, 4)}">
+          ${a.parentId ? `<span class="toc-branch">└</span>` : ""}
           <span class="toc-state${a.status === "running" ? "" : " paused"}">${a.status === "running" ? "行" : "憩"}</span>
           <span class="toc-name">${esc(a.title)}</span>
           <span class="toc-dots"></span>
@@ -311,17 +432,21 @@
     }
 
     if (face.type === "entry") {
+      const parentLink = renderParentLink(face.parentId);
+      const subtaskPanel = renderSubtaskPanel(face.id);
       const metaBits = [
         `<span>${esc(face.typeLabel)}</span>`,
         face.project ? `<span>${esc(face.project)}</span>` : "",
         `<span class="m-dur">用时 ${esc(fmtDur(face.duration))}</span>`,
         ...face.tags.map((t) => `<span class="entry-tag">${esc(t)}</span>`),
       ].filter(Boolean).join("");
-      return `<div class="leaf-inner${face.cancelled ? " entry-cancelled" : ""}">
+      return `<div class="leaf-inner${face.cancelled ? " entry-cancelled" : ""}${subtaskPanel ? " has-subtasks" : ""}">
         <div class="entry-date">${esc(face.date)}</div>
+        ${parentLink}
         <h3 class="entry-title">${esc(face.title)}</h3>
         <div class="entry-rule"></div>
         <div class="entry-meta">${metaBits}</div>
+        ${subtaskPanel}
         <div class="entry-text">${face.text ? esc(face.text) : `<span class="no-result">未留一言。</span>`}</div>
         <div class="entry-foot">
           <span class="mood-seal">${esc(face.mood)}</span>
@@ -414,6 +539,8 @@
 
     if (face.type === "active") {
       const r = face.record;
+      const parentLink = renderParentLink(r.parentId);
+      const subtaskPanel = renderSubtaskPanel(r.id);
       const info = typeInfo(r.type);
       const running = r.status === "running";
       const started = new Date(r.startAt);
@@ -426,14 +553,16 @@
       const seals = running
         ? `<button class="seal-btn s-calm" type="button" data-act="pause" data-id="${escA(r.id)}"><span class="s-face">憩</span><span class="s-label">暂停</span></button>`
         : `<button class="seal-btn s-gold" type="button" data-act="resume" data-id="${escA(r.id)}"><span class="s-face">续</span><span class="s-label">继续</span></button>`;
-      return `<div class="leaf-inner live-entry" data-record-id="${escA(r.id)}">
+      return `<div class="leaf-inner live-entry${subtaskPanel ? " has-subtasks" : ""}" data-record-id="${escA(r.id)}">
         <div class="entry-date">
           <span>始于 ${esc(fmtClockHM(started))}</span>
           <span class="live-state${running ? "" : " paused"}">${running ? "行 · 进行中" : "憩 · 已暂停"}</span>
         </div>
+        ${parentLink}
         <h3 class="entry-title">${esc(r.title)}</h3>
         <div class="entry-rule"></div>
         <div class="entry-meta">${metaBits}</div>
+        ${subtaskPanel}
         <div class="live-timer${running ? "" : " paused"}" data-timer data-fmt="clock" data-live-id="${escA(r.id)}" data-base="${base}" data-fetched="${data.fetchedAt}" data-paused="${running ? 0 : 1}">${esc(fmtTimer(base))}</div>
         <div class="live-since">笔未搁，事未毕</div>
         <div class="result-row">
@@ -450,6 +579,18 @@
     if (face.type === "form") {
       const chip = (t, label) =>
         `<button class="type-chip${formType === t ? " on" : ""}" type="button" data-type="${t}">${label}</button>`;
+      const parentOptions = [...data.records]
+        .filter((r) => r.status !== "cancelled")
+        .sort((a, b) => {
+          const activeA = a.status === "running" || a.status === "paused" ? 1 : 0;
+          const activeB = b.status === "running" || b.status === "paused" ? 1 : 0;
+          return activeB - activeA || new Date(b.startAt) - new Date(a.startAt);
+        })
+        .map((r) => {
+          const branch = recordDepth(r) > 0 ? `${"· ".repeat(Math.min(recordDepth(r), 3))}` : "";
+          return `<option value="${escA(r.id)}">${esc(`${branch}${r.title}［${statusMark(r.status)}］`)}</option>`;
+        })
+        .join("");
       return `<div class="leaf-inner new-form">
         <div class="form-title">始一事</div>
         <div class="form-hint">落笔即开始计时</div>
@@ -465,9 +606,18 @@
             ${chip("task", "任务")}
           </div>
         </div>
-        <div class="form-field">
-          <label class="form-label">何 门</label>
-          <input class="form-input" type="text" id="nfProject" placeholder="所属项目，可空" />
+        <div class="form-pair">
+          <div class="form-field">
+            <label class="form-label">何 门</label>
+            <input class="form-input" type="text" id="nfProject" placeholder="所属项目，可空" />
+          </div>
+          <div class="form-field">
+            <label class="form-label">何 属</label>
+            <select class="form-input form-select" id="nfParent" aria-label="父任务">
+              <option value="">根任务 · 无所隶</option>
+              ${parentOptions}
+            </select>
+          </div>
         </div>
         <div class="form-field">
           <label class="form-label">何 签</label>
@@ -688,12 +838,14 @@
           return;
         }
         const project = ($("nfProject") ? $("nfProject").value : "").trim();
+        const parentId = ($("nfParent") ? $("nfParent").value : "").trim();
         const tags = ($("nfTags") ? $("nfTags").value : "")
           .split(/[,，]/).map((t) => t.trim()).filter(Boolean);
         const created = await post("/records", {
           title,
           type: formType,
           project: project || undefined,
+          parentId: parentId || undefined,
           tags: tags.length ? tags : undefined,
           source: "web",
         });
@@ -715,6 +867,17 @@
     const pages = $("pages");
 
     pages.addEventListener("click", (e) => {
+      const recordGoto = e.target.closest("[data-goto-record]");
+      if (recordGoto) {
+        const id = recordGoto.dataset.gotoRecord;
+        const idx = state.faces.findIndex((face) =>
+          (face.type === "entry" && face.id === id) ||
+          (face.type === "active" && face.record.id === id)
+        );
+        if (idx >= 0) flipTo(faceToFlip(idx));
+        else flash("此记录不在当前卷中");
+        return;
+      }
       const goto = e.target.closest("[data-goto]");
       if (goto) {
         flipTo(faceToFlip(Number(goto.dataset.goto)));
@@ -739,7 +902,7 @@
       } else if (t.closest && t.closest(".rule-form")) {
         const addBtn = pages.querySelector(`[data-act="add-rule"]`);
         if (addBtn) doAction(addBtn);
-      } else if (t.matches && t.matches(".form-input")) {
+      } else if (t.matches && t.matches("input.form-input")) {
         const startBtn = pages.querySelector(`[data-act="start"]`);
         if (startBtn) doAction(startBtn);
       }
