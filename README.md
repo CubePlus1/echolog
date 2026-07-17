@@ -119,8 +119,11 @@ EchoLog 的近期方向不是做普通的工时计时器，而是成为本地优
 
 ### 当前路线
 
-- **P0 · 可视化交互稳定性**：修复立体书界面左侧“前页”按钮无法按下或无法翻页的问题。
-  - GitHub：[P0 Issue #3](https://github.com/CubePlus1/echolog/issues/3)
+- **P0 · 大任务支持子任务**：记录支持多层父子关系，父任务可查看直接子任务和完成进度；后端/API、CLI、Web 分为三个实施子任务。
+  - GitHub：[P0 Issue #1](https://github.com/CubePlus1/echolog/issues/1)（[#4 后端/API](https://github.com/CubePlus1/echolog/issues/4) · [#5 CLI](https://github.com/CubePlus1/echolog/issues/5) · [#6 Web](https://github.com/CubePlus1/echolog/issues/6)）
+  - Trellis：`.trellis/tasks/07-17-p0-record-subtasks/`
+- **P0 · 可视化翻页 Bug**：修复立体书界面左侧“前页”按钮无法按下或无法翻页的问题；这是独立 P0，不从属于父子任务能力。
+  - GitHub：[P0 Bug #3](https://github.com/CubePlus1/echolog/issues/3)
   - Trellis：`.trellis/tasks/07-17-p0-visual-left-button/`
 - **P1 · 个人成长路径可视化**：以时间、项目、标签、学习主题、结果、阻塞项和下一步为证据，生成可回溯的成长时间轴。
   - GitHub：[P1 Issue #2](https://github.com/CubePlus1/echolog/issues/2)
@@ -135,7 +138,7 @@ README 维护产品方向和里程碑，Trellis 维护实施上下文和验收�
 3. 完成后先验证验收标准，再关闭 GitHub Issue、归档 Trellis task，并更新 README 状态；历史 Issue 和归档任务保留，不直接删除。
 4. 三处内容冲突时，以已验证的实现和 Trellis task 为准，并在同一变更中同步修正 README 与 Issue。
 
-总任务追踪：[EchoLog 产品路线与 P0/P1 闭环 #1](https://github.com/CubePlus1/echolog/issues/1)。
+以上三项互相独立；只有 P0“子任务能力”的后端、CLI、Web 实施项属于父任务 #1。
 
 ## License
 
