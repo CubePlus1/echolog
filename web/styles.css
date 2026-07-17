@@ -487,6 +487,53 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+.subtask-head-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.subtask-head-actions button {
+  min-height: 1.8rem;
+  padding: 0.15rem 0.55rem;
+  font-family: var(--kai);
+  font-size: 0.68rem;
+  letter-spacing: 0.12em;
+  color: var(--cinnabar);
+  background: none;
+  border: 1px solid rgba(176, 58, 46, 0.35);
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.subtask-head-actions button:hover,
+.subtask-head-actions button:focus-visible {
+  color: #f6ede0;
+  background: var(--cinnabar);
+}
+
+.subtask-empty {
+  width: 100%;
+  min-height: 2.55rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.8rem;
+  padding: 0.45rem 0.75rem;
+  font-family: var(--kai);
+  font-size: 0.76rem;
+  letter-spacing: 0.14em;
+  color: var(--ink-faint);
+  background: rgba(232, 218, 184, 0.22);
+  border: 1px dashed rgba(138, 122, 102, 0.35);
+  cursor: pointer;
+}
+
+.subtask-empty span:last-child { color: var(--cinnabar); }
+.subtask-empty:hover,
+.subtask-empty:focus-visible { border-color: rgba(176, 58, 46, 0.5); }
+
 .subtask-meter {
   height: 3px;
   margin: 0.45rem 0 0.35rem;

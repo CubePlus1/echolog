@@ -355,7 +355,15 @@
 
   function renderSubtaskPanel(recordId) {
     const progress = subtaskProgress(recordId);
-    if (progress.total === 0) return "";
+    const record = recordById(recordId);
+    const canAdd = record && record.status !== "cancelled";
+    if (progress.total === 0) {
+      return canAdd
+        ? `<button class="subtask-empty" type="button" data-act="new-child" data-parent-id="${escA(recordId)}">
+            <span>尚无支脉</span><span>添一支</span>
+          </button>`
+        : "";
+    }
     const effectiveTotal = progress.total - progress.cancelled;
     const visible = progress.children.slice(0, 4);
     const rows = visible.map((child) =>
@@ -371,7 +379,10 @@
     return `<section class="subtask-panel" aria-label="直接子任务">
       <div class="subtask-head">
         <span>支 脉</span>
-        <span>${progress.done}/${effectiveTotal} · ${progress.percent}%</span>
+        <span class="subtask-head-actions">
+          <span>${progress.done}/${effectiveTotal} · ${progress.percent}%</span>
+          ${canAdd ? `<button type="button" data-act="new-child" data-parent-id="${escA(recordId)}">添支</button>` : ""}
+        </span>
       </div>
       <div class="subtask-meter" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${progress.percent}">
         <span style="width:${progress.percent}%"></span>
@@ -588,7 +599,7 @@
         })
         .map((r) => {
           const branch = recordDepth(r) > 0 ? `${"· ".repeat(Math.min(recordDepth(r), 3))}` : "";
-          return `<option value="${escA(r.id)}">${esc(`${branch}${r.title}［${statusMark(r.status)}］`)}</option>`;
+          return `<option value="${escA(r.id)}"${r.id === formParentId ? " selected" : ""}>${esc(`${branch}${r.title}［${statusMark(r.status)}］`)}</option>`;
         })
         .join("");
       return `<div class="leaf-inner new-form">
@@ -614,7 +625,7 @@
           <div class="form-field">
             <label class="form-label">何 属</label>
             <select class="form-input form-select" id="nfParent" aria-label="父任务">
-              <option value="">根任务 · 无所隶</option>
+              <option value=""${formParentId ? "" : " selected"}>根任务 · 无所隶</option>
               ${parentOptions}
             </select>
           </div>
@@ -755,6 +766,7 @@
   /* ============ 任务操作 ============ */
 
   let formType = "task";
+  let formParentId = "";
 
   function isEditing() {
     const el = document.activeElement;
@@ -829,6 +841,14 @@
           ...(startTime ? { startTime, endTime, priority: 10 } : {}),
         });
         flash("已立例 · 立");
+      } else if (act === "new-child") {
+        formParentId = btn.dataset.parentId || "";
+        const parentSelect = $("nfParent");
+        if (parentSelect) parentSelect.value = formParentId;
+        const formIndex = state.faces.findIndex((face) => face.type === "form");
+        if (formIndex >= 0) flipTo(faceToFlip(formIndex));
+        btn.disabled = false;
+        return;
       } else if (act === "start") {
         const title = ($("nfTitle") ? $("nfTitle").value : "").trim();
         const errEl = $("nfError");
@@ -849,6 +869,7 @@
           tags: tags.length ? tags : undefined,
           source: "web",
         });
+        formParentId = "";
         flash("落笔 · 始");
         await refreshBook();
         // 翻到新任务那一面
@@ -905,6 +926,12 @@
       } else if (t.matches && t.matches("input.form-input")) {
         const startBtn = pages.querySelector(`[data-act="start"]`);
         if (startBtn) doAction(startBtn);
+      }
+    });
+
+    pages.addEventListener("change", (e) => {
+      if (e.target && e.target.id === "nfParent") {
+        formParentId = e.target.value;
       }
     });
   }
