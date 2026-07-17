@@ -1032,7 +1032,7 @@
 
   /* ============ 输入：键盘 / 滚轮 / 拖拽 ============ */
 
-  const INTERACTIVE = "input, textarea, select, button, .entry-text, .toc-scroll";
+  const INTERACTIVE = "input, textarea, select, button, .entry-text, .toc-scroll, .new-form, .live-entry.has-subtasks";
 
   function setupInput() {
     // 事件委托让控制按钮不受 3D 书页重排影响；controls 位于 book-scene

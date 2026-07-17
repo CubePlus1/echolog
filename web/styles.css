@@ -982,6 +982,11 @@ body {
 .live-timer.paused { color: var(--ink-faint); }
 
 .live-entry.has-subtasks .entry-rule { margin: 0.55rem 0 0.65rem; }
+.live-entry.has-subtasks {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
 .live-entry.has-subtasks .entry-meta { margin-bottom: 0.45rem; }
 .live-entry.has-subtasks .subtask-panel { margin-bottom: 0.35rem; }
 .live-entry.has-subtasks .live-timer {
@@ -1082,7 +1087,12 @@ body {
 }
 
 /* ---------- 始一事（新任务表单页） ---------- */
-.leaf-inner.new-form { gap: 0; }
+.leaf-inner.new-form {
+  gap: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
 
 .form-title {
   font-family: var(--kai);
