@@ -125,7 +125,7 @@ EchoLog 的近期方向不是做普通的工时计时器，而是成为本地优
 - **P0 · 大任务支持子任务**：记录支持多层父子关系，父任务可查看直接子任务和完成进度；后端/API、CLI、Web 分为三个实施子任务。
   - GitHub：[P0 Issue #1](https://github.com/CubePlus1/echolog/issues/1)（[#4 后端/API](https://github.com/CubePlus1/echolog/issues/4) · [#5 CLI](https://github.com/CubePlus1/echolog/issues/5) · [#6 Web](https://github.com/CubePlus1/echolog/issues/6)）
   - Trellis：`.trellis/tasks/07-17-p0-record-subtasks/`
-- **P0 · 可视化翻页 Bug**：修复立体书界面左侧“前页”按钮无法按下或无法翻页的问题；这是独立 P0，不从属于父子任务能力。
+- **P0 · 可视化左页命中 Bug**：修复 CSS 3D 翻页后，书本左页内部的目录、任务和父子导航按钮无法点击的问题；这是独立 P0，不从属于父子任务能力。
   - GitHub：[P0 Bug #3](https://github.com/CubePlus1/echolog/issues/3)
   - Trellis：`.trellis/tasks/07-17-p0-visual-left-button/`
 - **P1 · 个人成长路径可视化**：以时间、项目、标签、学习主题、结果、阻塞项和下一步为证据，生成可回溯的成长时间轴。

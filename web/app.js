@@ -696,12 +696,22 @@
   function layoutSheets() {
     const n = state.sheets.length;
     state.sheets.forEach((sheet, i) => {
+      const frontActive = i === state.flipped;
+      const backActive = i === state.flipped - 1;
       sheet.classList.toggle("flipped", i < state.flipped);
+      sheet.classList.toggle("page-right-active", frontActive);
+      sheet.classList.toggle("page-left-active", backActive);
       sheet.style.zIndex = i < state.flipped ? String(i + 1) : String(n - i);
       const depth = i < state.flipped ? (state.flipped - i) : (i - state.flipped);
       const dz = -depth * 0.55;
-      sheet.children[0].style.transform = `translateZ(${dz}px)`;
-      sheet.children[1].style.transform = `rotateY(180deg) translateZ(${dz}px)`;
+      const front = sheet.children[0];
+      const back = sheet.children[1];
+      front.style.transform = `translateZ(${dz}px)`;
+      back.style.transform = `rotateY(180deg) translateZ(${dz}px)`;
+      front.inert = !frontActive;
+      back.inert = !backActive;
+      front.setAttribute("aria-hidden", String(!frontActive));
+      back.setAttribute("aria-hidden", String(!backActive));
     });
   }
 

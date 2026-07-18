@@ -291,9 +291,13 @@ body {
   transform-style: preserve-3d;
   transform-origin: left center;
   transition: transform 1.05s cubic-bezier(0.4, 0.05, 0.2, 1);
+  pointer-events: none;
 }
 
 .sheet.flipped { transform: rotateY(-180deg); }
+
+.sheet.page-left-active,
+.sheet.page-right-active { pointer-events: auto; }
 
 .leaf {
   position: absolute;
@@ -307,7 +311,11 @@ body {
   color: var(--ink);
   border-radius: 3px 10px 10px 3px;
   box-shadow: inset 0 0 60px rgba(122, 96, 60, 0.18);
+  pointer-events: none;
 }
+
+.sheet.page-left-active .leaf.back,
+.sheet.page-right-active .leaf.front { pointer-events: auto; }
 
 .leaf.back {
   transform: rotateY(180deg);
