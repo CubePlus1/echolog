@@ -128,6 +128,9 @@ EchoLog 的近期方向不是做普通的工时计时器，而是成为本地优
 - **P0 · 可视化左页命中 Bug**：修复 CSS 3D 翻页后，书本左页内部的目录、任务和父子导航按钮无法点击的问题；这是独立 P0，不从属于父子任务能力。
   - GitHub：[P0 Bug #3](https://github.com/CubePlus1/echolog/issues/3)
   - Trellis：`.trellis/tasks/07-17-p0-visual-left-button/`
+- **P0 · 关闭任务无需二次确认**：Web 端点击“罢”后直接作废任务，保留操作结果提示，不再弹出确认框。
+  - GitHub：[P0 Bug #7](https://github.com/CubePlus1/echolog/issues/7)
+  - Trellis：`.trellis/tasks/07-18-p0-close-no-confirm/`
 - **P1 · 个人成长路径可视化**：以时间、项目、标签、学习主题、结果、阻塞项和下一步为证据，生成可回溯的成长时间轴。
   - GitHub：[P1 Issue #2](https://github.com/CubePlus1/echolog/issues/2)
   - Trellis：`.trellis/tasks/07-17-p1-growth-path-visualization/`
@@ -141,7 +144,7 @@ README 维护产品方向和里程碑，Trellis 维护实施上下文和验收�
 3. 完成后先验证验收标准，再关闭 GitHub Issue、归档 Trellis task，并更新 README 状态；历史 Issue 和归档任务保留，不直接删除。
 4. 三处内容冲突时，以已验证的实现和 Trellis task 为准，并在同一变更中同步修正 README 与 Issue。
 
-以上三项互相独立；只有 P0“子任务能力”的后端、CLI、Web 实施项属于父任务 #1。
+以上四项互相独立；只有 P0“子任务能力”的后端、CLI、Web 实施项属于父任务 #1。
 
 ## License
 

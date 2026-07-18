@@ -811,7 +811,6 @@
         await patchReq(`/records/${id}`, { action: "stop", result });
         flash("已收笔，此事载入史册 · 毕");
       } else if (act === "cancel") {
-        if (!window.confirm("作废此事？将以「罢」印载入书中。")) { btn.disabled = false; return; }
         await del(`/records/${id}`);
         flash("已作废 · 罢");
       } else if (act === "del-rule") {
