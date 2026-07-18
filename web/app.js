@@ -683,6 +683,15 @@
       pagesEl.appendChild(sheet);
       state.sheets.push(sheet);
     }
+
+    // Chrome 对 preserve-3d 中翻转背面的按钮命中不稳定。左页保留真实内容，
+    // 另用一个平面、透明的同构层接收按钮点击，再转发给真实可见按钮。
+    const leftHitProxy = document.createElement("div");
+    leftHitProxy.id = "leftPageHitProxy";
+    leftHitProxy.className = "left-page-hit-proxy";
+    leftHitProxy.setAttribute("aria-hidden", "true");
+    pagesEl.appendChild(leftHitProxy);
+
     layoutSheets();
     buildTimeline();
     updateIndicator();
@@ -690,6 +699,34 @@
     $("liveDot").hidden = data.active.length === 0;
 
     requestAnimationFrame(() => requestAnimationFrame(() => pagesEl.classList.remove("no-anim")));
+  }
+
+  function visibleLeftLeaf() {
+    return state.flipped > 0 ? state.sheets[state.flipped - 1]?.children[1] : null;
+  }
+
+  function syncLeftHitProxy() {
+    const proxy = $("leftPageHitProxy");
+    const source = visibleLeftLeaf();
+    if (!proxy) return;
+
+    proxy.hidden = !source;
+    proxy.innerHTML = source ? source.innerHTML : "";
+    if (!source) return;
+
+    // 克隆层只负责鼠标/触控命中，不能制造重复 id 或进入键盘焦点序列。
+    proxy.querySelectorAll("[id]").forEach((el) => el.removeAttribute("id"));
+    proxy.querySelectorAll("input, textarea, select").forEach((el) => {
+      el.removeAttribute("name");
+      el.tabIndex = -1;
+    });
+
+    const sourceButtons = source.querySelectorAll("button");
+    proxy.querySelectorAll("button").forEach((button, index) => {
+      button.dataset.hitSourceIndex = String(index);
+      button.tabIndex = -1;
+      button.disabled = sourceButtons[index]?.disabled ?? true;
+    });
   }
 
   // 维持正确堆叠：preserve-3d 下由真实 Z 值决定，每张 Z 必须唯一
@@ -713,6 +750,7 @@
       front.setAttribute("aria-hidden", String(!frontActive));
       back.setAttribute("aria-hidden", String(!backActive));
     });
+    syncLeftHitProxy();
   }
 
   function flipTo(target) {
@@ -897,6 +935,14 @@
     const pages = $("pages");
 
     pages.addEventListener("click", (e) => {
+      const hitProxy = e.target.closest("[data-hit-source-index]");
+      if (hitProxy) {
+        const sourceButtons = visibleLeftLeaf()?.querySelectorAll("button");
+        const sourceButton = sourceButtons?.[Number(hitProxy.dataset.hitSourceIndex)];
+        if (sourceButton && !sourceButton.disabled) sourceButton.click();
+        return;
+      }
+
       const recordGoto = e.target.closest("[data-goto-record]");
       if (recordGoto) {
         const id = recordGoto.dataset.gotoRecord;

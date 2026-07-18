@@ -317,6 +317,26 @@ body {
 .sheet.page-left-active .leaf.back,
 .sheet.page-right-active .leaf.front { pointer-events: auto; }
 
+/*
+ * Chrome 在 preserve-3d 翻页后可能无法命中左侧背面页的按钮。
+ * 此层复制左页排版但完全透明，只让按钮本体接收指针，再由 JS 转发给真实按钮。
+ */
+.left-page-hit-proxy {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 50%;
+  height: 100%;
+  z-index: 1000;
+  transform: translateZ(2px);
+  opacity: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.left-page-hit-proxy * { pointer-events: none !important; }
+.left-page-hit-proxy button { pointer-events: auto !important; }
+
 .leaf.back {
   transform: rotateY(180deg);
   border-radius: 10px 3px 3px 10px;
