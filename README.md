@@ -134,6 +134,9 @@ EchoLog 的近期方向不是做普通的工时计时器，而是成为本地优
 - **P1 · 个人成长路径可视化**：以时间、项目、标签、学习主题、结果、阻塞项和下一步为证据，生成可回溯的成长时间轴。
   - GitHub：[P1 Issue #2](https://github.com/CubePlus1/echolog/issues/2)
   - Trellis：`.trellis/tasks/07-17-p1-growth-path-visualization/`
+- **P1 · 人类 / Agent 工时与工作里程碑**：区分人类投入、Agent 运行、并行重叠和端到端历时；阶段完成时记录成果摘要、验证证据与工时快照，用于复盘和后续工作量估算。
+  - GitHub：[P1 Issue #8](https://github.com/CubePlus1/echolog/issues/8)
+  - Trellis：`.trellis/tasks/07-22-p1-actor-effort-milestones/`
 
 ### 三处任务同步规则
 
@@ -144,7 +147,7 @@ README 维护产品方向和里程碑，Trellis 维护实施上下文和验收�
 3. 完成后先验证验收标准，再关闭 GitHub Issue、归档 Trellis task，并更新 README 状态；历史 Issue 和归档任务保留，不直接删除。
 4. 三处内容冲突时，以已验证的实现和 Trellis task 为准，并在同一变更中同步修正 README 与 Issue。
 
-以上四项互相独立；只有 P0“子任务能力”的后端、CLI、Web 实施项属于父任务 #1。
+以上五项互相独立；只有 P0“子任务能力”的后端、CLI、Web 实施项属于父任务 #1。
 
 ## License
 
