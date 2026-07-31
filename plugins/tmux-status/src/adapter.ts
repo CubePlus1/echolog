@@ -124,8 +124,18 @@ function invalidOutput(message: string): PluginError {
 }
 
 function executionError(error: unknown): PluginError {
-  const value = error as { code?: string; name?: string; message?: string };
-  if (value?.name === "AbortError" || value?.code === "ETIMEDOUT") {
+  const value = error as {
+    code?: string;
+    name?: string;
+    message?: string;
+    killed?: boolean;
+    signal?: string;
+  };
+  if (
+    value?.name === "AbortError" ||
+    value?.code === "ETIMEDOUT" ||
+    (value?.killed === true && value?.signal === "SIGTERM")
+  ) {
     return new PluginError(
       "PLUGIN_TIMEOUT",
       "tmux-status command timed out",

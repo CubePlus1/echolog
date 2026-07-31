@@ -182,6 +182,23 @@ test("adapter maps missing executables and timeouts to structured errors", async
       error.code === "PLUGIN_TIMEOUT" &&
       error.statusCode === 504
   );
+
+  const execFileTimeout = new TmuxStatusAdapter(
+    context(async () => {
+      throw Object.assign(new Error("Command failed"), {
+        killed: true,
+        signal: "SIGTERM",
+      });
+    }),
+    config
+  );
+  await assert.rejects(
+    execFileTimeout.status(),
+    (error) =>
+      error instanceof PluginError &&
+      error.code === "PLUGIN_TIMEOUT" &&
+      error.statusCode === 504
+  );
 });
 
 test("session and pane observation identities survive reuse scenarios", () => {
