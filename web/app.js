@@ -1,3 +1,5 @@
+import { createPluginWebHost } from "./plugin-host.js";
+
 /**
  * 回声志 · EchoLog 立体前端逻辑
  * - CSS 3D 翻页书（每张 sheet 正反两面，翻转 rotateY）
@@ -30,6 +32,7 @@
   const post = (path, body) => api(path, { method: "POST", body: JSON.stringify(body || {}) });
   const patchReq = (path, body) => api(path, { method: "PATCH", body: JSON.stringify(body) });
   const del = (path) => api(path, { method: "DELETE" });
+  const pluginWebHost = createPluginWebHost(api);
 
   /* ============ 汉字数字 ============ */
 
@@ -189,6 +192,11 @@
     data.rules = rules;
     data.fetchedAt = Date.now();
     data.ok = true;
+    await pluginWebHost.refresh({
+      api,
+      refresh: refreshBook,
+      root: document.body,
+    });
   }
 
   async function loadLive() {

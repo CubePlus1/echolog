@@ -654,6 +654,55 @@ withJson(
   })
 );
 
+const plugins = program
+  .command("plugins")
+  .description("查看内置插件的启用状态、版本、能力与诊断结果。");
+
+withJson(
+  plugins
+    .command("list")
+    .description("列出所有内置插件；JSON 模式透传 /api/plugins。")
+).action(
+  action(async (thisCommand) => {
+    const result = await api("/api/plugins");
+    printSuccess(thisCommand, result, () => {
+      const items = (result as { plugins?: any[] }).plugins ?? [];
+      if (items.length === 0) {
+        console.log("暂无内置插件");
+        return;
+      }
+      for (const plugin of items) {
+        const error = plugin.error
+          ? ` · ${plugin.error.code}: ${plugin.error.message}`
+          : "";
+        console.log(
+          `${plugin.id}\t${plugin.state}\tv${plugin.version}\t${plugin.capabilities.join(",") || "-"}${error}`
+        );
+      }
+    });
+  })
+);
+
+withJson(
+  plugins
+    .command("doctor")
+    .description("检查已启用插件及其外部依赖；任一检查失败时退出码非零。")
+).action(
+  action(async (thisCommand) => {
+    const result = await api("/api/plugins/doctor");
+    printSuccess(thisCommand, result, () => {
+      for (const plugin of (result as { plugins: any[] }).plugins) {
+        console.log(`${plugin.id}\t${plugin.state}`);
+        for (const check of plugin.checks) {
+          console.log(
+            `  ${check.ok ? "ok" : "fail"}\t${check.id}\t${check.message}`
+          );
+        }
+      }
+    });
+  })
+);
+
 // el screen [date]
 const screen = program
   .command("screen")

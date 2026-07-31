@@ -4,7 +4,10 @@ import fastifyStatic from "@fastify/static";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import { existsSync } from "fs";
+import { PluginError } from "@echolog/plugin-sdk";
 import { loadConfig } from "../core/config.js";
+import { createPluginHost } from "../core/plugins/create.js";
+import { setCurrentPluginHost } from "../core/plugins/current.js";
 import {
   RecordNotFoundError,
   InvalidStateError,
@@ -16,6 +19,7 @@ import { noteRoutes } from "./routes/notes.js";
 import { summaryRoutes } from "./routes/summary.js";
 import { reportRoutes } from "./routes/reports.js";
 import { screenRoutes } from "./routes/screen.js";
+import { pluginRoutes } from "./routes/plugins.js";
 import { startScheduler, stopScheduler } from "../core/scheduler.js";
 import { startTracker, stopTracker } from "../core/tracker.js";
 
@@ -24,6 +28,9 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 export async function buildApp() {
   const config = loadConfig();
   const app = Fastify({ logger: true });
+  const pluginHost = createPluginHost(config, app.log);
+  await pluginHost.initialize();
+  setCurrentPluginHost(pluginHost);
 
   await app.register(cors, {
     origin: config.server.corsOrigins ?? false,
@@ -48,6 +55,14 @@ export async function buildApp() {
 
   // H-4 fix: error handler maps domain errors to HTTP status codes
   app.setErrorHandler((error, _req, reply) => {
+    if (error instanceof PluginError) {
+      return reply.code(error.statusCode).send({
+        error: error.message,
+        code: error.code,
+        pluginId: error.pluginId,
+        state: error.state,
+      });
+    }
     if (error instanceof RecordNotFoundError) {
       return reply.code(404).send({ error: error.message });
     }
@@ -76,6 +91,7 @@ export async function buildApp() {
   await app.register(summaryRoutes);
   await app.register(reportRoutes);
   await app.register(screenRoutes);
+  await pluginRoutes(app, pluginHost);
 
   app.get("/api/health", async () => ({
     status: "ok",
@@ -103,6 +119,11 @@ export async function buildApp() {
       return reply.sendFile("index.html");
     }
     return reply.code(404).send();
+  });
+
+  app.addHook("onClose", async () => {
+    await pluginHost.stop();
+    setCurrentPluginHost(null);
   });
 
   return app;

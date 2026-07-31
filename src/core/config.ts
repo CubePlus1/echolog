@@ -27,6 +27,13 @@ export interface Config {
     sample_seconds?: number;
     idle_seconds?: number;
   };
+  plugins?: Record<
+    string,
+    {
+      enabled?: boolean;
+      config?: Record<string, unknown>;
+    }
+  >;
   notifications: {
     enabled: boolean;
     mac: boolean;
@@ -52,6 +59,7 @@ export function loadConfig(): Config {
   const raw = readFileSync(configPath, "utf-8");
   const parsed = parse(raw) as Config;
   parsed.server.serveWeb = parsed.server.serveWeb ?? true;
+  parsed.plugins = parsed.plugins ?? {};
   cached = parsed;
   return cached;
 }
