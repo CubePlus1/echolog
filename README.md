@@ -148,6 +148,7 @@ EchoLog 的近期方向不是做普通的工时计时器，而是成为本地优
   - GitHub：[P1 Issue #8](https://github.com/CubePlus1/echolog/issues/8)
   - Trellis：`.trellis/tasks/07-22-p1-actor-effort-milestones/`
 - **P1 · 内置插件架构**：Core 插件平台与 screen-time 拆分已实现；tmux-status 观测层依赖独立 JSON v2 合约。显式 link 与 Agent 工时仍依赖前述 actor/span Core 能力。
+  - GitHub：[P1 Issue #10](https://github.com/CubePlus1/echolog/issues/10)（[tmux-status JSON v2 #1](https://github.com/CubePlus1/tmux-status/issues/1)）
   - Trellis：`.trellis/tasks/07-31-plugin-architecture/`
 
 ### 三处任务同步规则
