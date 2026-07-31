@@ -162,3 +162,18 @@ test("degrades a plugin that registers a non-namespaced route", async () => {
   assert.equal(pluginHost.list()[0]?.state, "degraded");
   assert.equal(pluginHost.routes().length, 0);
 });
+
+test("enforces declared permissions for external commands", async () => {
+  const pluginHost = host([{
+    manifest: manifest("no-exec"),
+    defaultEnabled: true,
+    async start(context) {
+      await context.exec({ executable: "true", args: [] });
+    },
+  }]);
+
+  await pluginHost.initialize();
+  const [plugin] = pluginHost.list();
+  assert.equal(plugin.state, "degraded");
+  assert.equal(plugin.error?.code, "PLUGIN_DEPENDENCY_MISSING");
+});

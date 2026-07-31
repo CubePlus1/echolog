@@ -53,6 +53,13 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+function validateRoute(pluginId: string, route: PluginRoute): void {
+  const namespaced = route.path.startsWith(`/api/plugins/${pluginId}/`);
+  if (!namespaced && !route.compatibilityAlias) {
+    throw new Error(`Plugin route must be namespaced: ${route.path}`);
+  }
+}
+
 function withTimeout<T>(
   timeoutMs: number,
   operation: (signal: AbortSignal) => Promise<T>
@@ -94,7 +101,8 @@ export class PluginHost {
         ...(definition.defaultConfig ?? {}),
         ...(settings?.config ?? {}),
       };
-      const routes: PluginRoute[] = [];
+      const routes: PluginRoute[] = [...(definition.routes ?? [])];
+      for (const route of routes) validateRoute(id, route);
       const reportSections: PluginReportSection[] = [];
       const jobs = new Map<string, PluginJobRuntime>();
       const info: PluginRuntimeInfo = {
@@ -116,10 +124,7 @@ export class PluginHost {
         config: freezeConfig(mergedConfig),
         logger: options.logger,
         registerRoute: (route) => {
-          const namespaced = route.path.startsWith(`/api/plugins/${id}/`);
-          if (!namespaced && !route.compatibilityAlias) {
-            throw new Error(`Plugin route must be namespaced: ${route.path}`);
-          }
+          validateRoute(id, route);
           routes.push(route);
         },
         registerJob: (job) => {
@@ -138,11 +143,33 @@ export class PluginHost {
           }
           reportSections.push(section);
         },
-        exec: (request: PluginCommandRequest, signal?: AbortSignal) =>
-          options.commandRunner(request, signal),
+        exec: (request: PluginCommandRequest, signal?: AbortSignal) => {
+          if (!definition.manifest.permissions.includes("process:exec")) {
+            throw new PluginError(
+              "PLUGIN_DEPENDENCY_MISSING",
+              `Plugin ${id} has not declared process:exec`,
+              id,
+              info.state,
+              403
+            );
+          }
+          return options.commandRunner(request, signal);
+        },
         service: <T>(name: string): T => {
           if (!Object.hasOwn(options.services ?? {}, name)) {
             throw new Error(`Plugin service is not available: ${name}`);
+          }
+          if (
+            name === "database.url" &&
+            !definition.manifest.permissions.includes("database:plugin")
+          ) {
+            throw new PluginError(
+              "PLUGIN_DEPENDENCY_MISSING",
+              `Plugin ${id} has not declared database:plugin`,
+              id,
+              info.state,
+              403
+            );
           }
           return options.services?.[name] as T;
         },

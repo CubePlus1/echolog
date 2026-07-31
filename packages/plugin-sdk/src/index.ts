@@ -125,6 +125,7 @@ export interface PluginContext {
 
 export interface PluginDefinition {
   manifest: PluginManifest;
+  routes?: PluginRoute[];
   defaultEnabled?: boolean;
   defaultConfig?: Record<string, unknown>;
   normalizeConfig?(

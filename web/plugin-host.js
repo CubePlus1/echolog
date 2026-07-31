@@ -31,6 +31,39 @@ export function createPluginWebHost(api) {
       }));
     },
 
+    faces() {
+      return [...modules.values()].flatMap(
+        (contribution) => contribution?.faces?.() ?? []
+      );
+    },
+
+    async loadData(target) {
+      for (const [id, contribution] of modules) {
+        if (!contribution?.load) continue;
+        try {
+          Object.assign(target, await contribution.load());
+        } catch (error) {
+          console.error(`Plugin Web data load failed: ${id}`, error);
+        }
+      }
+    },
+
+    renderFace(face, context) {
+      for (const contribution of modules.values()) {
+        const rendered = contribution?.renderFace?.(face, context);
+        if (rendered != null) return rendered;
+      }
+      return null;
+    },
+
+    async handleAction(action, context) {
+      for (const contribution of modules.values()) {
+        const result = await contribution?.handleAction?.(action, context);
+        if (result?.handled) return result;
+      }
+      return { handled: false };
+    },
+
     async stop() {
       for (const contribution of modules.values()) {
         await contribution?.unmount?.();

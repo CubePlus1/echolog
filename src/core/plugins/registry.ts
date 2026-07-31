@@ -1,4 +1,9 @@
 import type { PluginDefinition } from "@echolog/plugin-sdk";
+import { screenTimePlugin } from "@echolog/plugin-screen-time";
 
-// Bundled plugins are added explicitly by their implementation tasks.
-export const bundledPlugins: readonly PluginDefinition[] = [];
+export const bundledPlugins: readonly PluginDefinition[] = [screenTimePlugin];
+
+export const bundledPluginWebAssets = [{
+  prefix: "/plugins/screen-time/",
+  root: "screen-time/web",
+}] as const;

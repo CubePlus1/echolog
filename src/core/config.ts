@@ -60,6 +60,17 @@ export function loadConfig(): Config {
   const parsed = parse(raw) as Config;
   parsed.server.serveWeb = parsed.server.serveWeb ?? true;
   parsed.plugins = parsed.plugins ?? {};
+  if (parsed.tracker) {
+    const current = parsed.plugins["screen-time"] ?? {};
+    parsed.plugins["screen-time"] = {
+      enabled: current.enabled ?? parsed.tracker.enabled,
+      config: {
+        sample_seconds: parsed.tracker.sample_seconds,
+        idle_seconds: parsed.tracker.idle_seconds,
+        ...(current.config ?? {}),
+      },
+    };
+  }
   cached = parsed;
   return cached;
 }

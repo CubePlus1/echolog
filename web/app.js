@@ -178,18 +178,14 @@ import { createPluginWebHost } from "./plugin-host.js";
   }
 
   async function loadAll() {
-    const [records, active, summary, screen, rules] = await Promise.all([
+    const [records, active, summary] = await Promise.all([
       api("/records?limit=1000"),
       api("/records/active"),
       api("/summary/today"),
-      api("/screen/today").catch(() => null),
-      api("/screen/rules").catch(() => []),
     ]);
     applyRecords(records);
     data.active = active;
     data.summary = summary;
-    data.screen = screen;
-    data.rules = rules;
     data.fetchedAt = Date.now();
     data.ok = true;
     await pluginWebHost.refresh({
@@ -197,21 +193,19 @@ import { createPluginWebHost } from "./plugin-host.js";
       refresh: refreshBook,
       root: document.body,
     });
+    await pluginWebHost.loadData(data);
   }
 
   async function loadLive() {
-    const [records, active, summary, screen, rules] = await Promise.all([
+    const [records, active, summary] = await Promise.all([
       api("/records?limit=1000"),
       api("/records/active"),
       api("/summary/today"),
-      api("/screen/today").catch(() => data.screen),
-      api("/screen/rules").catch(() => data.rules),
     ]);
     applyRecords(records);
     data.active = active;
     data.summary = summary;
-    data.screen = screen;
-    data.rules = rules;
+    await pluginWebHost.loadData(data);
     data.fetchedAt = Date.now();
   }
 
@@ -306,8 +300,7 @@ import { createPluginWebHost } from "./plugin-host.js";
     });
     if (data.ok) {
       faces.push({ type: "summary" });
-      faces.push({ type: "screen" });
-      faces.push({ type: "rules" });
+      faces.push(...pluginWebHost.faces());
       for (const r of orderHierarchically(data.active)) {
         tocFace.active.push({
           id: r.id,
@@ -400,6 +393,14 @@ import { createPluginWebHost } from "./plugin-host.js";
   }
 
   function renderFace(face) {
+    const pluginFace = pluginWebHost.renderFace(face, {
+      data,
+      esc,
+      escA,
+      fmtDur,
+    });
+    if (pluginFace != null) return pluginFace;
+
     if (!face || face.type === "blank") return `<div class="leaf-inner"></div>`;
 
     if (face.type === "plate") {
@@ -486,72 +487,6 @@ import { createPluginWebHost } from "./plugin-host.js";
           <div class="ts-type t-learning"><span class="t-seal">学</span><span class="t-val" data-ts-type="learning">${esc(fmtDur(s.byType.learning))}</span></div>
           <div class="ts-type t-project"><span class="t-seal">造</span><span class="t-val" data-ts-type="project">${esc(fmtDur(s.byType.project))}</span></div>
           <div class="ts-type t-task"><span class="t-seal">务</span><span class="t-val" data-ts-type="task">${esc(fmtDur(s.byType.task))}</span></div>
-        </div>
-      </div>`;
-    }
-
-    if (face.type === "screen") {
-      const sc = data.screen;
-      let body;
-      if (!sc || sc.totalSeconds === 0) {
-        body = `<p class="toc-empty">屏中尚无光阴，或采样器未启。</p>`;
-      } else {
-        const labelOrder = sc.byLabel.map((b) => b.label);
-        const sections = labelOrder.map((label) => {
-          const labelTotal = sc.byLabel.find((b) => b.label === label).seconds;
-          const apps = sc.apps
-            .filter((a) => a.byLabel[label])
-            .sort((a, b) => b.byLabel[label] - a.byLabel[label]);
-          const top = apps.slice(0, 6);
-          const restSec = apps.slice(6).reduce((s, a) => s + a.byLabel[label], 0);
-          const rows = top.map((a) =>
-            `<div class="toc-row scr-row">
-              <span class="toc-name">${esc(a.appName)}</span>
-              <span class="toc-dots"></span>
-              <span class="toc-time">${esc(fmtDur(a.byLabel[label]))}</span>
-            </div>`).join("");
-          const rest = restSec > 0
-            ? `<div class="toc-row scr-row"><span class="toc-name scr-rest">其余 ${apps.length - 6} 应用</span><span class="toc-dots"></span><span class="toc-time">${esc(fmtDur(restSec))}</span></div>`
-            : "";
-          return `<div class="toc-section">${esc(label)} · ${esc(fmtDur(labelTotal))}</div>${rows}${rest}`;
-        }).join("");
-        body = sections;
-      }
-      return `<div class="leaf-inner toc-face screen-face">
-        <div class="toc-title">屏中光阴</div>
-        <div class="scr-total">今日在屏 ${esc(sc ? fmtDur(sc.totalSeconds) : "—")}</div>
-        <div class="toc-scroll" id="screenScroll">${body}</div>
-      </div>`;
-    }
-
-    if (face.type === "rules") {
-      const fmtMin = (m) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
-      const rows = data.rules.map((r) =>
-        `<div class="toc-row rule-row">
-          <span class="rule-when">${r.startMinute != null ? `${fmtMin(r.startMinute)}–${fmtMin(r.endMinute)}` : "全天"}</span>
-          <span class="toc-name">${esc(r.appMatch)}</span>
-          <span class="toc-dots"></span>
-          <span class="rule-label">${esc(r.label)}</span>
-          <button class="rule-del" type="button" data-act="del-rule" data-id="${escA(r.id)}" title="废除此例">✕</button>
-        </div>`).join("");
-      return `<div class="leaf-inner toc-face rules-face">
-        <div class="toc-title">立 例</div>
-        <div class="form-hint">同一应用，何时何名——如 04:00–06:00 的微信为「工作」，其余为「生活」</div>
-        <div class="toc-scroll">
-          ${rows || `<p class="toc-empty">尚未立例，屏中光阴皆「未分」。</p>`}
-        </div>
-        <div class="rule-form">
-          <div class="rule-form-grid">
-            <input class="form-input" type="text" id="rlApp" placeholder="何应用（如 微信）" />
-            <input class="form-input" type="text" id="rlLabel" placeholder="何名（如 工作）" />
-            <input class="form-input" type="text" id="rlStart" placeholder="何时 04:00（可空）" />
-            <input class="form-input" type="text" id="rlEnd" placeholder="何讫 06:00（可空）" />
-          </div>
-          <div class="form-error" id="rlError"></div>
-          <div class="rule-form-foot">
-            <span class="form-hint" style="margin:0">带时段者自动优先于全天例</span>
-            <button class="seal-btn" type="button" data-act="add-rule"><span class="s-face">立</span><span class="s-label">立例</span></button>
-          </div>
         </div>
       </div>`;
     }
@@ -845,6 +780,17 @@ import { createPluginWebHost } from "./plugin-host.js";
     const id = btn.dataset.id;
     btn.disabled = true;
     try {
+      const pluginResult = await pluginWebHost.handleAction(act, {
+        id,
+        $,
+        confirm: (message) => window.confirm(message),
+      });
+      if (pluginResult.handled) {
+        if (pluginResult.message) flash(pluginResult.message);
+        if (pluginResult.refresh !== false) await refreshBook({});
+        else btn.disabled = false;
+        return;
+      }
       if (act === "pause") {
         await patchReq(`/records/${id}`, { action: "pause" });
         flash("已暂停 · 憩");
@@ -859,43 +805,6 @@ import { createPluginWebHost } from "./plugin-host.js";
       } else if (act === "cancel") {
         await del(`/records/${id}`);
         flash("已作废 · 罢");
-      } else if (act === "del-rule") {
-        if (!window.confirm("废除此例？屏中光阴将按余例重新归名。")) { btn.disabled = false; return; }
-        await del(`/screen/rules/${id}`);
-        flash("已废除 · 例消");
-      } else if (act === "add-rule") {
-        const errEl = $("rlError");
-        const appMatch = ($("rlApp") ? $("rlApp").value : "").trim();
-        const label = ($("rlLabel") ? $("rlLabel").value : "").trim();
-        const startTime = ($("rlStart") ? $("rlStart").value : "").trim();
-        const endTime = ($("rlEnd") ? $("rlEnd").value : "").trim();
-        const timeRe = /^([01]\d|2[0-3]):([0-5]\d)$/;
-        if (!appMatch || !label) {
-          if (errEl) errEl.textContent = "何应用、何名，缺一不可。";
-          btn.disabled = false;
-          return;
-        }
-        if ((startTime === "") !== (endTime === "")) {
-          if (errEl) errEl.textContent = "何时、何讫须成对，或都留空表全天。";
-          btn.disabled = false;
-          return;
-        }
-        if (startTime && (!timeRe.test(startTime) || !timeRe.test(endTime))) {
-          if (errEl) errEl.textContent = "时刻格式须为 HH:MM，如 04:00。";
-          btn.disabled = false;
-          return;
-        }
-        if (startTime && startTime === endTime) {
-          if (errEl) errEl.textContent = "何时与何讫相同；全天请两者留空。";
-          btn.disabled = false;
-          return;
-        }
-        await post("/screen/rules", {
-          appMatch,
-          label,
-          ...(startTime ? { startTime, endTime, priority: 10 } : {}),
-        });
-        flash("已立例 · 立");
       } else if (act === "new-child") {
         formParentId = btn.dataset.parentId || "";
         const parentSelect = $("nfParent");
