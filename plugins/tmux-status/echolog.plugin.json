@@ -1,0 +1,28 @@
+{
+  "manifestVersion": 1,
+  "id": "tmux-status",
+  "version": "1.0.0",
+  "apiVersion": "1",
+  "displayName": "tmux-status",
+  "description": "Validated adapter and resource observations for the external tmux-status CLI",
+  "entries": {
+    "server": "./dist/index.js",
+    "cli": "./dist/cli.js"
+  },
+  "capabilities": [
+    "tmux-status",
+    "tmux-resource-observations",
+    "tmux-manual-marks"
+  ],
+  "permissions": [
+    "database:plugin",
+    "process:exec"
+  ],
+  "requires": {
+    "coreApi": "^1.0.0",
+    "executables": [
+      "tmux-status"
+    ]
+  },
+  "configSchema": "./config.schema.json"
+}

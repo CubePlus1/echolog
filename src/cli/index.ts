@@ -703,6 +703,106 @@ withJson(
   })
 );
 
+function printTmuxStatus(snapshot: any): void {
+  console.log(
+    `tmux panes: ${snapshot.pane_count} · anomalies: ${snapshot.anomaly_count}`
+  );
+  for (const pane of snapshot.panes) {
+    const tools = pane.tools.length ? pane.tools.join(",") : "-";
+    const anomalies = pane.anomalies.length
+      ? ` !${pane.anomalies.join("+")}`
+      : "";
+    console.log(
+      `  ${pane.target}\t${tools}\tCPU ${pane.cpu_percent}%\tMEM ${pane.memory_mb}MB${anomalies}`
+    );
+  }
+}
+
+const tmux = program
+  .command("tmux")
+  .description("查看 tmux-status 观测、手动标记和依赖诊断。");
+
+withJson(
+  tmux
+    .command("status")
+    .description("获取一份已校验的 tmux-status JSON 快照。")
+).action(
+  action(async (thisCommand) => {
+    const snapshot = await api("/api/plugins/tmux-status/status");
+    printSuccess(thisCommand, snapshot, () => printTmuxStatus(snapshot));
+  })
+);
+
+withJson(
+  tmux
+    .command("watch")
+    .description("通过 EchoLog API 持续轮询 tmux 状态；JSON 模式输出 NDJSON。")
+    .option("--interval <seconds>", "轮询间隔秒数，最小 1", "2")
+).action(
+  action(async (thisCommand, opts: { interval: string }) => {
+    const interval = Number(opts.interval);
+    if (!Number.isFinite(interval) || interval < 1) {
+      throw new CliUsageError("--interval 必须是大于或等于 1 的数字");
+    }
+    while (true) {
+      const snapshot = await api("/api/plugins/tmux-status/status");
+      if (jsonMode(thisCommand)) {
+        console.log(JSON.stringify(snapshot));
+      } else {
+        console.clear();
+        printTmuxStatus(snapshot);
+      }
+      await new Promise((resolve) => setTimeout(resolve, interval * 1_000));
+    }
+  })
+);
+
+withJson(
+  tmux
+    .command("mark <target> <state>")
+    .description("设置 active/inactive 手动标记；state=auto 时解除标记。")
+    .option("--note <note>", "可选标记说明", "")
+).action(
+  action(
+    async (
+      thisCommand,
+      target: string,
+      state: string,
+      opts: { note: string }
+    ) => {
+      if (state !== "active" && state !== "inactive" && state !== "auto") {
+        throw new CliUsageError("state 只能是 active、inactive 或 auto");
+      }
+      const result = await post("/api/plugins/tmux-status/mark", {
+        target,
+        state,
+        note: opts.note,
+      });
+      printSuccess(thisCommand, result, () => {
+        console.log((result as { message: string }).message);
+      });
+    }
+  )
+);
+
+withJson(
+  tmux
+    .command("doctor")
+    .description("检查 tmux-status 可执行程序及插件配置。")
+).action(
+  action(async (thisCommand) => {
+    const result = await api("/api/plugins/tmux-status/doctor");
+    printSuccess(thisCommand, result, () => {
+      for (const check of (result as { checks: any[] }).checks) {
+        console.log(
+          `${check.ok ? "ok" : "fail"}\t${check.id}\t${check.message}`
+        );
+      }
+    });
+    if (!(result as { ok: boolean }).ok) process.exitCode = 1;
+  })
+);
+
 // el screen [date]
 const screen = program
   .command("screen")

@@ -33,6 +33,14 @@ plugins:
       # 前台应用播放视频或通话时不受空闲阈值影响。
       sample_seconds: 5
       idle_seconds: 180
+  tmux-status:
+    enabled: false
+    config:
+      executable: "tmux-status"
+      timeout_ms: 5000
+      collection_interval_seconds: 60
+      cpu_threshold: 80
+      memory_threshold_mb: 1024
 
 notifications:
   enabled: true
