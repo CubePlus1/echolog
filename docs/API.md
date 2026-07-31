@@ -179,9 +179,24 @@ curl -X POST http://localhost:19827/api/records/active/notes \
 curl "http://localhost:19827/api/records/<id>/notes"
 ```
 
-### 屏幕使用（macOS 被动采样）
+### 插件状态
 
-daemon 每 5 秒采样前台应用（可在 `config.yaml` 的 `tracker` 段关闭/调参），落成连续使用片段。分类**在查询时**按规则计算——改规则即可追溯重分历史。
+```bash
+# 清单：enabled/state/version/capabilities/permissions/error
+curl "http://localhost:19827/api/plugins"
+
+# 执行各插件依赖检查；任一启用插件失败时返回 503
+curl "http://localhost:19827/api/plugins/doctor"
+```
+
+插件 API 使用 `/api/plugins/<id>/*`。disabled/degraded 插件不会影响
+`/api/health`，其自身端点返回结构化 503。
+
+### screen-time（macOS 被动采样）
+
+screen-time 内置插件默认启用。它每 5 秒采样前台应用（通过
+`plugins.screen-time.config` 调参），落成连续使用片段。分类**在查询时**
+按规则计算——改规则即可追溯重分历史。
 
 ```bash
 # 今日屏幕使用：{ date, totalSeconds, byLabel, apps, segments }
@@ -207,6 +222,10 @@ curl -X POST http://localhost:19827/api/screen/rules \
 curl -X DELETE http://localhost:19827/api/screen/rules/<id>
 ```
 
+以上 `/api/screen/*` 是兼容别名；规范路径为
+`/api/plugins/screen-time/*`，响应相同。插件禁用时两者均返回
+`PLUGIN_DISABLED`。
+
 规则语义：
 
 - `appMatch`：大小写不敏感**子串**，同时匹配 bundle id（`com.tencent.xinWeChat`）与应用名（`微信`）
@@ -214,6 +233,29 @@ curl -X DELETE http://localhost:19827/api/screen/rules/<id>
 - `weekdays`：整数数组，0=周日；省略即每天
 - `priority`：整数，高者胜；平局时带时段的规则胜过全天规则
 - 片段会按规则时段边界自动切开，各段独立归名；无匹配规则 → `未分`
+
+### tmux-status
+
+tmux-status 插件默认禁用，只通过无 shell 的 `execFile` 适配外部
+`tmux-status` 可执行程序。
+
+```bash
+# 已校验但未包装的上游 JSON snapshot
+curl "http://localhost:19827/api/plugins/tmux-status/status"
+
+# 显式手动标记；state: active | inactive | auto
+curl -X POST http://localhost:19827/api/plugins/tmux-status/mark \
+  -H "Content-Type: application/json" \
+  -d '{"target":"%3","state":"active","note":"release task"}'
+
+# executable 诊断
+curl "http://localhost:19827/api/plugins/tmux-status/doctor"
+```
+
+无 tmux server 是成功空结果。缺 executable、非零退出、超时、损坏 JSON
+和不支持的 schema version 会分别返回插件错误。观测不会自动创建 Agent
+工时；CPU、selected pane、进程存活和 `activity_source=auto` 都不是有效工时
+判据。
 
 ### 汇总与日报
 
@@ -241,6 +283,9 @@ curl -X POST http://localhost:19827/api/sync \
 | 401 | 缺少或错误的 API key（仅非本机请求） |
 | 404 | 记录不存在 / 未知 API 路径 |
 | 409 | 状态不允许该操作（如停止一条已完成的记录） |
+| 502 | 插件外部命令失败或输出损坏 |
+| 503 | 插件禁用、degraded 或缺少依赖 |
+| 504 | 插件外部命令超时 |
 | 500 | 服务端错误 |
 
 错误响应至少包含 `{"error": "<message>"}`。

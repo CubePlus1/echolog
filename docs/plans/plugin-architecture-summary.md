@@ -49,11 +49,13 @@ disabled
 
 `PluginContext` 只暴露子 logger、插件配置、受限路由、非重入 job、插件迁移、日报 section、外部命令 runner 和必要的 Core service。首版不提供原始 Fastify、Core DB 句柄或宽泛事件总线。
 
-插件权限是审计声明，不是假装存在的进程级沙箱。故障隔离依靠事务、超时、AbortSignal、能力边界和逐插件错误捕获。
+插件权限不是进程级沙箱，但 Host 会在 `process:exec` 和
+`database:plugin` 调用点强制检查声明。故障隔离依靠事务、超时、
+AbortSignal、能力边界和逐插件错误捕获。
 
 ## 运行协议
 
-- `GET /api/plugins` 返回版本、配置状态、运行状态、capabilities、依赖检查、最近错误和失败次数。
+- `GET /api/plugins` 返回版本、配置状态、运行状态、capabilities、最近错误和失败次数；依赖检查由 `GET /api/plugins/doctor` 返回。
 - disabled 或 degraded 插件端点返回 HTTP 503：
 
 ```json
@@ -159,4 +161,3 @@ tmux-status 仓库另建 `json-contract-v2` 任务，作为 observability 的前
 - Codex 默认是 inline dispatch；仓库没有 `.agents/` 或 `.codex/`，但已有 `.claude/` helpers 和 `.trellis/agents/` channel role cards。
 - 当前 Trellis 仍识别为 single-repo；创建 pnpm workspace 后应同步 `.trellis/config.yaml` packages。
 - `p1-actor-effort-milestones` 仍在 planning，context 校验通过，但缺少复杂任务应有的 `implement.md`。
-

@@ -12,7 +12,7 @@
 - **父子任务**：一个大任务可挂多层小任务；服务端防止自指/成环，CLI 与 Web 可创建、查询并查看直接子任务进度
 - **笔记**：给任意记录追加 `note | blocker | next`
 - **补录与编辑**：`el add --at --for`、`el edit`
-- **屏幕使用**（macOS）：每 5 秒采样前台应用，落成连续片段；分类规则在**查询时**计算——改规则即可追溯重分全部历史
+- **内置插件**：screen-time 采样和追溯分类前台应用；tmux-status 通过外部 CLI 提供结构化 pane/资源观测
 - **汇总与日报**：今日/指定日汇总、日报 Markdown 生成、可同步到指定目录
 - **提醒**（可选）：任务超时、空闲提醒、macOS 通知 + ntfy 推送到手机
 - **三个界面，一套 REST API**：免构建的 Web 控制台、`el` CLI、HTTP API（`docs/API.md`）
@@ -68,6 +68,8 @@ el report                        # 输出日报 Markdown
 el status --json          # 今日概览 + 活跃任务
 el log --json -n 50       # 历史记录
 el screen --json          # 今日屏幕使用（macOS）
+el plugins list --json    # 内置插件清单与状态
+el tmux status --json     # tmux-status 原始快照（插件默认禁用）
 ```
 
 ## 配置
@@ -78,7 +80,8 @@ el screen --json          # 今日屏幕使用（macOS）
 |---|---|
 | `server` | 端口（默认 19827）、`apiKey`（本机豁免，非本机必带）、`serveWeb`（false = 纯 API 服务）、`corsOrigins`（跨源白名单，默认不允许跨源） |
 | `database` | PostgreSQL 连接（与 docker-compose 默认值对应） |
-| `tracker` | 屏幕采样开关与频率（仅 macOS） |
+| `plugins.screen-time` | 屏幕采样开关、频率与空闲阈值（默认启用） |
+| `plugins.tmux-status` | 外部 executable、超时、采样频率与异常阈值（默认禁用） |
 | `sync` | 日报 Markdown 同步目标目录 |
 | `notifications` | macOS 通知、ntfy 推送、超时/空闲/日报提醒规则 |
 
@@ -108,13 +111,20 @@ launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.echolog.daemon.plist
 
 ## 架构
 
-```
-web (vanilla JS, 免构建)  ─┐
-                            ├─→  src/server (Fastify, /api/*)  ─→  src/core (领域逻辑, Drizzle + PostgreSQL)
-src/cli (el, HTTP 瘦客户端) ─┘
+```text
+Web Shell / el CLI
+        |
+EchoLog Core (records, notes, subtasks, reports, sync)
+        |
+Bundled Plugin API v1
+        |-- screen-time
+        `-- tmux-status -> external tmux-status executable
 ```
 
 一切能力沉在服务端：客户端不复刻推断/校验逻辑，新客户端（包括未来的 MCP 适配层）以 HTTP 瘦客户端形式接入即可。开发工作流由 [Trellis](.trellis/workflow.md) 管理，编码规范见 `.trellis/spec/`。
+
+插件协议、信任边界、manifest、生命周期、迁移和错误码见
+[Bundled Plugin API v1](docs/PLUGIN_API.md)。
 
 ## 产品路线与任务管理
 
@@ -137,6 +147,8 @@ EchoLog 的近期方向不是做普通的工时计时器，而是成为本地优
 - **P1 · 人类 / Agent 工时与工作里程碑**：区分人类投入、Agent 运行、并行重叠和端到端历时；阶段完成时记录成果摘要、验证证据与工时快照，用于复盘和后续工作量估算。
   - GitHub：[P1 Issue #8](https://github.com/CubePlus1/echolog/issues/8)
   - Trellis：`.trellis/tasks/07-22-p1-actor-effort-milestones/`
+- **P1 · 内置插件架构**：Core 插件平台与 screen-time 拆分已实现；tmux-status 观测层依赖独立 JSON v2 合约。显式 link 与 Agent 工时仍依赖前述 actor/span Core 能力。
+  - Trellis：`.trellis/tasks/07-31-plugin-architecture/`
 
 ### 三处任务同步规则
 
