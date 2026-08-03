@@ -185,12 +185,14 @@ curl "http://localhost:19827/api/records/<id>/notes"
 # 清单：enabled/state/version/capabilities/permissions/error
 curl "http://localhost:19827/api/plugins"
 
-# 执行各插件依赖检查；任一启用插件失败时返回 503
+# 执行各插件依赖检查；任一启用插件失败时返回 503，且响应保留 error/ok/plugins
 curl "http://localhost:19827/api/plugins/doctor"
 ```
 
 插件 API 使用 `/api/plugins/<id>/*`。disabled/degraded 插件不会影响
-`/api/health`，其自身端点返回结构化 503。
+`/api/health`，其自身端点返回结构化 503。doctor 失败体为
+`{"error":"...","ok":false,"plugins":[...]}`，因此 CLI 在非零退出时仍可
+展示每个插件的检查结果。
 
 ### screen-time（macOS 被动采样）
 
@@ -248,7 +250,7 @@ curl -X POST http://localhost:19827/api/plugins/tmux-status/mark \
   -H "Content-Type: application/json" \
   -d '{"target":"%3","state":"active","note":"release task"}'
 
-# executable 诊断
+# executable 版本和真实 status JSON contract 诊断
 curl "http://localhost:19827/api/plugins/tmux-status/doctor"
 ```
 

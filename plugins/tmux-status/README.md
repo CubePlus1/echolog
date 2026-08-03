@@ -19,6 +19,9 @@ plugins:
 The adapter calls the configured executable with argument arrays and no shell.
 It accepts the migration-window v1 JSON envelope and the versioned v2 contract,
 rejecting corrupt or unsupported output before returning or storing it.
+`doctor` accepts the matching `0.1.x` and `0.2.x` executable lines, then runs a
+real `status --json` request through the same schema validation used by normal
+status calls and scheduled collection.
 
 Plugin tables retain only session/pane instance identity, detected tool names,
 observation times, sample count, average/peak CPU, peak memory and anomaly

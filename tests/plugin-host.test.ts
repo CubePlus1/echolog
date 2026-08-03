@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import Fastify from "fastify";
 import {
   PLUGIN_API_VERSION,
   PluginError,
@@ -8,6 +9,7 @@ import {
   type PluginManifest,
 } from "@echolog/plugin-sdk";
 import { PluginHost } from "../src/core/plugins/host.js";
+import { pluginRoutes } from "../src/server/routes/plugins.js";
 
 const logger: PluginLogger = {
   debug() {},
@@ -176,4 +178,72 @@ test("enforces declared permissions for external commands", async () => {
   const [plugin] = pluginHost.list();
   assert.equal(plugin.state, "degraded");
   assert.equal(plugin.error?.code, "PLUGIN_DEPENDENCY_MISSING");
+});
+
+test("releases a scheduled job after a non-cooperative operation times out", async () => {
+  let runs = 0;
+  const signals: AbortSignal[] = [];
+  const pluginHost = host([{
+    manifest: manifest("hanging-job"),
+    defaultEnabled: true,
+    register(context) {
+      context.registerJob({
+        id: "hang",
+        intervalMs: 5,
+        timeoutMs: 10,
+        run(signal) {
+          runs++;
+          signals.push(signal);
+          return new Promise<void>(() => {});
+        },
+      });
+    },
+  }]);
+
+  await pluginHost.initialize();
+  const deadline = Date.now() + 250;
+  while (runs < 2 && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+
+  assert.ok(runs >= 2, "the scheduler should start another run after timeout");
+  assert.equal(signals[0]?.aborted, true);
+  assert.equal(pluginHost.list()[0]?.error?.code, "PLUGIN_TIMEOUT");
+  await pluginHost.stop();
+});
+
+test("plugin doctor failures use a structured 503 response", async () => {
+  const pluginHost = host([{
+    manifest: manifest("unhealthy"),
+    defaultEnabled: true,
+    doctor() {
+      return [{ id: "dependency", ok: false, message: "dependency failed" }];
+    },
+  }]);
+  await pluginHost.initialize();
+  const app = Fastify();
+  await pluginRoutes(app, pluginHost);
+
+  const response = await app.inject({ method: "GET", url: "/api/plugins/doctor" });
+  assert.equal(response.statusCode, 503);
+  assert.deepEqual(response.json(), {
+    error: "One or more enabled plugin checks failed",
+    ok: false,
+    plugins: [{
+      id: "unhealthy",
+      displayName: "unhealthy",
+      version: "1.0.0",
+      apiVersion: PLUGIN_API_VERSION,
+      configured: false,
+      enabled: true,
+      state: "ready",
+      capabilities: [],
+      permissions: [],
+      failureCount: 0,
+      checks: [{ id: "dependency", ok: false, message: "dependency failed" }],
+    }],
+  });
+
+  await app.close();
+  await pluginHost.stop();
 });

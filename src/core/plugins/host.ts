@@ -368,16 +368,35 @@ export class PluginHost {
     if (job.running || runtime.info.state !== "ready") return;
     job.running = true;
     job.abortController = new AbortController();
-    const timer = setTimeout(
-      () => job.abortController?.abort(),
-      job.definition.timeoutMs ?? Math.min(job.definition.intervalMs, 30_000)
-    );
+    const timeoutMs =
+      job.definition.timeoutMs ?? Math.min(job.definition.intervalMs, 30_000);
+    const controller = job.abortController;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<never>((_resolve, reject) => {
+      timer = setTimeout(() => {
+        controller.abort();
+        reject(new PluginError(
+          "PLUGIN_TIMEOUT",
+          `Plugin job ${runtime.info.id}/${job.definition.id} timed out after ${timeoutMs}ms`,
+          runtime.info.id,
+          runtime.info.state,
+          504
+        ));
+      }, timeoutMs);
+    });
     try {
-      await job.definition.run(job.abortController.signal);
+      await Promise.race([
+        Promise.resolve(job.definition.run(controller.signal)),
+        timeout,
+      ]);
     } catch (error) {
-      this.recordError(runtime, error, "PLUGIN_DEGRADED");
+      this.recordError(
+        runtime,
+        error,
+        error instanceof PluginError ? error.code : "PLUGIN_DEGRADED"
+      );
     } finally {
-      clearTimeout(timer);
+      if (timer) clearTimeout(timer);
       job.abortController = null;
       job.running = false;
     }

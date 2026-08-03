@@ -246,3 +246,61 @@ test("manual mark passes target, state, and note as separate arguments", async (
   ]);
   assert.equal(result.message, "Marked %3 as active.");
 });
+
+test("doctor validates the executable version and live status contract", async () => {
+  const requests: string[][] = [];
+  const adapter = new TmuxStatusAdapter(
+    context(async (request) => {
+      requests.push(request.args);
+      if (request.args[0] === "--version") {
+        return { stdout: "0.2.0\n", stderr: "", exitCode: 0 };
+      }
+      return { stdout: JSON.stringify(payload()), stderr: "", exitCode: 0 };
+    }),
+    config
+  );
+
+  const result = await adapter.doctor();
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.checks.map((check) => [check.id, check.ok]), [
+    ["executable", true],
+    ["version", true],
+    ["status-contract", true],
+  ]);
+  assert.equal(requests.length, 2);
+  assert.equal(requests[1]?.[0], "status");
+});
+
+test("doctor rejects unsupported versions before collecting status", async () => {
+  let requests = 0;
+  const adapter = new TmuxStatusAdapter(
+    context(async () => {
+      requests++;
+      return { stdout: "0.0.9\n", stderr: "", exitCode: 0 };
+    }),
+    config
+  );
+
+  const result = await adapter.doctor();
+  assert.equal(result.ok, false);
+  assert.equal(requests, 1);
+  assert.deepEqual(result.checks.map((check) => [check.id, check.ok]), [
+    ["executable", true],
+    ["version", false],
+  ]);
+});
+
+test("doctor reports malformed live status output as a contract failure", async () => {
+  const adapter = new TmuxStatusAdapter(
+    context(async (request) => request.args[0] === "--version"
+      ? { stdout: "tmux-status 0.1.4\n", stderr: "", exitCode: 0 }
+      : { stdout: "{broken", stderr: "", exitCode: 0 }),
+    config
+  );
+
+  const result = await adapter.doctor();
+  assert.equal(result.ok, false);
+  const contract = result.checks.find((check) => check.id === "status-contract");
+  assert.equal(contract?.ok, false);
+  assert.deepEqual(contract?.details, { code: "PLUGIN_OUTPUT_INVALID" });
+});

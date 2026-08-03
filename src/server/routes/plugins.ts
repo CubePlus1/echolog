@@ -24,7 +24,11 @@ export async function pluginRoutes(app: FastifyInstance, host: PluginHost) {
 
   app.get("/api/plugins/doctor", async (_req, reply) => {
     const result = await host.doctor();
-    return reply.code(result.ok ? 200 : 503).send(result);
+    if (result.ok) return reply.send(result);
+    return reply.code(503).send({
+      error: "One or more enabled plugin checks failed",
+      ...result,
+    });
   });
 
   for (const { pluginId, route } of host.routes()) {

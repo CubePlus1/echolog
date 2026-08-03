@@ -92,13 +92,18 @@ The SDK exposes:
 - immutable normalized plugin configuration;
 - structured logger;
 - namespaced route registration;
-- non-overlapping scheduled jobs with timeout and `AbortSignal`;
+- non-overlapping scheduled jobs with a rejecting timeout race and
+  `AbortSignal` cancellation;
 - optional Markdown daily-report sections;
 - bounded external command execution;
 - explicitly named Core services.
 
 It does not expose the Fastify instance, the Core Drizzle handle, a general
 event bus, shell execution, or hooks that replace Core record statistics.
+
+Job timeouts do not assume cooperative cancellation. The Host aborts the
+signal and also rejects the scheduler's awaited race, so an operation that
+ignores `AbortSignal` cannot leave the job permanently marked as running.
 
 ## Routes and errors
 
@@ -136,7 +141,9 @@ Stable error codes:
 | `PLUGIN_OUTPUT_INVALID` | 502 |
 
 `GET /api/health` reports Core health. Plugin failures appear in
-`GET /api/plugins` and `GET /api/plugins/doctor`.
+`GET /api/plugins` and `GET /api/plugins/doctor`. A failed doctor request uses
+HTTP 503 and retains the normal error envelope plus diagnostics:
+`{"error":"...","ok":false,"plugins":[...]}`.
 
 ## Database migrations
 

@@ -165,6 +165,18 @@ function executionError(error: unknown): PluginError {
   );
 }
 
+function readSupportedVersion(output: string): string | null {
+  const match = output
+    .trim()
+    .match(/^(?:tmux-status\s+)?(\d+)\.(\d+)\.(\d+)(?:[-+][0-9A-Za-z.-]+)?$/);
+  if (!match) return null;
+  const major = Number(match[1]);
+  const minor = Number(match[2]);
+  return major === 0 && (minor === 1 || minor === 2)
+    ? `${match[1]}.${match[2]}.${match[3]}`
+    : null;
+}
+
 export class TmuxStatusAdapter {
   constructor(
     private readonly context: PluginContext,
@@ -241,23 +253,57 @@ export class TmuxStatusAdapter {
   }
 
   async doctor() {
+    const checks = [];
     try {
       const result = await this.context.exec({
         executable: this.config.executable,
         args: ["--version"],
         timeoutMs: this.config.timeoutMs,
       });
-      return {
-        ok: result.exitCode === 0,
-        checks: [{
-          id: "executable",
-          ok: result.exitCode === 0,
-          message:
-            result.exitCode === 0
-              ? result.stdout.trim() || "tmux-status is available"
-              : result.stderr.trim() || `exit ${result.exitCode}`,
-        }],
-      };
+      if (result.exitCode !== 0) {
+        return {
+          ok: false,
+          checks: [{
+            id: "executable",
+            ok: false,
+            message: result.stderr.trim() || `exit ${result.exitCode}`,
+          }],
+        };
+      }
+
+      const versionOutput = result.stdout.trim() || result.stderr.trim();
+      checks.push({
+        id: "executable",
+        ok: true,
+        message: versionOutput || "tmux-status is available",
+      });
+      const version = readSupportedVersion(versionOutput);
+      checks.push({
+        id: "version",
+        ok: version !== null,
+        message: version
+          ? `tmux-status ${version} is supported`
+          : `Unsupported tmux-status version: ${versionOutput || "unknown"}`,
+      });
+      if (!version) return { ok: false, checks };
+
+      try {
+        const snapshot = await this.status();
+        checks.push({
+          id: "status-contract",
+          ok: true,
+          message: `schema v${snapshot.schema_version ?? 1} status output is valid`,
+        });
+      } catch (error) {
+        const mapped = error instanceof PluginError ? error : executionError(error);
+        checks.push({
+          id: "status-contract",
+          ok: false,
+          message: mapped.message,
+          details: { code: mapped.code },
+        });
+      }
+      return { ok: checks.every((check) => check.ok), checks };
     } catch (error) {
       const mapped = executionError(error);
       return {

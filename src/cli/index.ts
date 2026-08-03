@@ -689,19 +689,49 @@ withJson(
     .description("检查已启用插件及其外部依赖；任一检查失败时退出码非零。")
 ).action(
   action(async (thisCommand) => {
-    const result = await api("/api/plugins/doctor");
-    printSuccess(thisCommand, result, () => {
-      for (const plugin of (result as { plugins: any[] }).plugins) {
-        console.log(`${plugin.id}\t${plugin.state}`);
-        for (const check of plugin.checks) {
-          console.log(
-            `  ${check.ok ? "ok" : "fail"}\t${check.id}\t${check.message}`
-          );
-        }
+    let result: { ok: boolean; plugins: any[]; error?: string };
+    try {
+      result = await api("/api/plugins/doctor");
+    } catch (error) {
+      const body = error instanceof ApiError ? error.body : null;
+      if (
+        !(error instanceof ApiError) ||
+        error.status !== 503 ||
+        typeof body !== "object" ||
+        body === null ||
+        !Array.isArray((body as { plugins?: unknown }).plugins) ||
+        (body as { ok?: unknown }).ok !== false ||
+        typeof (body as { error?: unknown }).error !== "string"
+      ) {
+        throw error;
       }
+      result = body as typeof result;
+      if (jsonMode(thisCommand)) {
+        console.error(JSON.stringify(result, null, 2));
+      } else {
+        console.error(result.error);
+        printPluginDoctorChecks(result.plugins, console.error);
+      }
+      process.exitCode = 1;
+      return;
+    }
+    printSuccess(thisCommand, result, () => {
+      printPluginDoctorChecks(result.plugins, console.log);
     });
   })
 );
+
+function printPluginDoctorChecks(
+  plugins: any[],
+  write: (...data: unknown[]) => void
+): void {
+  for (const plugin of plugins) {
+    write(`${plugin.id}\t${plugin.state}`);
+    for (const check of plugin.checks) {
+      write(`  ${check.ok ? "ok" : "fail"}\t${check.id}\t${check.message}`);
+    }
+  }
+}
 
 function printTmuxStatus(snapshot: any): void {
   console.log(
