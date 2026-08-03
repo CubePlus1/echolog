@@ -29,12 +29,28 @@ function hasOnlyKeys(
   return Object.keys(value).every((key) => allowed.has(key));
 }
 
-function containsNul(value: unknown): boolean {
-  if (typeof value === "string") return value.includes("\0");
-  if (Array.isArray(value)) return value.some(containsNul);
+function hasUnsupportedText(value: string): boolean {
+  for (let index = 0; index < value.length; index += 1) {
+    const codeUnit = value.charCodeAt(index);
+    if (codeUnit === 0) return true;
+    if (codeUnit >= 0xd800 && codeUnit <= 0xdbff) {
+      if (index + 1 >= value.length) return true;
+      const next = value.charCodeAt(index + 1);
+      if (next < 0xdc00 || next > 0xdfff) return true;
+      index += 1;
+    } else if (codeUnit >= 0xdc00 && codeUnit <= 0xdfff) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function containsUnsupportedText(value: unknown): boolean {
+  if (typeof value === "string") return hasUnsupportedText(value);
+  if (Array.isArray(value)) return value.some(containsUnsupportedText);
   if (!isObject(value)) return false;
   return Object.entries(value).some(
-    ([key, item]) => key.includes("\0") || containsNul(item)
+    ([key, item]) => hasUnsupportedText(key) || containsUnsupportedText(item)
   );
 }
 
@@ -141,6 +157,15 @@ function validateConversation(value: unknown): boolean {
       typeof value.working_directory !== "string") ||
     !validProcessInstances(value.process_instances) ||
     typeof value.evidence !== "string" || value.evidence.length === 0
+  ) {
+    return false;
+  }
+  if (
+    (value.identity_source === "open_session_file"
+      ? typeof value.source_path !== "string" ||
+        value.source_path.length === 0 ||
+        !value.source_path.startsWith("/")
+      : value.source_path !== null)
   ) {
     return false;
   }
@@ -359,8 +384,10 @@ export function parseStatusPayload(stdout: string): TmuxStatusPayload {
   if (!isObject(parsed)) {
     throw invalidOutput("tmux-status output must be an object");
   }
-  if (containsNul(parsed)) {
-    throw invalidOutput("tmux-status output contains NUL in a string field");
+  if (containsUnsupportedText(parsed)) {
+    throw invalidOutput(
+      "tmux-status output contains NUL or an unpaired Unicode surrogate"
+    );
   }
   const version = parsed.schema_version == null ? 1 : parsed.schema_version;
   if (version !== 1 && version !== 2 && version !== 3) {

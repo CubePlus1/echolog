@@ -214,6 +214,32 @@ test("rejects guessed or internally inconsistent v3 conversation identities", ()
   guessedSource.recovery[0].identity_source = "recent_session";
   assert.throws(() => parseStatusPayload(JSON.stringify(guessedSource)), PluginError);
 
+  for (const sourcePath of [null, "sessions/rollout.jsonl"]) {
+    const invalidFileSource = JSON.parse(
+      contractFixture("fixtures", "confirmed")
+    );
+    invalidFileSource.panes[0].agent_conversations[0].source_path = sourcePath;
+    invalidFileSource.recovery[0].source_path = sourcePath;
+    assert.throws(
+      () => parseStatusPayload(JSON.stringify(invalidFileSource)),
+      PluginError
+    );
+  }
+
+  const invalidCliSource = JSON.parse(contractFixture("fixtures", "confirmed"));
+  invalidCliSource.panes[0].agent_conversations[0].identity_source =
+    "cli_resume_argument";
+  invalidCliSource.recovery[0].identity_source = "cli_resume_argument";
+  assert.throws(() => parseStatusPayload(JSON.stringify(invalidCliSource)), PluginError);
+
+  const validCliSource = JSON.parse(contractFixture("fixtures", "confirmed"));
+  validCliSource.panes[0].agent_conversations[0].identity_source =
+    "cli_resume_argument";
+  validCliSource.panes[0].agent_conversations[0].source_path = null;
+  validCliSource.recovery[0].identity_source = "cli_resume_argument";
+  validCliSource.recovery[0].source_path = null;
+  assert.deepEqual(parseStatusPayload(JSON.stringify(validCliSource)), validCliSource);
+
   const missingCwd = JSON.parse(contractFixture("fixtures", "unknown"));
   missingCwd.panes[0].agent_conversations[0].working_directory = null;
   missingCwd.recovery[0].working_directory = null;
@@ -364,6 +390,24 @@ test("enforces v3 resource constraints and additionalProperties false", () => {
     "session\0path";
   nulMetadata.recovery[0].source_path = "session\0path";
   assert.throws(() => parseStatusPayload(JSON.stringify(nulMetadata)), PluginError);
+
+  const unpairedSurrogate = JSON.parse(
+    contractFixture("fixtures", "confirmed")
+  );
+  unpairedSurrogate.panes[0].agent_conversations[0]
+    .process_instances["101"] = "101:\ud800";
+  unpairedSurrogate.recovery[0].process_instances["101"] = "101:\ud800";
+  assert.throws(
+    () => parseStatusPayload(JSON.stringify(unpairedSurrogate)),
+    PluginError
+  );
+
+  const validAstralText = JSON.parse(contractFixture("fixtures", "confirmed"));
+  validAstralText.panes[0].agent_conversations[0].evidence = "valid 😀";
+  assert.deepEqual(
+    parseStatusPayload(JSON.stringify(validAstralText)),
+    validAstralText
+  );
 
   const invalidThreshold = JSON.parse(contractFixture("fixtures", "confirmed"));
   invalidThreshold.thresholds.cpu_percent = -1;
