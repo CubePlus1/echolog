@@ -19,9 +19,9 @@
     "category": "Productivity",
     "capabilities": ["Local", "Read", "Write"],
     "defaultPrompt": [
-      "Start recording my current task in EchoLog.",
-      "Add a blocker to my active EchoLog record.",
-      "Summarize today's EchoLog activity."
+      "Use $track-work to start recording my current task in EchoLog.",
+      "Use $track-work to add a blocker to my active EchoLog record.",
+      "Use $review-work to summarize today's EchoLog activity."
     ]
   }
 }

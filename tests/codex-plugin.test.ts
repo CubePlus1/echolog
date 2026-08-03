@@ -12,6 +12,10 @@ interface SkillOpenAiMetadata {
   policy?: { allow_implicit_invocation?: boolean };
 }
 
+interface PluginInterface {
+  defaultPrompt?: unknown;
+}
+
 async function readJson(path: string): Promise<Record<string, unknown>> {
   return JSON.parse(await readFile(path, "utf8")) as Record<string, unknown>;
 }
@@ -47,6 +51,13 @@ test("skills-only Codex Plugin manifest does not declare deferred capabilities",
   assert.equal(manifest.hooks, undefined);
   assert.equal(manifest.apps, undefined);
   assert.doesNotMatch(JSON.stringify(manifest), /TODO/);
+
+  const pluginInterface = manifest.interface as PluginInterface;
+  assert.deepEqual(pluginInterface.defaultPrompt, [
+    "Use $track-work to start recording my current task in EchoLog.",
+    "Use $track-work to add a blocker to my active EchoLog record.",
+    "Use $review-work to summarize today's EchoLog activity.",
+  ]);
 });
 
 test("track-work is explicit-only and all EchoLog examples use JSON output", async () => {
