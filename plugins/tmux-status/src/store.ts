@@ -28,21 +28,21 @@ export function conversationObservationKey(
     conversation.conversation_id_status === "confirmed" &&
     conversation.stable_mapping_key
   ) {
-    return [
+    return JSON.stringify([
       "confirmed",
       pane.pane_instance_id ?? paneIdentity(pane),
       conversation.working_directory,
       conversation.stable_mapping_key,
-    ].join(":");
+    ]);
   }
-  return [
+  return JSON.stringify([
     "unknown",
     pane.pane_instance_id ?? paneIdentity(pane),
     conversation.tool,
     conversation.conversation_id_kind,
     conversation.working_directory,
-    [...conversation.process_instance_keys].sort().join(","),
-  ].join(":");
+    [...conversation.process_instance_keys].sort(),
+  ]);
 }
 
 function minuteBucket(generatedAt: Date): Date {

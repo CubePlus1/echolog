@@ -365,9 +365,9 @@ test("conversation persistence keys are idempotent without inventing unknown IDs
     confirmedPane,
     confirmedConversation
   );
-  assert.match(
-    confirmedKey,
-    new RegExp(`${confirmedConversation.stable_mapping_key}$`)
+  assert.equal(
+    JSON.parse(confirmedKey).at(-1),
+    confirmedConversation.stable_mapping_key
   );
   assert.notEqual(
     conversationObservationKey(
@@ -381,7 +381,7 @@ test("conversation persistence keys are idempotent without inventing unknown IDs
   const unknownPane = unknownPayload.panes[0] as TmuxPaneStatus;
   const unknownConversation = unknownPane.agent_conversations![0]!;
   const key = conversationObservationKey(unknownPane, unknownConversation);
-  assert.match(key, /^unknown:/);
+  assert.equal(JSON.parse(key)[0], "unknown");
   assert.equal(unknownConversation.conversation_id, null);
   assert.equal(unknownConversation.stable_mapping_key, null);
   assert.equal(unknownConversation.resume_command, null);
@@ -411,6 +411,17 @@ test("conversation persistence keys are idempotent without inventing unknown IDs
     }),
     key
   );
+
+  assert.notEqual(
+    conversationObservationKey(unknownPane, {
+      ...unknownConversation,
+      process_instance_keys: ["a,b", "c"],
+    }),
+    conversationObservationKey(unknownPane, {
+      ...unknownConversation,
+      process_instance_keys: ["a", "b,c"],
+    })
+  );
 });
 
 test("validates process-instance keys exactly as the canonical v3 schema", () => {
@@ -432,6 +443,22 @@ test("validates process-instance keys exactly as the canonical v3 schema", () =>
     "second-opaque-incarnation",
   ];
   assert.deepEqual(parseStatusPayload(JSON.stringify(opaque)), opaque);
+});
+
+test("accepts opaque pane identities and rejects contradictory pre-restart metadata", () => {
+  const opaquePane = JSON.parse(contractFixture("fixtures", "confirmed"));
+  opaquePane.panes[0].pane_instance_id = "opaque-pane-incarnation";
+  assert.deepEqual(parseStatusPayload(JSON.stringify(opaquePane)), opaquePane);
+
+  for (const [reportType, preRestart] of [
+    ["snapshot", true],
+    ["recovery", false],
+  ] as const) {
+    const payload = JSON.parse(contractFixture("fixtures", "confirmed"));
+    payload.report_type = reportType;
+    payload.pre_restart = preRestart;
+    assert.throws(() => parseStatusPayload(JSON.stringify(payload)), PluginError);
+  }
 });
 
 test("plugin appends immutable conversation mapping migration 002", () => {
