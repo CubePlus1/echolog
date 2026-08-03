@@ -35,6 +35,7 @@ export function conversationObservationKey(
     pane.pane_instance_id ?? paneIdentity(pane),
     conversation.tool,
     conversation.conversation_id_kind,
+    [...conversation.process_pids].sort((left, right) => left - right).join(","),
   ].join(":");
 }
 

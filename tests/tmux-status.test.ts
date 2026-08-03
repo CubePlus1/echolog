@@ -157,6 +157,33 @@ test("rejects guessed or internally inconsistent v3 conversation identities", ()
   guessedSource.panes[0].agent_conversations[0].identity_source = "recent_session";
   guessedSource.recovery[0].identity_source = "recent_session";
   assert.throws(() => parseStatusPayload(JSON.stringify(guessedSource)), PluginError);
+
+  const mismatchedRecovery = JSON.parse(contractFixture("fixtures", "confirmed"));
+  mismatchedRecovery.recovery[0].conversation_id =
+    "019fc532-c5ba-7b90-a199-5ecd6d99bf69";
+  mismatchedRecovery.recovery[0].stable_mapping_key =
+    "codex:019fc532-c5ba-7b90-a199-5ecd6d99bf69";
+  mismatchedRecovery.recovery[0].resume_command =
+    "codex resume -C /tmp/project 019fc532-c5ba-7b90-a199-5ecd6d99bf69";
+  assert.throws(
+    () => parseStatusPayload(JSON.stringify(mismatchedRecovery)),
+    (error) =>
+      error instanceof PluginError &&
+      error.message.includes("recovery projection is inconsistent")
+  );
+
+  for (const invalidValue of [0, -1]) {
+    const invalidPid = JSON.parse(contractFixture("fixtures", "confirmed"));
+    invalidPid.panes[0].pid = invalidValue;
+    invalidPid.panes[0].pane_pid = invalidValue;
+    invalidPid.recovery[0].pane_pid = invalidValue;
+    invalidPid.panes[0].pane_instance_id =
+      `500:1784999999:$1:1785000000:@2:%3:${invalidValue}`;
+    assert.throws(
+      () => parseStatusPayload(JSON.stringify(invalidPid)),
+      PluginError
+    );
+  }
 });
 
 test("rejects corrupted and unsupported tmux JSON", () => {
@@ -291,6 +318,22 @@ test("conversation persistence keys are idempotent without inventing unknown IDs
   assert.equal(unknownConversation.conversation_id, null);
   assert.equal(unknownConversation.stable_mapping_key, null);
   assert.equal(unknownConversation.resume_command, null);
+
+  const sameProcessesDifferentOrder = {
+    ...unknownConversation,
+    process_pids: [...unknownConversation.process_pids].reverse(),
+  };
+  assert.equal(
+    conversationObservationKey(unknownPane, sameProcessesDifferentOrder),
+    key
+  );
+  assert.notEqual(
+    conversationObservationKey(unknownPane, {
+      ...unknownConversation,
+      process_pids: [unknownConversation.process_pids[0]! + 1],
+    }),
+    key
+  );
 });
 
 test("plugin appends immutable conversation mapping migration 002", () => {

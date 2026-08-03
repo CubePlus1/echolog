@@ -3,8 +3,10 @@ import {
   type PluginContext,
 } from "@echolog/plugin-sdk";
 import type {
+  TmuxAgentConversation,
   TmuxAdapterConfig,
   TmuxPaneStatus,
+  TmuxRecoveryEntry,
   TmuxStatusPayload,
 } from "./types.js";
 
@@ -84,6 +86,47 @@ function validateRecoveryEntry(value: unknown): boolean {
     typeof value.working_directory === "string";
 }
 
+function projectRecoveryEntry(
+  pane: TmuxPaneStatus,
+  conversation: TmuxAgentConversation
+): TmuxRecoveryEntry {
+  return {
+    tool: conversation.tool,
+    conversation_id: conversation.conversation_id,
+    conversation_id_status: conversation.conversation_id_status,
+    conversation_id_kind: conversation.conversation_id_kind,
+    identity_source: conversation.identity_source,
+    source_path: conversation.source_path,
+    stable_mapping_key: conversation.stable_mapping_key,
+    tmux_target: pane.tmux_target!,
+    tmux_session_name: pane.tmux_session_name!,
+    pane_id: pane.pane_id!,
+    pane_pid: pane.pane_pid!,
+    process_pids: conversation.process_pids,
+    working_directory: pane.working_directory!,
+    resume_command: conversation.resume_command,
+  };
+}
+
+function recoveryEntryKey(entry: TmuxRecoveryEntry): string {
+  return JSON.stringify([
+    entry.tool,
+    entry.conversation_id,
+    entry.conversation_id_status,
+    entry.conversation_id_kind,
+    entry.identity_source,
+    entry.source_path,
+    entry.stable_mapping_key,
+    entry.tmux_target,
+    entry.tmux_session_name,
+    entry.pane_id,
+    entry.pane_pid,
+    [...entry.process_pids].sort((left, right) => left - right),
+    entry.working_directory,
+    entry.resume_command,
+  ]);
+}
+
 function validatePane(value: unknown, version: number): value is TmuxPaneStatus {
   if (!isObject(value)) return false;
   const requiredStrings = [
@@ -120,7 +163,8 @@ function validatePane(value: unknown, version: number): value is TmuxPaneStatus 
   }
   if (
     version >= 3 &&
-    (typeof value.tmux_target !== "string" ||
+    (!Number.isInteger(value.pid) || Number(value.pid) < 1 ||
+      typeof value.tmux_target !== "string" ||
       value.tmux_target !== value.target ||
       typeof value.tmux_session_name !== "string" ||
       value.tmux_session_name !== value.session ||
@@ -130,7 +174,7 @@ function validatePane(value: unknown, version: number): value is TmuxPaneStatus 
       !Number.isInteger(value.tmux_pane_index) || Number(value.tmux_pane_index) < 0 ||
       typeof value.pane_id !== "string" ||
       value.pane_id !== value.pane ||
-      !Number.isInteger(value.pane_pid) ||
+      !Number.isInteger(value.pane_pid) || Number(value.pane_pid) < 1 ||
       value.pane_pid !== value.pid ||
       typeof value.working_directory !== "string" ||
       value.working_directory !== value.path ||
@@ -213,9 +257,8 @@ export function parseStatusPayload(stdout: string): TmuxStatusPayload {
     throw invalidOutput(`tmux-status v${version} producer metadata is invalid`);
   }
   if (version === 3) {
-    const conversations = parsed.panes.flatMap((pane) =>
-      (pane as Record<string, unknown>).agent_conversations as unknown[]
-    );
+    const panes = parsed.panes as unknown as TmuxPaneStatus[];
+    const conversations = panes.flatMap((pane) => pane.agent_conversations!);
     const confirmed = conversations.filter((value) =>
       isObject(value) && value.conversation_id_status === "confirmed"
     ).length;
@@ -240,6 +283,17 @@ export function parseStatusPayload(stdout: string): TmuxStatusPayload {
       !parsed.recovery.every(validateRecoveryEntry)
     ) {
       throw invalidOutput("tmux-status v3 conversation metadata is invalid");
+    }
+    const expectedRecovery = panes.flatMap((pane) =>
+      pane.agent_conversations!.map((conversation) =>
+        recoveryEntryKey(projectRecoveryEntry(pane, conversation))
+      )
+    ).sort();
+    const actualRecovery = (parsed.recovery as unknown as TmuxRecoveryEntry[])
+      .map(recoveryEntryKey)
+      .sort();
+    if (expectedRecovery.some((entry, index) => entry !== actualRecovery[index])) {
+      throw invalidOutput("tmux-status v3 recovery projection is inconsistent");
     }
   }
   return parsed as unknown as TmuxStatusPayload;
