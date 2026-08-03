@@ -386,6 +386,15 @@ test("conversation persistence keys are idempotent without inventing unknown IDs
     ),
     confirmedKey
   );
+  assert.notEqual(
+    conversationObservationKey(confirmedPane, {
+      ...confirmedConversation,
+      tool: "grok",
+      conversation_id_kind: "grok_session_id",
+      conversation_id: "019fc532-c5ba-7b90-a199-5ecd6d99bf69",
+    }),
+    confirmedKey
+  );
 
   const unknownPayload = JSON.parse(contractFixture("fixtures", "unknown"));
   const unknownPane = unknownPayload.panes[0] as TmuxPaneStatus;
@@ -462,6 +471,20 @@ test("accepts opaque pane identities and rejects contradictory pre-restart metad
   const opaquePane = JSON.parse(contractFixture("fixtures", "confirmed"));
   opaquePane.panes[0].pane_instance_id = "opaque-pane-incarnation";
   assert.deepEqual(parseStatusPayload(JSON.stringify(opaquePane)), opaquePane);
+
+  const independentAliases = JSON.parse(contractFixture("fixtures", "confirmed"));
+  Object.assign(independentAliases.panes[0], {
+    target: "legacy:9.8",
+    session: "legacy-session",
+    window: "9:legacy-window",
+    pane: "%9",
+    pid: 999,
+    path: "/legacy/path",
+  });
+  assert.deepEqual(
+    parseStatusPayload(JSON.stringify(independentAliases)),
+    independentAliases
+  );
 
   const emptyPaneIdentity = JSON.parse(contractFixture("fixtures", "confirmed"));
   emptyPaneIdentity.panes[0].pane_instance_id = "";

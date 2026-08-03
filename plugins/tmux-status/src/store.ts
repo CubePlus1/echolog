@@ -32,6 +32,8 @@ export function conversationObservationKey(
       "confirmed",
       pane.pane_instance_id ?? paneIdentity(pane),
       conversation.working_directory,
+      conversation.tool,
+      conversation.conversation_id,
       conversation.stable_mapping_key,
     ]);
   }

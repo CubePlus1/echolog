@@ -244,20 +244,14 @@ function validatePane(value: unknown, version: number): value is TmuxPaneStatus 
       !Number.isInteger(value.process_count) || Number(value.process_count) < 0 ||
       typeof value.tmux_target !== "string" ||
       value.tmux_target.length === 0 ||
-      value.tmux_target !== value.target ||
       typeof value.tmux_session_name !== "string" ||
-      value.tmux_session_name !== value.session ||
       !Number.isInteger(value.tmux_window_index) || Number(value.tmux_window_index) < 0 ||
       typeof value.tmux_window_name !== "string" ||
-      value.window !== `${value.tmux_window_index}:${value.tmux_window_name}` ||
       !Number.isInteger(value.tmux_pane_index) || Number(value.tmux_pane_index) < 0 ||
       typeof value.pane_id !== "string" ||
       !/^%[0-9]+$/.test(value.pane_id) ||
-      value.pane_id !== value.pane ||
       !Number.isInteger(value.pane_pid) || Number(value.pane_pid) < 1 ||
-      value.pane_pid !== value.pid ||
       typeof value.working_directory !== "string" ||
-      value.working_directory !== value.path ||
       !/^\$[0-9]+$/.test(value.session_id as string) ||
       Number(value.session_created) < 1 ||
       !/^@[0-9]+$/.test(value.window_id as string) ||
