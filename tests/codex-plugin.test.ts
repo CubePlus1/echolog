@@ -129,6 +129,18 @@ test("missing el fails the bundled MCP launcher explicitly", async () => {
   assert.match(result.stderr, /EchoLog CLI not found/);
 });
 
+test("Plugin docs use the discovered marketplace and namespaced Skills", async () => {
+  const pluginReadme = await readFile(join(pluginRoot, "README.md"), "utf8");
+  const codexDocs = await readFile(join(repoRoot, "docs/CODEX.md"), "utf8");
+
+  assert.match(pluginReadme, /read_marketplace_name\.py/);
+  assert.match(pluginReadme, /echolog@\$\{echolog_marketplace\}/);
+  assert.doesNotMatch(pluginReadme, /echolog@personal/);
+  assert.match(codexDocs, /\$echolog:track-work/);
+  assert.match(codexDocs, /\$echolog:review-work/);
+  assert.match(codexDocs, /installed standalone[\s\S]*\$track-work[\s\S]*\$review-work/);
+});
+
 test("EchoLog config resolution is independent of the Codex workspace", () => {
   assert.equal(resolveConfigPath(""), join(repoRoot, "config.yaml"));
   assert.equal(

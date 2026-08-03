@@ -41,10 +41,13 @@ new Skills or MCP tools.
 
 ## Skills
 
-The first integration increment contains two Skills:
+The combined Plugin exposes two namespaced Skills:
 
-- `$track-work` performs explicit record writes. Implicit invocation is disabled.
-- `$review-work` reads status, history, notes, subtasks, reports, and screen-time without changing records.
+- `$echolog:track-work` performs explicit record writes. Implicit invocation is disabled.
+- `$echolog:review-work` reads status, history, notes, subtasks, reports, and screen-time without changing records.
+
+When either Skill is installed standalone rather than through the Plugin, use
+its unprefixed name: `$track-work` or `$review-work`.
 
 Inside the combined Plugin, both Skills prefer the bundled MCP tools. They
 retain `el --json` as a standalone fallback; record-note review uses CLI because
@@ -54,9 +57,9 @@ remain structured so Codex can show candidates rather than guessing.
 Representative prompts:
 
 ```text
-Use $track-work to start a task named "Review Codex Plugin manifest" in project echolog.
-Use $track-work to add a blocker to record <id>.
-Use $review-work to summarize my EchoLog activity today.
+Use $echolog:track-work to start a task named "Review Codex Plugin manifest" in project echolog.
+Use $echolog:track-work to add a blocker to record <id>.
+Use $echolog:review-work to summarize my EchoLog activity today.
 ```
 
 ## MCP tools

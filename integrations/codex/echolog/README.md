@@ -28,7 +28,9 @@ rsync -a --delete integrations/codex/echolog/ ~/plugins/echolog/
 uv run --with pyyaml python \
   ~/.codex/skills/.system/plugin-creator/scripts/validate_plugin.py \
   ~/plugins/echolog
-codex plugin add echolog@personal --json
+echolog_marketplace="$(python3 \
+  ~/.codex/skills/.system/plugin-creator/scripts/read_marketplace_name.py)"
+codex plugin add "echolog@${echolog_marketplace}" --json
 ```
 
 Start a new Codex task or CLI session after installation. Existing tasks do
@@ -43,8 +45,9 @@ apply one supported cachebuster, then reinstall from the same marketplace:
 rsync -a --delete integrations/codex/echolog/ ~/plugins/echolog/
 python3 ~/.codex/skills/.system/plugin-creator/scripts/update_plugin_cachebuster.py \
   ~/plugins/echolog
-python3 ~/.codex/skills/.system/plugin-creator/scripts/read_marketplace_name.py
-codex plugin add echolog@personal --json
+echolog_marketplace="$(python3 \
+  ~/.codex/skills/.system/plugin-creator/scripts/read_marketplace_name.py)"
+codex plugin add "echolog@${echolog_marketplace}" --json
 ```
 
 The cachebuster belongs only to the copied development source. Keep the
@@ -53,8 +56,10 @@ repository manifest at its stable semantic version.
 ## Remove and reinstall
 
 ```bash
-codex plugin remove echolog@personal --json
-codex plugin add echolog@personal --json
+echolog_marketplace="$(python3 \
+  ~/.codex/skills/.system/plugin-creator/scripts/read_marketplace_name.py)"
+codex plugin remove "echolog@${echolog_marketplace}" --json
+codex plugin add "echolog@${echolog_marketplace}" --json
 ```
 
 Removal clears the installed Plugin bundle from Codex; it does not delete
@@ -73,7 +78,8 @@ EchoLog records or disconnect the local database.
 - `PLUGIN_DISABLED` or `PLUGIN_DEGRADED`: only the affected optional EchoLog
   plugin tool is unavailable; inspect `el plugins doctor --json`.
 - Skills or tools are absent after install/update: start a new Codex task or
-  CLI session and confirm `echolog@personal` is installed and enabled.
+  CLI session and confirm EchoLog is installed and enabled under the marketplace
+  name returned by `read_marketplace_name.py`.
 - The Plugin was removed: its installed bundle is absent; reinstall it and
   start a new session.
 - The bundled MCP server was disabled in Plugin settings: MCP tools are absent.
