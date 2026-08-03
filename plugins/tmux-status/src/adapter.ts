@@ -29,6 +29,15 @@ function hasOnlyKeys(
   return Object.keys(value).every((key) => allowed.has(key));
 }
 
+function containsNul(value: unknown): boolean {
+  if (typeof value === "string") return value.includes("\0");
+  if (Array.isArray(value)) return value.some(containsNul);
+  if (!isObject(value)) return false;
+  return Object.entries(value).some(
+    ([key, item]) => key.includes("\0") || containsNul(item)
+  );
+}
+
 function isRfc3339DateTime(value: string): boolean {
   const match = value.match(
     /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:Z|[+-](\d{2}):(\d{2}))$/i
@@ -143,6 +152,7 @@ function validateConversation(value: unknown): boolean {
       value.stable_mapping_key === `${tool}:${value.conversation_id}` &&
       typeof value.working_directory === "string" &&
       value.working_directory.length > 0 &&
+      value.working_directory.startsWith("/") &&
       typeof value.resume_command === "string" &&
       value.resume_command === expectedResumeCommand(
         tool,
@@ -348,6 +358,9 @@ export function parseStatusPayload(stdout: string): TmuxStatusPayload {
   }
   if (!isObject(parsed)) {
     throw invalidOutput("tmux-status output must be an object");
+  }
+  if (containsNul(parsed)) {
+    throw invalidOutput("tmux-status output contains NUL in a string field");
   }
   const version = parsed.schema_version == null ? 1 : parsed.schema_version;
   if (version !== 1 && version !== 2 && version !== 3) {

@@ -240,6 +240,21 @@ test("rejects guessed or internally inconsistent v3 conversation identities", ()
     PluginError
   );
 
+  const relativeConfirmedCwd = JSON.parse(
+    contractFixture("fixtures", "confirmed")
+  );
+  relativeConfirmedCwd.panes[0].agent_conversations[0].working_directory =
+    "project";
+  relativeConfirmedCwd.panes[0].agent_conversations[0].resume_command =
+    `codex resume -C project ${relativeConfirmedCwd.recovery[0].conversation_id}`;
+  relativeConfirmedCwd.recovery[0].working_directory = "project";
+  relativeConfirmedCwd.recovery[0].resume_command =
+    relativeConfirmedCwd.panes[0].agent_conversations[0].resume_command;
+  assert.throws(
+    () => parseStatusPayload(JSON.stringify(relativeConfirmedCwd)),
+    PluginError
+  );
+
   const quotedCwd = JSON.parse(contractFixture("fixtures", "confirmed"));
   quotedCwd.panes[0].agent_conversations[0].working_directory =
     "/tmp/my project's code";
@@ -343,6 +358,12 @@ test("enforces v3 resource constraints and additionalProperties false", () => {
     mutate(extraField);
     assert.throws(() => parseStatusPayload(JSON.stringify(extraField)), PluginError);
   }
+
+  const nulMetadata = JSON.parse(contractFixture("fixtures", "confirmed"));
+  nulMetadata.panes[0].agent_conversations[0].source_path =
+    "session\0path";
+  nulMetadata.recovery[0].source_path = "session\0path";
+  assert.throws(() => parseStatusPayload(JSON.stringify(nulMetadata)), PluginError);
 
   const invalidThreshold = JSON.parse(contractFixture("fixtures", "confirmed"));
   invalidThreshold.thresholds.cpu_percent = -1;
