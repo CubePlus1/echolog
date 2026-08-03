@@ -59,7 +59,6 @@ const CONFIRMED_IDENTITY_SOURCES = new Set([
   "open_session_file",
   "cli_resume_argument",
   "cli_session_id_argument",
-  "tmux_scrollback_resume_command",
 ]);
 const UNKNOWN_IDENTITY_SOURCES = new Set([
   "conflicting_evidence",
@@ -75,14 +74,14 @@ const V3_PRODUCER_KEYS = new Set(["name", "version"]);
 const V3_THRESHOLD_KEYS = new Set(["cpu_percent", "memory_mb"]);
 const V3_CONVERSATION_KEYS = new Set([
   "tool", "conversation_id", "conversation_id_status", "conversation_id_kind",
-  "identity_source", "source_path", "working_directory", "process_pids", "stable_mapping_key",
-  "resume_command", "evidence",
+  "identity_source", "source_path", "working_directory", "process_pids",
+  "process_instance_keys", "stable_mapping_key", "resume_command", "evidence",
 ]);
 const V3_RECOVERY_KEYS = new Set([
   "tool", "conversation_id", "conversation_id_status", "conversation_id_kind",
   "identity_source", "source_path", "stable_mapping_key", "tmux_target",
   "tmux_session_name", "pane_id", "pane_pid", "process_pids",
-  "working_directory", "resume_command",
+  "process_instance_keys", "working_directory", "resume_command",
 ]);
 const V3_PANE_KEYS = new Set([
   "session", "window", "pane", "target", "pid", "command", "path",
@@ -101,6 +100,12 @@ function positiveIntegerArray(value: unknown): value is number[] {
   ) && new Set(value).size === value.length;
 }
 
+function uniqueNonEmptyStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.length > 0 && value.every(
+    (item) => typeof item === "string" && item.length > 0
+  ) && new Set(value).size === value.length;
+}
+
 function validateConversation(value: unknown): boolean {
   if (!isObject(value) || !hasOnlyKeys(value, V3_CONVERSATION_KEYS)) return false;
   const tool = value.tool;
@@ -114,6 +119,11 @@ function validateConversation(value: unknown): boolean {
     (value.source_path !== null && typeof value.source_path !== "string") ||
     typeof value.working_directory !== "string" ||
     !positiveIntegerArray(value.process_pids) ||
+    !uniqueNonEmptyStringArray(value.process_instance_keys) ||
+    value.process_instance_keys.length !== value.process_pids.length ||
+    !value.process_instance_keys.every((key, index) =>
+      key.startsWith(`${value.process_pids[index]}:`)
+    ) ||
     typeof value.evidence !== "string" || value.evidence.length === 0
   ) {
     return false;
@@ -143,6 +153,7 @@ function validateRecoveryEntry(value: unknown): boolean {
     source_path: value.source_path,
     working_directory: value.working_directory,
     process_pids: value.process_pids,
+    process_instance_keys: value.process_instance_keys,
     stable_mapping_key: value.stable_mapping_key,
     resume_command: value.resume_command,
     evidence: "recovery projection",
@@ -172,6 +183,7 @@ function projectRecoveryEntry(
     pane_id: pane.pane_id!,
     pane_pid: pane.pane_pid!,
     process_pids: conversation.process_pids,
+    process_instance_keys: conversation.process_instance_keys,
     working_directory: conversation.working_directory,
     resume_command: conversation.resume_command,
   };
@@ -191,6 +203,7 @@ function recoveryEntryKey(entry: TmuxRecoveryEntry): string {
     entry.pane_id,
     entry.pane_pid,
     [...entry.process_pids].sort((left, right) => left - right),
+    [...entry.process_instance_keys].sort(),
     entry.working_directory,
     entry.resume_command,
   ]);

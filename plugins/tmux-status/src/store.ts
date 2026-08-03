@@ -41,7 +41,7 @@ export function conversationObservationKey(
     conversation.tool,
     conversation.conversation_id_kind,
     conversation.working_directory,
-    [...conversation.process_pids].sort((left, right) => left - right).join(","),
+    [...conversation.process_instance_keys].sort().join(","),
   ].join(":");
 }
 

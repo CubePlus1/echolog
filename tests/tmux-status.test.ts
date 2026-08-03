@@ -389,6 +389,7 @@ test("conversation persistence keys are idempotent without inventing unknown IDs
   const sameProcessesDifferentOrder = {
     ...unknownConversation,
     process_pids: [...unknownConversation.process_pids].reverse(),
+    process_instance_keys: [...unknownConversation.process_instance_keys].reverse(),
   };
   assert.equal(
     conversationObservationKey(unknownPane, sameProcessesDifferentOrder),
@@ -397,7 +398,9 @@ test("conversation persistence keys are idempotent without inventing unknown IDs
   assert.notEqual(
     conversationObservationKey(unknownPane, {
       ...unknownConversation,
-      process_pids: [unknownConversation.process_pids[0]! + 1],
+      process_instance_keys: [
+        `${unknownConversation.process_pids[0]!}:different-process-start`,
+      ],
     }),
     key
   );
@@ -408,6 +411,20 @@ test("conversation persistence keys are idempotent without inventing unknown IDs
     }),
     key
   );
+});
+
+test("rejects missing or misaligned v3 process-instance keys", () => {
+  for (const processInstanceKeys of [
+    [],
+    ["102:first", "102:second"],
+    ["999:wrong-process-start"],
+  ]) {
+    const invalid = JSON.parse(contractFixture("fixtures", "unknown"));
+    invalid.panes[0].agent_conversations[0].process_instance_keys =
+      processInstanceKeys;
+    invalid.recovery[0].process_instance_keys = processInstanceKeys;
+    assert.throws(() => parseStatusPayload(JSON.stringify(invalid)), PluginError);
+  }
 });
 
 test("plugin appends immutable conversation mapping migration 002", () => {
