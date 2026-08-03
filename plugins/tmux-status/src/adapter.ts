@@ -371,6 +371,15 @@ export function parseStatusPayload(stdout: string): TmuxStatusPayload {
     }
     const panes = parsed.panes as unknown as TmuxPaneStatus[];
     const conversations = panes.flatMap((pane) => pane.agent_conversations!);
+    const processInstances = new Set<string>();
+    const processInstancesAreUnique = conversations.every((conversation) =>
+      Object.entries(conversation.process_instances).every(([pid, instanceKey]) => {
+        const identity = `${pid}\0${instanceKey}`;
+        if (processInstances.has(identity)) return false;
+        processInstances.add(identity);
+        return true;
+      })
+    );
     const anomalousPanes = panes.filter(
       (pane) => pane.anomalies.length > 0
     ).length;
@@ -386,6 +395,7 @@ export function parseStatusPayload(stdout: string): TmuxStatusPayload {
         parsed.report_type !== "recovery") ||
       typeof parsed.pre_restart !== "boolean" ||
       parsed.pre_restart !== (parsed.report_type === "recovery") ||
+      !processInstancesAreUnique ||
       parsed.anomaly_count !== anomalousPanes ||
       typeof parsed.tool_version !== "string" ||
       !/^0\.3\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$/.test(parsed.tool_version) ||

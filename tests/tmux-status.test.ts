@@ -183,6 +183,27 @@ test("rejects guessed or internally inconsistent v3 conversation identities", ()
     PluginError
   );
 
+  const reusedProcess = JSON.parse(contractFixture("fixtures", "confirmed"));
+  reusedProcess.panes[0].agent_conversations.push({
+    ...reusedProcess.panes[0].agent_conversations[0],
+    conversation_id: "019fc532-c5ba-7b90-a199-5ecd6d99bf69",
+    stable_mapping_key: "codex:019fc532-c5ba-7b90-a199-5ecd6d99bf69",
+    resume_command:
+      "codex resume -C /tmp/project 019fc532-c5ba-7b90-a199-5ecd6d99bf69",
+  });
+  reusedProcess.confirmed_conversation_count = 2;
+  reusedProcess.recovery.push({
+    ...reusedProcess.recovery[0],
+    conversation_id: "019fc532-c5ba-7b90-a199-5ecd6d99bf69",
+    stable_mapping_key: "codex:019fc532-c5ba-7b90-a199-5ecd6d99bf69",
+    resume_command:
+      "codex resume -C /tmp/project 019fc532-c5ba-7b90-a199-5ecd6d99bf69",
+  });
+  assert.throws(
+    () => parseStatusPayload(JSON.stringify(reusedProcess)),
+    PluginError
+  );
+
   const wrongVersion = JSON.parse(contractFixture("fixtures", "confirmed"));
   wrongVersion.tool_version = "0.2.0";
   wrongVersion.producer.version = "0.2.0";
@@ -462,6 +483,18 @@ test("conversation persistence keys are idempotent without inventing unknown IDs
     confirmedConversation
   );
   assert.match(confirmedKey, /^[0-9a-f]{64}$/);
+
+  const uppercaseConversationId = confirmedConversation.conversation_id!.toUpperCase();
+  assert.equal(
+    conversationObservationKey(confirmedPane, {
+      ...confirmedConversation,
+      conversation_id: uppercaseConversationId,
+      stable_mapping_key: `codex:${uppercaseConversationId}`,
+      resume_command:
+        `codex resume -C /tmp/project ${uppercaseConversationId}`,
+    }),
+    confirmedKey
+  );
   assert.notEqual(
     conversationObservationKey(
       { ...confirmedPane, pane_instance_id: `${confirmedPane.pane_instance_id}:other` },

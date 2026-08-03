@@ -30,13 +30,14 @@ export function conversationObservationKey(
     conversation.conversation_id_status === "confirmed" &&
     conversation.stable_mapping_key
   ) {
+    const normalizedConversationId = conversation.conversation_id!.toLowerCase();
     identity = [
       "confirmed",
       pane.pane_instance_id ?? paneIdentity(pane),
       conversation.working_directory,
       conversation.tool,
-      conversation.conversation_id,
-      conversation.stable_mapping_key,
+      normalizedConversationId,
+      `${conversation.tool}:${normalizedConversationId}`,
     ];
   } else {
     identity = [
