@@ -310,6 +310,25 @@ function validatePane(value: unknown, version: number): value is TmuxPaneStatus 
   ) {
     return false;
   }
+  if (version >= 3 && Array.isArray(value.agent_conversations)) {
+    const conversations = value.agent_conversations as TmuxAgentConversation[];
+    const mappedPids = new Set(
+      conversations.flatMap((conversation) =>
+        Object.keys(conversation.process_instances)
+      )
+    );
+    const conversationTools = new Set(
+      conversations.map((conversation) => conversation.tool)
+    );
+    if (
+      Number(value.process_count) < mappedPids.size ||
+      [...conversationTools].some(
+        (tool) => !(value.tools as string[]).includes(tool)
+      )
+    ) {
+      return false;
+    }
+  }
   return true;
 }
 

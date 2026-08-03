@@ -761,6 +761,20 @@ test("binds v3 pane identities and rejects contradictory pre-restart metadata", 
     PluginError
   );
 
+  for (const mutate of [
+    (payload: any) => { payload.panes[0].process_count = 0; },
+    (payload: any) => { payload.panes[0].tools = []; },
+  ]) {
+    const inconsistentSummary = JSON.parse(
+      contractFixture("fixtures", "confirmed")
+    );
+    mutate(inconsistentSummary);
+    assert.throws(
+      () => parseStatusPayload(JSON.stringify(inconsistentSummary)),
+      PluginError
+    );
+  }
+
   for (const [reportType, preRestart] of [
     ["snapshot", true],
     ["recovery", false],
