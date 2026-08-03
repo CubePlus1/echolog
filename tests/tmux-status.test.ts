@@ -340,6 +340,7 @@ test("enforces v3 resource constraints and additionalProperties false", () => {
     "2026-08-03",
     "2026-08-03T12:00:00",
     "2026-02-30T12:00:00Z",
+    "1990-12-31T23:59:60Z",
   ]) {
     const invalidTimestamp = JSON.parse(contractFixture("fixtures", "confirmed"));
     invalidTimestamp.generated_at = generatedAt;
@@ -629,6 +630,17 @@ test("binds v3 pane identities and rejects contradictory pre-restart metadata", 
     PluginError
   );
 
+  const wrongDerivedTarget = JSON.parse(
+    contractFixture("fixtures", "confirmed")
+  );
+  wrongDerivedTarget.panes[0].target = "other:9.9";
+  wrongDerivedTarget.panes[0].tmux_target = "other:9.9";
+  wrongDerivedTarget.recovery[0].tmux_target = "other:9.9";
+  assert.throws(
+    () => parseStatusPayload(JSON.stringify(wrongDerivedTarget)),
+    PluginError
+  );
+
   const emptyPaneIdentity = JSON.parse(contractFixture("fixtures", "confirmed"));
   emptyPaneIdentity.panes[0].pane_instance_id = "";
   assert.throws(
@@ -655,6 +667,19 @@ test("binds v3 pane identities and rejects contradictory pre-restart metadata", 
     "500:1784999999:$1:9007199254740992:@2:%3:100";
   assert.throws(
     () => parseStatusPayload(JSON.stringify(oversizedSessionCreated)),
+    PluginError
+  );
+
+  const oversizedServerIdentity = JSON.parse(
+    contractFixture("fixtures", "confirmed")
+  );
+  const oversizedServerId = "12345678901:1784999999";
+  oversizedServerIdentity.server_instance_id = oversizedServerId;
+  oversizedServerIdentity.panes[0].server_instance_id = oversizedServerId;
+  oversizedServerIdentity.panes[0].pane_instance_id =
+    `${oversizedServerId}:$1:1785000000:@2:%3:100`;
+  assert.throws(
+    () => parseStatusPayload(JSON.stringify(oversizedServerIdentity)),
     PluginError
   );
 

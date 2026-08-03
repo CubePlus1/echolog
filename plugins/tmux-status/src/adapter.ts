@@ -54,7 +54,7 @@ function isRfc3339DateTime(value: string): boolean {
 }
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const SERVER_INSTANCE_PATTERN = /^[0-9]+:[0-9]+$/;
+const SERVER_INSTANCE_PATTERN = /^[0-9]{1,10}:[0-9]{1,16}$/;
 const MAX_PROCESS_PID = 2_147_483_647;
 const CONFIRMED_IDENTITY_SOURCES = new Set([
   "open_session_file",
@@ -260,7 +260,7 @@ function validatePane(value: unknown, version: number): value is TmuxPaneStatus 
     version >= 3 &&
     (!Number.isInteger(value.pid) || Number(value.pid) < 1 ||
       Number(value.pid) > MAX_PROCESS_PID ||
-      !/^%[0-9]+$/.test(value.pane as string) ||
+      !/^%[0-9]{1,10}$/.test(value.pane as string) ||
       Number(value.cpu_percent) < 0 ||
       Number(value.memory_mb) < 0 ||
       !Number.isInteger(value.process_count) || Number(value.process_count) < 0 ||
@@ -271,19 +271,22 @@ function validatePane(value: unknown, version: number): value is TmuxPaneStatus 
       typeof value.tmux_window_name !== "string" ||
       !Number.isInteger(value.tmux_pane_index) || Number(value.tmux_pane_index) < 0 ||
       typeof value.pane_id !== "string" ||
-      !/^%[0-9]+$/.test(value.pane_id) ||
+      !/^%[0-9]{1,10}$/.test(value.pane_id) ||
       !Number.isInteger(value.pane_pid) || Number(value.pane_pid) < 1 ||
       Number(value.pane_pid) > MAX_PROCESS_PID ||
       typeof value.working_directory !== "string" ||
-      !/^\$[0-9]+$/.test(value.session_id as string) ||
+      !/^\$[0-9]{1,10}$/.test(value.session_id as string) ||
       Number(value.session_created) < 1 ||
-      !/^@[0-9]+$/.test(value.window_id as string) ||
+      !/^@[0-9]{1,10}$/.test(value.window_id as string) ||
       !SERVER_INSTANCE_PATTERN.test(value.server_instance_id as string) ||
       (value.pane_instance_id as string).length === 0 ||
       value.session !== value.tmux_session_name ||
       value.window !== `${value.tmux_window_index}:${value.tmux_window_name}` ||
       value.pane !== value.pane_id ||
       value.target !== value.tmux_target ||
+      value.tmux_target !==
+        `${value.tmux_session_name}:${value.tmux_window_index}.` +
+          `${value.tmux_pane_index}` ||
       value.pid !== value.pane_pid ||
       value.path !== value.working_directory ||
       value.pane_instance_id !==
