@@ -22,6 +22,13 @@ function stringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((item) => typeof item === "string");
 }
 
+function hasOnlyKeys(
+  value: Record<string, unknown>,
+  allowed: ReadonlySet<string>
+): boolean {
+  return Object.keys(value).every((key) => allowed.has(key));
+}
+
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SERVER_INSTANCE_PATTERN = /^[0-9]+:[0-9]+$/;
 const CONFIRMED_IDENTITY_SOURCES = new Set([
@@ -34,6 +41,35 @@ const UNKNOWN_IDENTITY_SOURCES = new Set([
   "conflicting_evidence",
   "unavailable",
 ]);
+const V3_TOP_LEVEL_KEYS = new Set([
+  "schema_version", "tool_version", "producer", "server_instance_id",
+  "report_type", "pre_restart", "generated_at", "host", "thresholds",
+  "pane_count", "anomaly_count", "confirmed_conversation_count",
+  "unknown_conversation_count", "recovery", "panes",
+]);
+const V3_PRODUCER_KEYS = new Set(["name", "version"]);
+const V3_THRESHOLD_KEYS = new Set(["cpu_percent", "memory_mb"]);
+const V3_CONVERSATION_KEYS = new Set([
+  "tool", "conversation_id", "conversation_id_status", "conversation_id_kind",
+  "identity_source", "source_path", "process_pids", "stable_mapping_key",
+  "resume_command", "evidence",
+]);
+const V3_RECOVERY_KEYS = new Set([
+  "tool", "conversation_id", "conversation_id_status", "conversation_id_kind",
+  "identity_source", "source_path", "stable_mapping_key", "tmux_target",
+  "tmux_session_name", "pane_id", "pane_pid", "process_pids",
+  "working_directory", "resume_command",
+]);
+const V3_PANE_KEYS = new Set([
+  "session", "window", "pane", "target", "pid", "command", "path",
+  "attached", "selected", "dead", "cpu_percent", "memory_mb",
+  "process_count", "tools", "activity", "activity_source", "note",
+  "anomalies", "session_id", "session_created", "window_id",
+  "server_instance_id", "pane_instance_id", "tmux_target",
+  "tmux_session_name", "tmux_window_index", "tmux_window_name",
+  "tmux_pane_index", "pane_id", "pane_pid", "working_directory",
+  "agent_conversations",
+]);
 
 function positiveIntegerArray(value: unknown): value is number[] {
   return Array.isArray(value) && value.length > 0 && value.every(
@@ -42,7 +78,7 @@ function positiveIntegerArray(value: unknown): value is number[] {
 }
 
 function validateConversation(value: unknown): boolean {
-  if (!isObject(value)) return false;
+  if (!isObject(value) || !hasOnlyKeys(value, V3_CONVERSATION_KEYS)) return false;
   const tool = value.tool;
   const kind = value.conversation_id_kind;
   const status = value.conversation_id_status;
@@ -72,10 +108,17 @@ function validateConversation(value: unknown): boolean {
 }
 
 function validateRecoveryEntry(value: unknown): boolean {
-  if (!isObject(value)) return false;
+  if (!isObject(value) || !hasOnlyKeys(value, V3_RECOVERY_KEYS)) return false;
   const conversation = {
-    ...value,
+    tool: value.tool,
+    conversation_id: value.conversation_id,
+    conversation_id_status: value.conversation_id_status,
+    conversation_id_kind: value.conversation_id_kind,
+    identity_source: value.identity_source,
+    source_path: value.source_path,
     process_pids: value.process_pids,
+    stable_mapping_key: value.stable_mapping_key,
+    resume_command: value.resume_command,
     evidence: "recovery projection",
   };
   return validateConversation(conversation) &&
@@ -129,6 +172,7 @@ function recoveryEntryKey(entry: TmuxRecoveryEntry): string {
 
 function validatePane(value: unknown, version: number): value is TmuxPaneStatus {
   if (!isObject(value)) return false;
+  if (version >= 3 && !hasOnlyKeys(value, V3_PANE_KEYS)) return false;
   const requiredStrings = [
     "session",
     "window",
@@ -164,7 +208,12 @@ function validatePane(value: unknown, version: number): value is TmuxPaneStatus 
   if (
     version >= 3 &&
     (!Number.isInteger(value.pid) || Number(value.pid) < 1 ||
+      !/^%[0-9]+$/.test(value.pane as string) ||
+      Number(value.cpu_percent) < 0 ||
+      Number(value.memory_mb) < 0 ||
+      !Number.isInteger(value.process_count) || Number(value.process_count) < 0 ||
       typeof value.tmux_target !== "string" ||
+      value.tmux_target.length === 0 ||
       value.tmux_target !== value.target ||
       typeof value.tmux_session_name !== "string" ||
       value.tmux_session_name !== value.session ||
@@ -173,6 +222,7 @@ function validatePane(value: unknown, version: number): value is TmuxPaneStatus 
       value.window !== `${value.tmux_window_index}:${value.tmux_window_name}` ||
       !Number.isInteger(value.tmux_pane_index) || Number(value.tmux_pane_index) < 0 ||
       typeof value.pane_id !== "string" ||
+      !/^%[0-9]+$/.test(value.pane_id) ||
       value.pane_id !== value.pane ||
       !Number.isInteger(value.pane_pid) || Number(value.pane_pid) < 1 ||
       value.pane_pid !== value.pid ||
@@ -257,6 +307,19 @@ export function parseStatusPayload(stdout: string): TmuxStatusPayload {
     throw invalidOutput(`tmux-status v${version} producer metadata is invalid`);
   }
   if (version === 3) {
+    if (
+      !hasOnlyKeys(parsed, V3_TOP_LEVEL_KEYS) ||
+      !isObject(parsed.producer) ||
+      !hasOnlyKeys(parsed.producer, V3_PRODUCER_KEYS) ||
+      !isObject(parsed.thresholds) ||
+      !hasOnlyKeys(parsed.thresholds, V3_THRESHOLD_KEYS) ||
+      Number(parsed.thresholds.cpu_percent) < 0 ||
+      Number(parsed.thresholds.memory_mb) < 0 ||
+      Number(parsed.pane_count) < 0 ||
+      Number(parsed.anomaly_count) < 0
+    ) {
+      throw invalidOutput("tmux-status v3 contains undeclared or invalid fields");
+    }
     const panes = parsed.panes as unknown as TmuxPaneStatus[];
     const conversations = panes.flatMap((pane) => pane.agent_conversations!);
     const confirmed = conversations.filter((value) =>
@@ -275,8 +338,10 @@ export function parseStatusPayload(stdout: string): TmuxStatusPayload {
       !/^0\.3\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$/.test(parsed.tool_version) ||
       typeof parsed.host !== "string" || parsed.host.length === 0 ||
       !Number.isInteger(parsed.confirmed_conversation_count) ||
+      Number(parsed.confirmed_conversation_count) < 0 ||
       parsed.confirmed_conversation_count !== confirmed ||
       !Number.isInteger(parsed.unknown_conversation_count) ||
+      Number(parsed.unknown_conversation_count) < 0 ||
       parsed.unknown_conversation_count !== unknown ||
       !Array.isArray(parsed.recovery) ||
       parsed.recovery.length !== conversations.length ||

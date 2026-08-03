@@ -161,8 +161,9 @@ EchoLog 的近期方向不是做普通的工时计时器，而是成为本地优
 - **P1 · 人类 / Agent 工时与工作里程碑**：区分人类投入、Agent 运行、并行重叠和端到端历时；阶段完成时记录成果摘要、验证证据与工时快照，用于复盘和后续工作量估算。
   - GitHub：[P1 Issue #8](https://github.com/CubePlus1/echolog/issues/8)
   - Trellis：`.trellis/tasks/07-22-p1-actor-effort-milestones/`
-- **P1 · 内置插件架构**：Core 插件平台与 screen-time 拆分已实现；tmux-status 观测层依赖独立 JSON v2 合约。显式 link 与 Agent 工时仍依赖前述 actor/span Core 能力。
-  - GitHub：[P1 Issue #10](https://github.com/CubePlus1/echolog/issues/10)（[tmux-status JSON v2 #1](https://github.com/CubePlus1/tmux-status/issues/1)）
+- **P1 · 内置插件架构**：Core 插件平台与 screen-time 拆分已实现；tmux-status 观测层正在升级为向后兼容的 JSON v3 合约，并持久化已验证的 Agent conversation↔pane 恢复映射。显式 link 与 Agent 工时仍依赖前述 actor/span Core 能力。
+  - GitHub：[P1 Issue #10](https://github.com/CubePlus1/echolog/issues/10)（[EchoLog v3 同步 #19](https://github.com/CubePlus1/echolog/issues/19) · [tmux-status v3 合约 #1](https://github.com/CubePlus1/tmux-status/issues/1)）
+  - Trellis：`.trellis/tasks/08-03-tmux-status-contract-v3-sync/`
   - Trellis：`.trellis/tasks/07-31-plugin-architecture/`
 - **P1 · Codex 集成**：按顺序交付 Skills-only Plugin、本地 stdio MCP 适配层、Plugin 打包与发布验收；每一步独立 Issue、PR 和 review。
   - GitHub：✅ [#13 Skills MVP](https://github.com/CubePlus1/echolog/issues/13) → ✅ [#14 MCP 适配](https://github.com/CubePlus1/echolog/issues/14) → ✅ [#15 打包发布](https://github.com/CubePlus1/echolog/issues/15)

@@ -186,6 +186,43 @@ test("rejects guessed or internally inconsistent v3 conversation identities", ()
   }
 });
 
+test("enforces v3 resource constraints and additionalProperties false", () => {
+  for (const [field, value] of [
+    ["cpu_percent", -0.1],
+    ["memory_mb", -1],
+    ["process_count", -1],
+    ["process_count", 1.5],
+  ] as const) {
+    const invalidMetric = JSON.parse(contractFixture("fixtures", "confirmed"));
+    invalidMetric.panes[0][field] = value;
+    assert.throws(() => parseStatusPayload(JSON.stringify(invalidMetric)), PluginError);
+  }
+
+  const extraTopLevel = JSON.parse(contractFixture("fixtures", "confirmed"));
+  extraTopLevel.terminal_transcript = "must not cross the privacy boundary";
+  assert.throws(() => parseStatusPayload(JSON.stringify(extraTopLevel)), PluginError);
+
+  const extraConversation = JSON.parse(contractFixture("fixtures", "confirmed"));
+  extraConversation.panes[0].agent_conversations[0].prompt = "private";
+  assert.throws(() => parseStatusPayload(JSON.stringify(extraConversation)), PluginError);
+
+  const extraLocations: Array<(value: any) => void> = [
+    (value) => { value.producer.private_token = "secret"; },
+    (value) => { value.thresholds.extra = 1; },
+    (value) => { value.panes[0].terminal_transcript = "private"; },
+    (value) => { value.recovery[0].prompt = "private"; },
+  ];
+  for (const mutate of extraLocations) {
+    const extraField = JSON.parse(contractFixture("fixtures", "confirmed"));
+    mutate(extraField);
+    assert.throws(() => parseStatusPayload(JSON.stringify(extraField)), PluginError);
+  }
+
+  const invalidThreshold = JSON.parse(contractFixture("fixtures", "confirmed"));
+  invalidThreshold.thresholds.cpu_percent = -1;
+  assert.throws(() => parseStatusPayload(JSON.stringify(invalidThreshold)), PluginError);
+});
+
 test("rejects corrupted and unsupported tmux JSON", () => {
   assert.throws(
     () => parseStatusPayload("{not-json"),
