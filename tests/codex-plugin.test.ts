@@ -62,7 +62,7 @@ test("skills-only Codex Plugin manifest does not declare deferred capabilities",
 });
 
 test("EchoLog config resolution is independent of the Codex workspace", () => {
-  assert.equal(resolveConfigPath(undefined), join(repoRoot, "config.yaml"));
+  assert.equal(resolveConfigPath(""), join(repoRoot, "config.yaml"));
   assert.equal(
     resolveConfigPath("fixtures/echolog-config.yaml"),
     join(process.cwd(), "fixtures/echolog-config.yaml")
