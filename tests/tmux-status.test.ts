@@ -683,6 +683,15 @@ test("binds v3 pane identities and rejects contradictory pre-restart metadata", 
     PluginError
   );
 
+  const deadPaneConversation = JSON.parse(
+    contractFixture("fixtures", "confirmed")
+  );
+  deadPaneConversation.panes[0].dead = true;
+  assert.throws(
+    () => parseStatusPayload(JSON.stringify(deadPaneConversation)),
+    PluginError
+  );
+
   for (const [reportType, preRestart] of [
     ["snapshot", true],
     ["recovery", false],

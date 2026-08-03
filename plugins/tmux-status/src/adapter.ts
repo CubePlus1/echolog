@@ -302,6 +302,14 @@ function validatePane(value: unknown, version: number): value is TmuxPaneStatus 
   ) {
     return false;
   }
+  if (
+    version >= 3 &&
+    value.dead === true &&
+    Array.isArray(value.agent_conversations) &&
+    value.agent_conversations.length > 0
+  ) {
+    return false;
+  }
   return true;
 }
 
