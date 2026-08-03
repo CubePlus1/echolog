@@ -15,6 +15,7 @@ import {
   sessionKey,
 } from "../plugins/tmux-status/src/store.js";
 import { tmuxStatusPlugin } from "../plugins/tmux-status/src/index.js";
+import { tmuxAgentConversations } from "../plugins/tmux-status/src/schema.js";
 import type {
   TmuxPaneStatus,
   TmuxStatusPayload,
@@ -540,6 +541,7 @@ test("plugin appends immutable conversation migrations", () => {
     tmuxStatusPlugin.migrations?.[2]?.sql ?? "",
     /ADD COLUMN IF NOT EXISTS process_instances JSONB/
   );
+  assert.ok("processInstances" in tmuxAgentConversations);
 });
 
 test("conversation upsert preserves earliest observation under reordered writes", () => {

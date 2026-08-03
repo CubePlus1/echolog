@@ -3,6 +3,7 @@ import {
   doublePrecision,
   index,
   integer,
+  jsonb,
   pgTable,
   primaryKey,
   text,
@@ -57,6 +58,10 @@ export const tmuxAgentConversations = pgTable(
     paneId: text("pane_id").notNull(),
     panePid: integer("pane_pid").notNull(),
     agentProcessPids: integer("agent_process_pids").array().notNull().default([]),
+    processInstances: jsonb("process_instances")
+      .$type<Record<string, string>>()
+      .notNull()
+      .default({}),
     workingDirectory: text("working_directory").notNull(),
     tool: text("tool").notNull(),
     conversationIdKind: text("conversation_id_kind").notNull(),
