@@ -699,6 +699,20 @@ test("binds v3 pane identities and rejects contradictory pre-restart metadata", 
     PluginError
   );
 
+  const oversizedWindowIndex = JSON.parse(
+    contractFixture("fixtures", "confirmed")
+  );
+  oversizedWindowIndex.panes[0].tmux_window_index =
+    9_007_199_254_740_992;
+  oversizedWindowIndex.panes[0].window = "9007199254740992:code";
+  oversizedWindowIndex.panes[0].target = "work:9007199254740992.0";
+  oversizedWindowIndex.panes[0].tmux_target = "work:9007199254740992.0";
+  oversizedWindowIndex.recovery[0].tmux_target = "work:9007199254740992.0";
+  assert.throws(
+    () => parseStatusPayload(JSON.stringify(oversizedWindowIndex)),
+    PluginError
+  );
+
   const oversizedServerIdentity = JSON.parse(
     contractFixture("fixtures", "confirmed")
   );

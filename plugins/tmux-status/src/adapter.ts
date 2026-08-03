@@ -267,9 +267,9 @@ function validatePane(value: unknown, version: number): value is TmuxPaneStatus 
       typeof value.tmux_target !== "string" ||
       value.tmux_target.length === 0 ||
       typeof value.tmux_session_name !== "string" ||
-      !Number.isInteger(value.tmux_window_index) || Number(value.tmux_window_index) < 0 ||
+      !Number.isSafeInteger(value.tmux_window_index) || Number(value.tmux_window_index) < 0 ||
       typeof value.tmux_window_name !== "string" ||
-      !Number.isInteger(value.tmux_pane_index) || Number(value.tmux_pane_index) < 0 ||
+      !Number.isSafeInteger(value.tmux_pane_index) || Number(value.tmux_pane_index) < 0 ||
       typeof value.pane_id !== "string" ||
       !/^%[0-9]{1,10}$/.test(value.pane_id) ||
       !Number.isInteger(value.pane_pid) || Number(value.pane_pid) < 1 ||
