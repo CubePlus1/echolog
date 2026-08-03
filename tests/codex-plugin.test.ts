@@ -132,6 +132,7 @@ test("missing el fails the bundled MCP launcher explicitly", async () => {
 test("Plugin docs use the discovered marketplace and namespaced Skills", async () => {
   const pluginReadme = await readFile(join(pluginRoot, "README.md"), "utf8");
   const codexDocs = await readFile(join(repoRoot, "docs/CODEX.md"), "utf8");
+  const rootReadme = await readFile(join(repoRoot, "README.md"), "utf8");
 
   assert.match(pluginReadme, /read_marketplace_name\.py/);
   assert.match(pluginReadme, /echolog@\$\{echolog_marketplace\}/);
@@ -139,6 +140,9 @@ test("Plugin docs use the discovered marketplace and namespaced Skills", async (
   assert.match(codexDocs, /\$echolog:track-work/);
   assert.match(codexDocs, /\$echolog:review-work/);
   assert.match(codexDocs, /installed standalone[\s\S]*\$track-work[\s\S]*\$review-work/);
+  assert.match(rootReadme, /\$echolog:track-work/);
+  assert.match(rootReadme, /\$echolog:review-work/);
+  assert.match(rootReadme, /standalone Skill[^\n]*无前缀名称/);
 });
 
 test("EchoLog config resolution is independent of the Codex workspace", () => {

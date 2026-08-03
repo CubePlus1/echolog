@@ -75,7 +75,7 @@ el tmux status --json     # tmux-status 原始快照（插件默认禁用）
 
 ### Codex 集成
 
-仓库提供一个可安装的 Codex Plugin 包：`integrations/codex/echolog`。它组合显式写入的 `$track-work`、只读复盘的 `$review-work` 和自动注册的本地 `el mcp`（8 个类型化工具）；也保留 standalone Skill 与手动 MCP 注册方式。Skills 与 MCP 都只经 HTTP API 访问 daemon，不直连数据库，也不复制服务端的唯一活跃记录和父子关系判断。
+仓库提供一个可安装的 Codex Plugin 包：`integrations/codex/echolog`。它组合显式写入的 `$echolog:track-work`、只读复盘的 `$echolog:review-work` 和自动注册的本地 `el mcp`（8 个类型化工具）；standalone Skill 则使用无前缀名称，也保留手动 MCP 注册方式。Skills 与 MCP 都只经 HTTP API 访问 daemon，不直连数据库，也不复制服务端的唯一活跃记录和父子关系判断。
 
 该 Codex Plugin 与 EchoLog Core 的 Bundled Plugin API v1 是不同层次：前者运行在 Codex 侧，后者运行在 EchoLog 服务内。personal marketplace 安装/更新、支持范围、前置条件与隐私边界见 [Codex Integration](docs/CODEX.md)。
 
