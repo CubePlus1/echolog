@@ -221,6 +221,19 @@ test("enforces v3 resource constraints and additionalProperties false", () => {
   const invalidThreshold = JSON.parse(contractFixture("fixtures", "confirmed"));
   invalidThreshold.thresholds.cpu_percent = -1;
   assert.throws(() => parseStatusPayload(JSON.stringify(invalidThreshold)), PluginError);
+
+  for (const generatedAt of [
+    "2026-08-03",
+    "2026-08-03T12:00:00",
+    "2026-02-30T12:00:00Z",
+  ]) {
+    const invalidTimestamp = JSON.parse(contractFixture("fixtures", "confirmed"));
+    invalidTimestamp.generated_at = generatedAt;
+    assert.throws(
+      () => parseStatusPayload(JSON.stringify(invalidTimestamp)),
+      PluginError
+    );
+  }
 });
 
 test("rejects corrupted and unsupported tmux JSON", () => {
@@ -342,9 +355,20 @@ test("conversation persistence keys are idempotent without inventing unknown IDs
   const confirmedPayload = JSON.parse(contractFixture("fixtures", "confirmed"));
   const confirmedPane = confirmedPayload.panes[0] as TmuxPaneStatus;
   const confirmedConversation = confirmedPane.agent_conversations![0]!;
-  assert.equal(
-    conversationObservationKey(confirmedPane, confirmedConversation),
-    confirmedConversation.stable_mapping_key
+  const confirmedKey = conversationObservationKey(
+    confirmedPane,
+    confirmedConversation
+  );
+  assert.match(
+    confirmedKey,
+    new RegExp(`${confirmedConversation.stable_mapping_key}$`)
+  );
+  assert.notEqual(
+    conversationObservationKey(
+      { ...confirmedPane, pane_instance_id: `${confirmedPane.pane_instance_id}:other` },
+      confirmedConversation
+    ),
+    confirmedKey
   );
 
   const unknownPayload = JSON.parse(contractFixture("fixtures", "unknown"));

@@ -28,7 +28,11 @@ export function conversationObservationKey(
     conversation.conversation_id_status === "confirmed" &&
     conversation.stable_mapping_key
   ) {
-    return conversation.stable_mapping_key;
+    return [
+      "confirmed",
+      pane.pane_instance_id ?? paneIdentity(pane),
+      conversation.stable_mapping_key,
+    ].join(":");
   }
   return [
     "unknown",

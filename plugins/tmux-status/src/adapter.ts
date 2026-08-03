@@ -29,6 +29,30 @@ function hasOnlyKeys(
   return Object.keys(value).every((key) => allowed.has(key));
 }
 
+function isRfc3339DateTime(value: string): boolean {
+  const match = value.match(
+    /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:Z|[+-](\d{2}):(\d{2}))$/
+  );
+  if (!match || Number.isNaN(Date.parse(value))) return false;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const hour = Number(match[4]);
+  const minute = Number(match[5]);
+  const second = Number(match[6]);
+  const offsetHour = match[7] == null ? 0 : Number(match[7]);
+  const offsetMinute = match[8] == null ? 0 : Number(match[8]);
+  const leapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const daysInMonth = [
+    31, leapYear ? 29 : 28, 31, 30, 31, 30,
+    31, 31, 30, 31, 30, 31,
+  ];
+  return month >= 1 && month <= 12 &&
+    day >= 1 && day <= daysInMonth[month - 1]! &&
+    hour <= 23 && minute <= 59 && second <= 59 &&
+    offsetHour <= 23 && offsetMinute <= 59;
+}
+
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SERVER_INSTANCE_PATTERN = /^[0-9]+:[0-9]+$/;
 const CONFIRMED_IDENTITY_SOURCES = new Set([
@@ -313,6 +337,8 @@ export function parseStatusPayload(stdout: string): TmuxStatusPayload {
       !hasOnlyKeys(parsed.producer, V3_PRODUCER_KEYS) ||
       !isObject(parsed.thresholds) ||
       !hasOnlyKeys(parsed.thresholds, V3_THRESHOLD_KEYS) ||
+      typeof parsed.generated_at !== "string" ||
+      !isRfc3339DateTime(parsed.generated_at) ||
       Number(parsed.thresholds.cpu_percent) < 0 ||
       Number(parsed.thresholds.memory_mb) < 0 ||
       Number(parsed.pane_count) < 0 ||
