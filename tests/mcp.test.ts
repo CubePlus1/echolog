@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -90,8 +90,11 @@ test("el mcp help documents the stdio entry point", async () => {
 });
 
 test("MCP adapter stays an HTTP thin client", async () => {
-  for (const file of ["src/mcp/server.ts", "src/mcp/result.ts", "src/mcp/index.ts"]) {
-    const source = await readFile(join(repoRoot, file), "utf8");
+  const mcpDir = join(repoRoot, "src/mcp");
+  const files = (await readdir(mcpDir)).filter((file) => file.endsWith(".ts"));
+  assert.ok(files.length > 0);
+  for (const file of files) {
+    const source = await readFile(join(mcpDir, file), "utf8");
     assert.doesNotMatch(source, /from ["']\.\.\/(?:core|db|plugins)\//);
   }
 });
@@ -210,6 +213,10 @@ test("stdio MCP exposes typed tools and preserves EchoLog HTTP results", { timeo
     for (const name of ["get_status", "list_records", "get_subtasks", "generate_report", "get_screen_time"]) {
       assert.equal(byName.get(name)?.annotations?.readOnlyHint, true);
       assert.equal(byName.get(name)?.annotations?.idempotentHint, true);
+    }
+    for (const name of ["start_record", "add_note", "control_record"]) {
+      assert.equal(byName.get(name)?.annotations?.readOnlyHint, false);
+      assert.equal(byName.get(name)?.annotations?.idempotentHint, false);
     }
     assert.equal(byName.get("start_record")?.annotations?.destructiveHint, false);
     assert.equal(byName.get("add_note")?.annotations?.destructiveHint, false);
