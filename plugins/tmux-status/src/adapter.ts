@@ -75,7 +75,7 @@ function isRfc3339DateTime(value: string): boolean {
   return month >= 1 && month <= 12 &&
     day >= 1 && day <= daysInMonth[month - 1]! &&
     hour <= 23 && minute <= 59 && second <= 59 &&
-    offsetHour <= 23 && offsetMinute <= 59;
+    offsetHour <= 15 && offsetMinute <= 59;
 }
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -267,6 +267,7 @@ function roundedThresholdLabelIsConsistent(
   threshold: number,
   hasLabel: boolean
 ): boolean {
+  if (threshold === 0) return hasLabel;
   const roundingRadius = 0.05;
   if (reportedValue - roundingRadius >= threshold) return hasLabel;
   if (reportedValue + roundingRadius < threshold) return !hasLabel;

@@ -450,6 +450,8 @@ test("enforces v3 resource constraints and additionalProperties false", () => {
     "2026-02-30T12:00:00Z",
     "1990-12-31T23:59:60Z",
     "2026-08-03T12:00:00.0000001Z",
+    "2026-08-03T12:00:00+16:00",
+    "2026-08-03T12:00:00-23:59",
   ]) {
     const invalidTimestamp = JSON.parse(contractFixture("fixtures", "confirmed"));
     invalidTimestamp.generated_at = generatedAt;
@@ -472,6 +474,11 @@ test("enforces v3 resource constraints and additionalProperties false", () => {
     contractFixture("fixtures", "confirmed")
   );
   microsecondTimestamp.generated_at = "2026-08-03T12:00:00.000001Z";
+  assert.deepEqual(
+    parseStatusPayload(JSON.stringify(microsecondTimestamp)),
+    microsecondTimestamp
+  );
+  microsecondTimestamp.generated_at = "2026-08-03T12:00:00.000001+15:59";
   assert.deepEqual(
     parseStatusPayload(JSON.stringify(microsecondTimestamp)),
     microsecondTimestamp
@@ -515,6 +522,23 @@ test("enforces v3 resource constraints and additionalProperties false", () => {
   assert.deepEqual(
     parseStatusPayload(JSON.stringify(ambiguousRoundedThreshold)),
     ambiguousRoundedThreshold
+  );
+
+  const missingZeroThresholdLabels = JSON.parse(
+    contractFixture("fixtures", "confirmed")
+  );
+  missingZeroThresholdLabels.thresholds = { cpu_percent: 0, memory_mb: 0 };
+  missingZeroThresholdLabels.panes[0].cpu_percent = 0;
+  missingZeroThresholdLabels.panes[0].memory_mb = 0;
+  assert.throws(
+    () => parseStatusPayload(JSON.stringify(missingZeroThresholdLabels)),
+    PluginError
+  );
+  missingZeroThresholdLabels.panes[0].anomalies = ["CPU", "MEM"];
+  missingZeroThresholdLabels.anomaly_count = 1;
+  assert.deepEqual(
+    parseStatusPayload(JSON.stringify(missingZeroThresholdLabels)),
+    missingZeroThresholdLabels
   );
 });
 
