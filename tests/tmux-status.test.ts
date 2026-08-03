@@ -195,6 +195,20 @@ test("rejects guessed or internally inconsistent v3 conversation identities", ()
     wrongResume.panes[0].agent_conversations[0].resume_command;
   assert.throws(() => parseStatusPayload(JSON.stringify(wrongResume)), PluginError);
 
+  const emptyConfirmedCwd = JSON.parse(
+    contractFixture("fixtures", "confirmed")
+  );
+  emptyConfirmedCwd.panes[0].agent_conversations[0].working_directory = "";
+  emptyConfirmedCwd.panes[0].agent_conversations[0].resume_command =
+    `codex resume -C '' ${emptyConfirmedCwd.recovery[0].conversation_id}`;
+  emptyConfirmedCwd.recovery[0].working_directory = "";
+  emptyConfirmedCwd.recovery[0].resume_command =
+    emptyConfirmedCwd.panes[0].agent_conversations[0].resume_command;
+  assert.throws(
+    () => parseStatusPayload(JSON.stringify(emptyConfirmedCwd)),
+    PluginError
+  );
+
   const quotedCwd = JSON.parse(contractFixture("fixtures", "confirmed"));
   quotedCwd.panes[0].agent_conversations[0].working_directory =
     "/tmp/my project's code";
@@ -518,6 +532,7 @@ test("validates the canonical PID-to-incarnation map", () => {
     { "0": "invalid-pid" },
     { abc: "invalid-pid" },
     { "102": "" },
+    { "2147483648": "outside-postgres-integer-range" },
   ]) {
     const invalid = JSON.parse(contractFixture("fixtures", "unknown"));
     invalid.panes[0].agent_conversations[0].process_instances = processInstances;
@@ -573,6 +588,17 @@ test("binds v3 pane identities and rejects contradictory pre-restart metadata", 
   emptyPaneIdentity.panes[0].pane_instance_id = "";
   assert.throws(
     () => parseStatusPayload(JSON.stringify(emptyPaneIdentity)),
+    PluginError
+  );
+
+  const oversizedPanePid = JSON.parse(
+    contractFixture("fixtures", "confirmed")
+  );
+  oversizedPanePid.panes[0].pid = 2_147_483_648;
+  oversizedPanePid.panes[0].pane_pid = 2_147_483_648;
+  oversizedPanePid.recovery[0].pane_pid = 2_147_483_648;
+  assert.throws(
+    () => parseStatusPayload(JSON.stringify(oversizedPanePid)),
     PluginError
   );
 

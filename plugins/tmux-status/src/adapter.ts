@@ -55,6 +55,7 @@ function isRfc3339DateTime(value: string): boolean {
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const SERVER_INSTANCE_PATTERN = /^[0-9]+:[0-9]+$/;
+const MAX_PROCESS_PID = 2_147_483_647;
 const CONFIRMED_IDENTITY_SOURCES = new Set([
   "open_session_file",
   "cli_resume_argument",
@@ -98,6 +99,7 @@ function validProcessInstances(value: unknown): value is Record<string, string> 
   return isObject(value) && Object.keys(value).length > 0 &&
     Object.entries(value).every(([pid, instanceKey]) =>
       /^[1-9][0-9]*$/.test(pid) &&
+      Number.isInteger(Number(pid)) && Number(pid) <= MAX_PROCESS_PID &&
       typeof instanceKey === "string" && instanceKey.length > 0
     );
 }
@@ -138,6 +140,7 @@ function validateConversation(value: unknown): boolean {
       typeof value.stable_mapping_key === "string" &&
       value.stable_mapping_key === `${tool}:${value.conversation_id}` &&
       typeof value.working_directory === "string" &&
+      value.working_directory.length > 0 &&
       typeof value.resume_command === "string" &&
       value.resume_command === expectedResumeCommand(
         tool,
@@ -254,6 +257,7 @@ function validatePane(value: unknown, version: number): value is TmuxPaneStatus 
   if (
     version >= 3 &&
     (!Number.isInteger(value.pid) || Number(value.pid) < 1 ||
+      Number(value.pid) > MAX_PROCESS_PID ||
       !/^%[0-9]+$/.test(value.pane as string) ||
       Number(value.cpu_percent) < 0 ||
       Number(value.memory_mb) < 0 ||
@@ -267,6 +271,7 @@ function validatePane(value: unknown, version: number): value is TmuxPaneStatus 
       typeof value.pane_id !== "string" ||
       !/^%[0-9]+$/.test(value.pane_id) ||
       !Number.isInteger(value.pane_pid) || Number(value.pane_pid) < 1 ||
+      Number(value.pane_pid) > MAX_PROCESS_PID ||
       typeof value.working_directory !== "string" ||
       !/^\$[0-9]+$/.test(value.session_id as string) ||
       Number(value.session_created) < 1 ||
