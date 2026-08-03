@@ -449,6 +449,7 @@ test("enforces v3 resource constraints and additionalProperties false", () => {
     "2026-08-03T12:00:00",
     "2026-02-30T12:00:00Z",
     "1990-12-31T23:59:60Z",
+    "2026-08-03T12:00:00.0000001Z",
   ]) {
     const invalidTimestamp = JSON.parse(contractFixture("fixtures", "confirmed"));
     invalidTimestamp.generated_at = generatedAt;
@@ -465,6 +466,55 @@ test("enforces v3 resource constraints and additionalProperties false", () => {
   assert.deepEqual(
     parseStatusPayload(JSON.stringify(lowercaseSeparators)),
     lowercaseSeparators
+  );
+
+  const microsecondTimestamp = JSON.parse(
+    contractFixture("fixtures", "confirmed")
+  );
+  microsecondTimestamp.generated_at = "2026-08-03T12:00:00.000001Z";
+  assert.deepEqual(
+    parseStatusPayload(JSON.stringify(microsecondTimestamp)),
+    microsecondTimestamp
+  );
+
+  for (const mutate of [
+    (value: any) => { value.panes[0].cpu_percent = 100; },
+    (value: any) => { value.panes[0].memory_mb = 2_048; },
+    (value: any) => {
+      value.panes[0].cpu_percent = 0;
+      value.panes[0].anomalies = ["CPU"];
+      value.anomaly_count = 1;
+    },
+    (value: any) => {
+      value.panes[0].dead = true;
+      value.panes[0].agent_conversations = [];
+      value.recovery = [];
+      value.confirmed_conversation_count = 0;
+    },
+  ]) {
+    const inconsistentAnomaly = JSON.parse(
+      contractFixture("fixtures", "confirmed")
+    );
+    mutate(inconsistentAnomaly);
+    assert.throws(
+      () => parseStatusPayload(JSON.stringify(inconsistentAnomaly)),
+      PluginError
+    );
+  }
+
+  const ambiguousRoundedThreshold = JSON.parse(
+    contractFixture("fixtures", "confirmed")
+  );
+  ambiguousRoundedThreshold.panes[0].cpu_percent = 80;
+  assert.deepEqual(
+    parseStatusPayload(JSON.stringify(ambiguousRoundedThreshold)),
+    ambiguousRoundedThreshold
+  );
+  ambiguousRoundedThreshold.panes[0].anomalies = ["CPU"];
+  ambiguousRoundedThreshold.anomaly_count = 1;
+  assert.deepEqual(
+    parseStatusPayload(JSON.stringify(ambiguousRoundedThreshold)),
+    ambiguousRoundedThreshold
   );
 });
 
@@ -928,6 +978,9 @@ test("conversation upsert preserves earliest observation under reordered writes"
   assert.match(source, /first_observed_at = LEAST\(/);
   assert.match(source, /last_observed_at = GREATEST\(/);
   assert.match(source, /last_generated_at = GREATEST\(/);
+  assert.match(source, /const generatedAt = snapshot\.generated_at/);
+  assert.match(source, /minuteBucket\(new Date\(generatedAt\)\)/);
+  assert.doesNotMatch(source, /const generatedAt = new Date/);
   assert.doesNotMatch(
     source,
     /WHERE tmux_agent_conversations\.last_generated_at\s*< EXCLUDED\.last_generated_at/

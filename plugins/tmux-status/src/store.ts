@@ -81,8 +81,8 @@ export class TmuxObservationStore {
   }
 
   async observe(snapshot: TmuxStatusPayload): Promise<void> {
-    const generatedAt = new Date(snapshot.generated_at);
-    const bucket = minuteBucket(generatedAt);
+    const generatedAt = snapshot.generated_at;
+    const bucket = minuteBucket(new Date(generatedAt));
     await this.sql.begin(async (transaction) => {
       for (const pane of snapshot.panes) {
         const key = sessionKey(pane);

@@ -56,7 +56,7 @@ function containsUnsupportedText(value: unknown): boolean {
 
 function isRfc3339DateTime(value: string): boolean {
   const match = value.match(
-    /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:Z|[+-](\d{2}):(\d{2}))$/i
+    /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,6})?(?:Z|[+-](\d{2}):(\d{2}))$/i
   );
   if (!match || Number.isNaN(Date.parse(value))) return false;
   const year = Number(match[1]);
@@ -260,6 +260,35 @@ function recoveryEntryKey(entry: TmuxRecoveryEntry): string {
     entry.working_directory,
     entry.resume_command,
   ]);
+}
+
+function roundedThresholdLabelIsConsistent(
+  reportedValue: number,
+  threshold: number,
+  hasLabel: boolean
+): boolean {
+  const roundingRadius = 0.05;
+  if (reportedValue - roundingRadius >= threshold) return hasLabel;
+  if (reportedValue + roundingRadius < threshold) return !hasLabel;
+  return true;
+}
+
+function anomaliesAreConsistent(
+  pane: TmuxPaneStatus,
+  thresholds: { cpu_percent: number; memory_mb: number }
+): boolean {
+  const labels = new Set(pane.anomalies);
+  return labels.has("DEAD") === pane.dead &&
+    roundedThresholdLabelIsConsistent(
+      pane.cpu_percent,
+      thresholds.cpu_percent,
+      labels.has("CPU")
+    ) &&
+    roundedThresholdLabelIsConsistent(
+      pane.memory_mb,
+      thresholds.memory_mb,
+      labels.has("MEM")
+    );
 }
 
 function validatePane(value: unknown, version: number): value is TmuxPaneStatus {
@@ -508,6 +537,12 @@ export function parseStatusPayload(stdout: string): TmuxStatusPayload {
       !paneIdentitiesAreUnique ||
       !confirmedMappingsAreUnique ||
       !processInstancesAreUnique ||
+      !panes.every((pane) =>
+        anomaliesAreConsistent(
+          pane,
+          parsed.thresholds as { cpu_percent: number; memory_mb: number }
+        )
+      ) ||
       parsed.anomaly_count !== anomalousPanes ||
       typeof parsed.tool_version !== "string" ||
       !/^0\.3\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$/.test(parsed.tool_version) ||
