@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://echolog.local/plugins/tmux-status/config.schema.json",
+  "title": "tmux-status plugin configuration",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "executable": {
+      "type": "string",
+      "minLength": 1,
+      "default": "tmux-status"
+    },
+    "timeout_ms": {
+      "type": "integer",
+      "minimum": 250,
+      "maximum": 60000,
+      "default": 5000
+    },
+    "collection_interval_seconds": {
+      "type": "integer",
+      "minimum": 5,
+      "maximum": 3600,
+      "default": 60
+    },
+    "cpu_threshold": {
+      "type": "number",
+      "minimum": 0,
+      "default": 80
+    },
+    "memory_threshold_mb": {
+      "type": "number",
+      "minimum": 0,
+      "default": 1024
+    }
+  }
+}

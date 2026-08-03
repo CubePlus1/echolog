@@ -31,8 +31,13 @@
 ### 常驻采样器模式
 
 - `setInterval` 回调必须防重入(`sampling` 标志)+ 整体 try-catch(单轮失败不杀循环,连败 N 次才告警)
+- 超时不能只调用 `AbortController.abort()`:数据库写入等操作可能忽略 signal。必须同时 race 一个会 reject 的 timeout,确保 `running` 在 `finally` 中释放,后续轮次可以继续。
 - 崩溃容忍:片段开启即 INSERT,周期 UPDATE(60s),`stopTracker` 收尾在 `lastSeenAt` 而非 `new Date()`
 - 采样断档检测(`now - lastSampleAt > 3×间隔`)兜住睡眠/合盖,在最后活跃时刻收尾
+
+### 结构化诊断端点
+
+- doctor 类端点失败可返回 503,但响应仍须包含顶层 `error` 以及逐项 diagnostics。CLI 必须保留原始 JSON 错误体,人类模式必须展示逐项检查,两种模式都以非零退出。
 
 ---
 

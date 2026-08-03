@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://echolog.local/plugins/screen-time/config.schema.json",
+  "title": "Screen Time plugin configuration",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "sample_seconds": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 300,
+      "default": 5
+    },
+    "idle_seconds": {
+      "type": "integer",
+      "minimum": 30,
+      "maximum": 86400,
+      "default": 180
+    }
+  }
+}

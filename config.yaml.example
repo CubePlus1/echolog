@@ -25,12 +25,22 @@ sync:
   target: "/path/to/your/notes/echolog"
   auto: false
 
-# 屏幕前台应用采样（仅 macOS；被动记录哪个应用用了多久）
-# idle_seconds：无键鼠输入超过此秒数视为离开；前台应用在播放视频/通话时不受此限
-tracker:
-  enabled: true
-  sample_seconds: 5
-  idle_seconds: 180
+plugins:
+  screen-time:
+    enabled: true
+    config:
+      # 仅 macOS；无键鼠输入超过 idle_seconds 视为离开。
+      # 前台应用播放视频或通话时不受空闲阈值影响。
+      sample_seconds: 5
+      idle_seconds: 180
+  tmux-status:
+    enabled: false
+    config:
+      executable: "tmux-status"
+      timeout_ms: 5000
+      collection_interval_seconds: 60
+      cpu_threshold: 80
+      memory_threshold_mb: 1024
 
 notifications:
   enabled: true

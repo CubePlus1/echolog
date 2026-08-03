@@ -1,0 +1,33 @@
+{
+  "manifestVersion": 1,
+  "id": "screen-time",
+  "version": "1.0.0",
+  "apiVersion": "1",
+  "displayName": "Screen Time",
+  "description": "Passive foreground application tracking and classification",
+  "entries": {
+    "server": "./dist/index.js",
+    "cli": "./dist/cli.js",
+    "web": "/plugins/screen-time/index.js"
+  },
+  "capabilities": [
+    "screen-usage",
+    "daily-report"
+  ],
+  "permissions": [
+    "database:plugin",
+    "process:exec"
+  ],
+  "requires": {
+    "coreApi": "^1.0.0",
+    "platforms": [
+      "darwin"
+    ],
+    "executables": [
+      "lsappinfo",
+      "ioreg",
+      "pmset"
+    ]
+  },
+  "configSchema": "./config.schema.json"
+}

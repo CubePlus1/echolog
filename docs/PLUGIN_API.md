@@ -1,0 +1,179 @@
+# Bundled Plugin API v1
+
+## Status and scope
+
+Bundled Plugin API v1 is the internal extension contract for first-party
+plugins shipped and built with EchoLog. It is stable through manifest,
+TypeScript and HTTP contract tests.
+
+It is not a third-party installation format, binary ABI, sandbox, marketplace,
+or permission boundary against malicious code. EchoLog never scans npm,
+GitHub, or arbitrary filesystem paths for executable plugins.
+
+The protocol uses the requirement terms MUST, MUST NOT, SHOULD and MAY in their
+usual normative sense.
+
+## Package layout
+
+Each plugin is a workspace package under `plugins/<id>` and MUST include:
+
+```text
+plugins/<id>/
+├── echolog.plugin.json
+├── config.schema.json
+├── package.json
+├── src/
+└── web/                 # only when entries.web is declared
+```
+
+The build-time registry explicitly imports every server definition. Manifest
+entry paths are build and audit metadata; the runtime MUST NOT dynamically
+import an arbitrary server or CLI path from configuration.
+
+## Manifest
+
+`echolog.plugin.json` is validated against
+`packages/plugin-sdk/echolog-plugin.schema.json`.
+
+| Field | Contract |
+| --- | --- |
+| `manifestVersion` | MUST be `1` |
+| `id` | Stable lowercase kebab-case, at most 64 characters |
+| `version` | Plugin semantic version |
+| `apiVersion` | Host SDK version, currently `"1"` |
+| `entries` | Declared server, CLI and/or Web build entries |
+| `capabilities` | Reader-facing feature declarations |
+| `permissions` | Host API permissions requested by the plugin |
+| `requires` | Core API, platform and executable requirements |
+| `configSchema` | JSON Schema path for plugin configuration |
+
+Published plugin IDs MUST NOT change. Capabilities and permissions MUST NOT
+contain duplicates.
+
+## Trust and permissions
+
+Bundled plugins run in the daemon process and are trusted code. Permissions
+restrict Host APIs and make review scope explicit:
+
+| Permission | Host capability |
+| --- | --- |
+| `process:exec` | Bounded `execFile` command runner; no shell |
+| `database:plugin` | Database URL for plugin-owned tables |
+
+A plugin without the corresponding declaration receives a structured
+`PLUGIN_DEPENDENCY_MISSING` error. Plugins MUST NOT import Core table schemas or
+write Core records directly.
+
+## Lifecycle
+
+The Host initializes plugins in registry order:
+
+```text
+disabled
+  -> validating
+  -> migrating
+  -> starting
+  -> ready | degraded
+  -> stopping
+```
+
+Disabled plugins MUST NOT migrate, register jobs, or start. One plugin's
+validation, migration or startup failure changes that plugin to `degraded` and
+MUST NOT prevent later plugins or Core from starting. Shutdown occurs in reverse
+registry order with a five-second timeout.
+
+Configuration changes take effect after daemon restart. Runtime hot install,
+enable, disable and unload are not supported in v1.
+
+## PluginContext
+
+The SDK exposes:
+
+- immutable normalized plugin configuration;
+- structured logger;
+- namespaced route registration;
+- non-overlapping scheduled jobs with a rejecting timeout race and
+  `AbortSignal` cancellation;
+- optional Markdown daily-report sections;
+- bounded external command execution;
+- explicitly named Core services.
+
+It does not expose the Fastify instance, the Core Drizzle handle, a general
+event bus, shell execution, or hooks that replace Core record statistics.
+
+Job timeouts do not assume cooperative cancellation. The Host aborts the
+signal and also rejects the scheduler's awaited race, so an operation that
+ignores `AbortSignal` cannot leave the job permanently marked as running.
+
+## Routes and errors
+
+Canonical plugin routes use:
+
+```text
+/api/plugins/<plugin-id>/*
+```
+
+A reviewed compatibility alias such as `/api/screen/*` MUST set
+`compatibilityAlias: true`. The gateway checks plugin state before invoking the
+handler, so disabled and degraded routes remain discoverable but return `503`.
+
+Error bodies preserve EchoLog's top-level string `error`:
+
+```json
+{
+  "error": "Plugin screen-time is disabled",
+  "code": "PLUGIN_DISABLED",
+  "pluginId": "screen-time",
+  "state": "disabled"
+}
+```
+
+Stable error codes:
+
+| Code | Typical HTTP status |
+| --- | --- |
+| `PLUGIN_DISABLED` | 503 |
+| `PLUGIN_DEGRADED` | 503 |
+| `PLUGIN_API_INCOMPATIBLE` | 503 |
+| `PLUGIN_DEPENDENCY_MISSING` | 503 |
+| `PLUGIN_EXEC_FAILED` | 502 |
+| `PLUGIN_TIMEOUT` | 504 |
+| `PLUGIN_OUTPUT_INVALID` | 502 |
+
+`GET /api/health` reports Core health. Plugin failures appear in
+`GET /api/plugins` and `GET /api/plugins/doctor`. A failed doctor request uses
+HTTP 503 and retains the normal error envelope plus diagnostics:
+`{"error":"...","ok":false,"plugins":[...]}`.
+
+## Database migrations
+
+Plugin migrations are ordered, immutable `{name, sql}` entries. The Host stores:
+
+```text
+plugin_migrations(plugin_id, name, checksum, applied_at)
+```
+
+Each migration runs in its own transaction. A failed migration is not recorded.
+Changing the SQL of an applied migration causes checksum drift and degrades only
+that plugin.
+
+"Plugin schema" means a plugin-owned TypeScript schema, migration sequence and
+table prefix. It does not mean a PostgreSQL namespace. Existing screen-time
+tables retain their names and rows.
+
+## CLI and Web
+
+Top-level `el screen` and `el tmux` commands are build-time contributions and
+remain HTTP thin clients. `--json` emits the API response; `el tmux watch
+--json` is explicitly an NDJSON stream.
+
+The Web Shell loads `/api/plugins`, imports only `ready` bundled Web modules,
+then delegates data loading, face descriptions, rendering and actions. A module
+failure removes only that contribution. Disabled plugins do not add navigation
+or pages.
+
+## Compatibility policy
+
+API v1 changes are additive. A breaking SDK, lifecycle or manifest change
+requires a new `apiVersion`. HTTP fields MAY be added; clients SHOULD ignore
+unknown fields. Compatibility aliases remain until a documented major release.
