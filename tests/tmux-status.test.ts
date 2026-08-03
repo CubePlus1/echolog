@@ -12,6 +12,7 @@ import {
 import {
   conversationObservationKey,
   paneIdentity,
+  persistableConversations,
   sessionKey,
 } from "../plugins/tmux-status/src/store.js";
 import { tmuxStatusPlugin } from "../plugins/tmux-status/src/index.js";
@@ -110,7 +111,9 @@ test("accepts v2 Codex/Grok panes and a v1 no-server snapshot", () => {
       pane({ pane: "%4", pid: 200, tools: ["grok"], window_id: "@3" }),
     ],
   });
+  (v2.panes[0] as any).agent_conversations = [{}];
   assert.deepEqual(parseStatusPayload(JSON.stringify(v2)), v2);
+  assert.deepEqual(persistableConversations(v2, v2.panes[0]!), []);
 
   const v1 = {
     generated_at: "2026-07-31T02:00:00Z",
@@ -125,7 +128,14 @@ test("accepts v2 Codex/Grok panes and a v1 no-server snapshot", () => {
 test("accepts canonical v3 fixtures and rejects v3 missing v2 identity", () => {
   for (const name of ["confirmed", "unknown", "conflicting", "no-server"]) {
     const fixture = contractFixture("fixtures", name);
-    assert.deepEqual(parseStatusPayload(fixture), JSON.parse(fixture));
+    const parsed = parseStatusPayload(fixture);
+    assert.deepEqual(parsed, JSON.parse(fixture));
+    if (parsed.panes.length > 0) {
+      assert.equal(
+        persistableConversations(parsed, parsed.panes[0]!).length,
+        1
+      );
+    }
   }
 
   assert.throws(
@@ -532,7 +542,8 @@ test("validates the canonical PID-to-incarnation map", () => {
     { "0": "invalid-pid" },
     { abc: "invalid-pid" },
     { "102": "" },
-    { "2147483648": "outside-postgres-integer-range" },
+    { "102": "103:different-process" },
+    { "2147483648": "2147483648:outside-postgres-integer-range" },
   ]) {
     const invalid = JSON.parse(contractFixture("fixtures", "unknown"));
     invalid.panes[0].agent_conversations[0].process_instances = processInstances;
@@ -542,12 +553,12 @@ test("validates the canonical PID-to-incarnation map", () => {
 
   const opaque = JSON.parse(contractFixture("fixtures", "unknown"));
   opaque.panes[0].agent_conversations[0].process_instances = {
-    "102": "opaque-process-incarnation",
-    "103": "second-opaque-incarnation",
+    "102": "102:opaque-process-incarnation",
+    "103": "103:second-opaque-incarnation",
   };
   opaque.recovery[0].process_instances = {
-    "102": "opaque-process-incarnation",
-    "103": "second-opaque-incarnation",
+    "102": "102:opaque-process-incarnation",
+    "103": "103:second-opaque-incarnation",
   };
   assert.deepEqual(parseStatusPayload(JSON.stringify(opaque)), opaque);
 });
@@ -599,6 +610,17 @@ test("binds v3 pane identities and rejects contradictory pre-restart metadata", 
   oversizedPanePid.recovery[0].pane_pid = 2_147_483_648;
   assert.throws(
     () => parseStatusPayload(JSON.stringify(oversizedPanePid)),
+    PluginError
+  );
+
+  const oversizedSessionCreated = JSON.parse(
+    contractFixture("fixtures", "confirmed")
+  );
+  oversizedSessionCreated.panes[0].session_created = 9_007_199_254_740_992;
+  oversizedSessionCreated.panes[0].pane_instance_id =
+    "500:1784999999:$1:9007199254740992:@2:%3:100";
+  assert.throws(
+    () => parseStatusPayload(JSON.stringify(oversizedSessionCreated)),
     PluginError
   );
 

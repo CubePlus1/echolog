@@ -53,6 +53,15 @@ export function conversationObservationKey(
   return createHash("sha256").update(JSON.stringify(identity)).digest("hex");
 }
 
+export function persistableConversations(
+  snapshot: TmuxStatusPayload,
+  pane: TmuxPaneStatus
+): TmuxAgentConversation[] {
+  return snapshot.schema_version === 3
+    ? pane.agent_conversations ?? []
+    : [];
+}
+
 function minuteBucket(generatedAt: Date): Date {
   const bucket = new Date(generatedAt);
   bucket.setUTCSeconds(0, 0);
@@ -127,7 +136,7 @@ export class TmuxObservationStore {
               + EXCLUDED.anomaly_count
           WHERE tmux_pane_minutes.last_generated_at < EXCLUDED.last_generated_at
         `;
-        for (const conversation of pane.agent_conversations ?? []) {
+        for (const conversation of persistableConversations(snapshot, pane)) {
           const observationKey = conversationObservationKey(pane, conversation);
           await transaction`
             INSERT INTO tmux_agent_conversations (

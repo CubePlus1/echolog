@@ -100,7 +100,7 @@ function validProcessInstances(value: unknown): value is Record<string, string> 
     Object.entries(value).every(([pid, instanceKey]) =>
       /^[1-9][0-9]*$/.test(pid) &&
       Number.isInteger(Number(pid)) && Number(pid) <= MAX_PROCESS_PID &&
-      typeof instanceKey === "string" && instanceKey.length > 0
+      typeof instanceKey === "string" && instanceKey.startsWith(`${pid}:`)
     );
 }
 
@@ -247,7 +247,7 @@ function validatePane(value: unknown, version: number): value is TmuxPaneStatus 
   if (
     version >= 2 &&
     (typeof value.session_id !== "string" ||
-      !Number.isInteger(value.session_created) ||
+      !Number.isSafeInteger(value.session_created) ||
       typeof value.window_id !== "string" ||
       typeof value.server_instance_id !== "string" ||
       typeof value.pane_instance_id !== "string")
