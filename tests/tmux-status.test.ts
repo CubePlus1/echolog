@@ -12,6 +12,7 @@ import {
 import {
   conversationObservationKey,
   paneIdentity,
+  persistenceTimestamp,
   persistableConversations,
   sessionKey,
 } from "../plugins/tmux-status/src/store.js";
@@ -1002,13 +1003,25 @@ test("conversation upsert preserves earliest observation under reordered writes"
   assert.match(source, /first_observed_at = LEAST\(/);
   assert.match(source, /last_observed_at = GREATEST\(/);
   assert.match(source, /last_generated_at = GREATEST\(/);
-  assert.match(source, /const generatedAt = snapshot\.generated_at/);
+  assert.match(
+    source,
+    /snapshot\.schema_version === 3[\s\S]*new Date\(snapshot\.generated_at\)\.toISOString\(\)/
+  );
   assert.match(source, /minuteBucket\(new Date\(generatedAt\)\)/);
   assert.doesNotMatch(source, /const generatedAt = new Date/);
   assert.doesNotMatch(
     source,
     /WHERE tmux_agent_conversations\.last_generated_at\s*< EXCLUDED\.last_generated_at/
   );
+});
+
+test("persistence timestamps preserve v3 precision and normalize legacy offsets", () => {
+  const legacy = payload({ generated_at: "2026-08-03T12:00:00+23:59" });
+  assert.equal(persistenceTimestamp(legacy), "2026-08-02T12:01:00.000Z");
+
+  const v3 = JSON.parse(contractFixture("fixtures", "confirmed"));
+  v3.generated_at = "2026-08-03T12:00:00.000001Z";
+  assert.equal(persistenceTimestamp(v3), v3.generated_at);
 });
 
 test("manual mark passes target, state, and note as separate arguments", async () => {

@@ -69,6 +69,12 @@ function minuteBucket(generatedAt: Date): Date {
   return bucket;
 }
 
+export function persistenceTimestamp(snapshot: TmuxStatusPayload): string {
+  return snapshot.schema_version === 3
+    ? snapshot.generated_at
+    : new Date(snapshot.generated_at).toISOString();
+}
+
 export class TmuxObservationStore {
   private readonly sql;
 
@@ -81,7 +87,7 @@ export class TmuxObservationStore {
   }
 
   async observe(snapshot: TmuxStatusPayload): Promise<void> {
-    const generatedAt = snapshot.generated_at;
+    const generatedAt = persistenceTimestamp(snapshot);
     const bucket = minuteBucket(new Date(generatedAt));
     await this.sql.begin(async (transaction) => {
       for (const pane of snapshot.panes) {
