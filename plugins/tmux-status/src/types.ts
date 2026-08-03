@@ -44,6 +44,7 @@ export interface TmuxAgentConversation {
   conversation_id_kind: ConversationIdKind;
   identity_source: string;
   source_path: string | null;
+  working_directory: string;
   process_pids: number[];
   stable_mapping_key: string | null;
   resume_command: string | null;

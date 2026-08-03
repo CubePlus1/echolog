@@ -31,6 +31,7 @@ export function conversationObservationKey(
     return [
       "confirmed",
       pane.pane_instance_id ?? paneIdentity(pane),
+      conversation.working_directory,
       conversation.stable_mapping_key,
     ].join(":");
   }
@@ -39,6 +40,7 @@ export function conversationObservationKey(
     pane.pane_instance_id ?? paneIdentity(pane),
     conversation.tool,
     conversation.conversation_id_kind,
+    conversation.working_directory,
     [...conversation.process_pids].sort((left, right) => left - right).join(","),
   ].join(":");
 }
@@ -131,7 +133,7 @@ export class TmuxObservationStore {
               ${observationKey}, ${key}, ${identity},
               ${pane.tmux_target ?? pane.target}, ${pane.pane_id ?? pane.pane},
               ${pane.pane_pid ?? pane.pid}, ${conversation.process_pids},
-              ${pane.working_directory ?? pane.path}, ${conversation.tool},
+              ${conversation.working_directory}, ${conversation.tool},
               ${conversation.conversation_id_kind}, ${conversation.conversation_id},
               ${conversation.conversation_id_status}, ${conversation.identity_source},
               ${conversation.source_path}, ${conversation.stable_mapping_key},

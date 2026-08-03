@@ -158,6 +158,12 @@ test("rejects guessed or internally inconsistent v3 conversation identities", ()
   guessedSource.recovery[0].identity_source = "recent_session";
   assert.throws(() => parseStatusPayload(JSON.stringify(guessedSource)), PluginError);
 
+  const mismatchedKind = JSON.parse(contractFixture("fixtures", "confirmed"));
+  mismatchedKind.panes[0].agent_conversations[0].conversation_id_kind =
+    "grok_session_id";
+  mismatchedKind.recovery[0].conversation_id_kind = "grok_session_id";
+  assert.throws(() => parseStatusPayload(JSON.stringify(mismatchedKind)), PluginError);
+
   const mismatchedRecovery = JSON.parse(contractFixture("fixtures", "confirmed"));
   mismatchedRecovery.recovery[0].conversation_id =
     "019fc532-c5ba-7b90-a199-5ecd6d99bf69";
@@ -392,6 +398,13 @@ test("conversation persistence keys are idempotent without inventing unknown IDs
     conversationObservationKey(unknownPane, {
       ...unknownConversation,
       process_pids: [unknownConversation.process_pids[0]! + 1],
+    }),
+    key
+  );
+  assert.notEqual(
+    conversationObservationKey(unknownPane, {
+      ...unknownConversation,
+      working_directory: "/tmp/another-project",
     }),
     key
   );

@@ -75,7 +75,7 @@ const V3_PRODUCER_KEYS = new Set(["name", "version"]);
 const V3_THRESHOLD_KEYS = new Set(["cpu_percent", "memory_mb"]);
 const V3_CONVERSATION_KEYS = new Set([
   "tool", "conversation_id", "conversation_id_status", "conversation_id_kind",
-  "identity_source", "source_path", "process_pids", "stable_mapping_key",
+  "identity_source", "source_path", "working_directory", "process_pids", "stable_mapping_key",
   "resume_command", "evidence",
 ]);
 const V3_RECOVERY_KEYS = new Set([
@@ -112,6 +112,7 @@ function validateConversation(value: unknown): boolean {
     (status !== "confirmed" && status !== "unknown") ||
     typeof value.identity_source !== "string" ||
     (value.source_path !== null && typeof value.source_path !== "string") ||
+    typeof value.working_directory !== "string" ||
     !positiveIntegerArray(value.process_pids) ||
     typeof value.evidence !== "string" || value.evidence.length === 0
   ) {
@@ -140,6 +141,7 @@ function validateRecoveryEntry(value: unknown): boolean {
     conversation_id_kind: value.conversation_id_kind,
     identity_source: value.identity_source,
     source_path: value.source_path,
+    working_directory: value.working_directory,
     process_pids: value.process_pids,
     stable_mapping_key: value.stable_mapping_key,
     resume_command: value.resume_command,
@@ -170,7 +172,7 @@ function projectRecoveryEntry(
     pane_id: pane.pane_id!,
     pane_pid: pane.pane_pid!,
     process_pids: conversation.process_pids,
-    working_directory: pane.working_directory!,
+    working_directory: conversation.working_directory,
     resume_command: conversation.resume_command,
   };
 }
