@@ -147,6 +147,16 @@ test("rejects guessed or internally inconsistent v3 conversation identities", ()
   const badCount = JSON.parse(contractFixture("fixtures", "confirmed"));
   badCount.confirmed_conversation_count = 0;
   assert.throws(() => parseStatusPayload(JSON.stringify(badCount)), PluginError);
+
+  const wrongVersion = JSON.parse(contractFixture("fixtures", "confirmed"));
+  wrongVersion.tool_version = "0.2.0";
+  wrongVersion.producer.version = "0.2.0";
+  assert.throws(() => parseStatusPayload(JSON.stringify(wrongVersion)), PluginError);
+
+  const guessedSource = JSON.parse(contractFixture("fixtures", "unknown"));
+  guessedSource.panes[0].agent_conversations[0].identity_source = "recent_session";
+  guessedSource.recovery[0].identity_source = "recent_session";
+  assert.throws(() => parseStatusPayload(JSON.stringify(guessedSource)), PluginError);
 });
 
 test("rejects corrupted and unsupported tmux JSON", () => {

@@ -21,11 +21,22 @@ function stringArray(value: unknown): value is string[] {
 }
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const SERVER_INSTANCE_PATTERN = /^[0-9]+:[0-9]+$/;
+const CONFIRMED_IDENTITY_SOURCES = new Set([
+  "open_session_file",
+  "cli_resume_argument",
+  "cli_session_id_argument",
+  "tmux_scrollback_resume_command",
+]);
+const UNKNOWN_IDENTITY_SOURCES = new Set([
+  "conflicting_evidence",
+  "unavailable",
+]);
 
 function positiveIntegerArray(value: unknown): value is number[] {
   return Array.isArray(value) && value.length > 0 && value.every(
     (item) => Number.isInteger(item) && item > 0
-  );
+  ) && new Set(value).size === value.length;
 }
 
 function validateConversation(value: unknown): boolean {
@@ -47,11 +58,13 @@ function validateConversation(value: unknown): boolean {
   if (status === "confirmed") {
     return typeof value.conversation_id === "string" &&
       UUID_PATTERN.test(value.conversation_id) &&
+      CONFIRMED_IDENTITY_SOURCES.has(value.identity_source) &&
       value.stable_mapping_key === `${tool}:${value.conversation_id}` &&
       typeof value.resume_command === "string" &&
       value.resume_command.length > 0;
   }
   return value.conversation_id === null &&
+    UNKNOWN_IDENTITY_SOURCES.has(value.identity_source as string) &&
     value.stable_mapping_key === null &&
     value.resume_command === null;
 }
@@ -111,15 +124,33 @@ function validatePane(value: unknown, version: number): value is TmuxPaneStatus 
       value.tmux_target !== value.target ||
       typeof value.tmux_session_name !== "string" ||
       value.tmux_session_name !== value.session ||
-      !Number.isInteger(value.tmux_window_index) ||
+      !Number.isInteger(value.tmux_window_index) || Number(value.tmux_window_index) < 0 ||
       typeof value.tmux_window_name !== "string" ||
-      !Number.isInteger(value.tmux_pane_index) ||
+      value.window !== `${value.tmux_window_index}:${value.tmux_window_name}` ||
+      !Number.isInteger(value.tmux_pane_index) || Number(value.tmux_pane_index) < 0 ||
       typeof value.pane_id !== "string" ||
       value.pane_id !== value.pane ||
       !Number.isInteger(value.pane_pid) ||
       value.pane_pid !== value.pid ||
       typeof value.working_directory !== "string" ||
       value.working_directory !== value.path ||
+      !/^\$[0-9]+$/.test(value.session_id as string) ||
+      Number(value.session_created) < 1 ||
+      !/^@[0-9]+$/.test(value.window_id as string) ||
+      !SERVER_INSTANCE_PATTERN.test(value.server_instance_id as string) ||
+      value.pane_instance_id !== [
+        value.server_instance_id,
+        value.session_id,
+        value.session_created,
+        value.window_id,
+        value.pane_id,
+        value.pane_pid,
+      ].join(":") ||
+      !value.tools.every((tool) => tool === "codex" || tool === "grok") ||
+      new Set(value.tools).size !== value.tools.length ||
+      !value.anomalies.every((item) => item === "CPU" || item === "MEM" || item === "DEAD") ||
+      new Set(value.anomalies).size !== value.anomalies.length ||
+      !["active", "inactive", "idle", "dead"].includes(value.activity as string) ||
       !Array.isArray(value.agent_conversations) ||
       !value.agent_conversations.every(validateConversation))
   ) {
@@ -197,6 +228,8 @@ export function parseStatusPayload(stdout: string): TmuxStatusPayload {
         parsed.report_type !== "recovery") ||
       typeof parsed.pre_restart !== "boolean" ||
       parsed.pre_restart !== (parsed.report_type === "recovery") ||
+      typeof parsed.tool_version !== "string" ||
+      !/^0\.3\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$/.test(parsed.tool_version) ||
       typeof parsed.host !== "string" || parsed.host.length === 0 ||
       !Number.isInteger(parsed.confirmed_conversation_count) ||
       parsed.confirmed_conversation_count !== confirmed ||
