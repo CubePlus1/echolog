@@ -141,20 +141,56 @@ export class TmuxObservationStore {
               ${generatedAt}
             )
             ON CONFLICT (observation_key) DO UPDATE SET
-              session_key = EXCLUDED.session_key,
-              pane_identity = EXCLUDED.pane_identity,
-              tmux_target = EXCLUDED.tmux_target,
-              pane_id = EXCLUDED.pane_id,
-              pane_pid = EXCLUDED.pane_pid,
-              agent_process_pids = EXCLUDED.agent_process_pids,
-              working_directory = EXCLUDED.working_directory,
-              identity_source = EXCLUDED.identity_source,
-              source_path = EXCLUDED.source_path,
-              resume_command = EXCLUDED.resume_command,
-              last_observed_at = EXCLUDED.last_observed_at,
-              last_generated_at = EXCLUDED.last_generated_at
-            WHERE tmux_agent_conversations.last_generated_at
-              < EXCLUDED.last_generated_at
+              session_key = CASE WHEN tmux_agent_conversations.last_generated_at
+                < EXCLUDED.last_generated_at THEN EXCLUDED.session_key
+                ELSE tmux_agent_conversations.session_key END,
+              pane_identity = CASE WHEN tmux_agent_conversations.last_generated_at
+                < EXCLUDED.last_generated_at THEN EXCLUDED.pane_identity
+                ELSE tmux_agent_conversations.pane_identity END,
+              tmux_target = CASE WHEN tmux_agent_conversations.last_generated_at
+                < EXCLUDED.last_generated_at THEN EXCLUDED.tmux_target
+                ELSE tmux_agent_conversations.tmux_target END,
+              pane_id = CASE WHEN tmux_agent_conversations.last_generated_at
+                < EXCLUDED.last_generated_at THEN EXCLUDED.pane_id
+                ELSE tmux_agent_conversations.pane_id END,
+              pane_pid = CASE WHEN tmux_agent_conversations.last_generated_at
+                < EXCLUDED.last_generated_at THEN EXCLUDED.pane_pid
+                ELSE tmux_agent_conversations.pane_pid END,
+              agent_process_pids = CASE
+                WHEN tmux_agent_conversations.last_generated_at
+                  < EXCLUDED.last_generated_at
+                THEN EXCLUDED.agent_process_pids
+                ELSE tmux_agent_conversations.agent_process_pids END,
+              working_directory = CASE
+                WHEN tmux_agent_conversations.last_generated_at
+                  < EXCLUDED.last_generated_at
+                THEN EXCLUDED.working_directory
+                ELSE tmux_agent_conversations.working_directory END,
+              identity_source = CASE
+                WHEN tmux_agent_conversations.last_generated_at
+                  < EXCLUDED.last_generated_at
+                THEN EXCLUDED.identity_source
+                ELSE tmux_agent_conversations.identity_source END,
+              source_path = CASE WHEN tmux_agent_conversations.last_generated_at
+                < EXCLUDED.last_generated_at THEN EXCLUDED.source_path
+                ELSE tmux_agent_conversations.source_path END,
+              resume_command = CASE
+                WHEN tmux_agent_conversations.last_generated_at
+                  < EXCLUDED.last_generated_at
+                THEN EXCLUDED.resume_command
+                ELSE tmux_agent_conversations.resume_command END,
+              first_observed_at = LEAST(
+                tmux_agent_conversations.first_observed_at,
+                EXCLUDED.first_observed_at
+              ),
+              last_observed_at = GREATEST(
+                tmux_agent_conversations.last_observed_at,
+                EXCLUDED.last_observed_at
+              ),
+              last_generated_at = GREATEST(
+                tmux_agent_conversations.last_generated_at,
+                EXCLUDED.last_generated_at
+              )
           `;
         }
       }

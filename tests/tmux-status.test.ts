@@ -240,6 +240,15 @@ test("enforces v3 resource constraints and additionalProperties false", () => {
       PluginError
     );
   }
+
+  const lowercaseSeparators = JSON.parse(
+    contractFixture("fixtures", "confirmed")
+  );
+  lowercaseSeparators.generated_at = "2026-08-03t12:00:00z";
+  assert.deepEqual(
+    parseStatusPayload(JSON.stringify(lowercaseSeparators)),
+    lowercaseSeparators
+  );
 });
 
 test("rejects corrupted and unsupported tmux JSON", () => {
@@ -476,6 +485,20 @@ test("plugin appends immutable conversation mapping migration 002", () => {
   const sql = tmuxStatusPlugin.migrations?.[1]?.sql ?? "";
   assert.match(sql, /CREATE TABLE IF NOT EXISTS tmux_agent_conversations/);
   assert.match(sql, /conversation_id_status = 'unknown'/);
+});
+
+test("conversation upsert preserves earliest observation under reordered writes", () => {
+  const source = readFileSync(
+    new URL("../plugins/tmux-status/src/store.ts", import.meta.url),
+    "utf8"
+  );
+  assert.match(source, /first_observed_at = LEAST\(/);
+  assert.match(source, /last_observed_at = GREATEST\(/);
+  assert.match(source, /last_generated_at = GREATEST\(/);
+  assert.doesNotMatch(
+    source,
+    /WHERE tmux_agent_conversations\.last_generated_at\s*< EXCLUDED\.last_generated_at/
+  );
 });
 
 test("manual mark passes target, state, and note as separate arguments", async () => {
