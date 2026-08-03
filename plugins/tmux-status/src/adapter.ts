@@ -267,6 +267,7 @@ function validatePane(value: unknown, version: number): value is TmuxPaneStatus 
       Number(value.session_created) < 1 ||
       !/^@[0-9]+$/.test(value.window_id as string) ||
       !SERVER_INSTANCE_PATTERN.test(value.server_instance_id as string) ||
+      (value.pane_instance_id as string).length === 0 ||
       !value.tools.every((tool) => tool === "codex" || tool === "grok") ||
       new Set(value.tools).size !== value.tools.length ||
       !value.anomalies.every((item) => item === "CPU" || item === "MEM" || item === "DEAD") ||

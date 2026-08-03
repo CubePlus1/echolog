@@ -450,6 +450,13 @@ test("accepts opaque pane identities and rejects contradictory pre-restart metad
   opaquePane.panes[0].pane_instance_id = "opaque-pane-incarnation";
   assert.deepEqual(parseStatusPayload(JSON.stringify(opaquePane)), opaquePane);
 
+  const emptyPaneIdentity = JSON.parse(contractFixture("fixtures", "confirmed"));
+  emptyPaneIdentity.panes[0].pane_instance_id = "";
+  assert.throws(
+    () => parseStatusPayload(JSON.stringify(emptyPaneIdentity)),
+    PluginError
+  );
+
   for (const [reportType, preRestart] of [
     ["snapshot", true],
     ["recovery", false],
