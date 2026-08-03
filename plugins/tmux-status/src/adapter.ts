@@ -120,10 +120,6 @@ function validateConversation(value: unknown): boolean {
     typeof value.working_directory !== "string" ||
     !positiveIntegerArray(value.process_pids) ||
     !uniqueNonEmptyStringArray(value.process_instance_keys) ||
-    value.process_instance_keys.length !== value.process_pids.length ||
-    !value.process_instance_keys.every((key, index) =>
-      key.startsWith(`${value.process_pids[index]}:`)
-    ) ||
     typeof value.evidence !== "string" || value.evidence.length === 0
   ) {
     return false;

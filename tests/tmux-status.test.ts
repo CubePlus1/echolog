@@ -413,18 +413,25 @@ test("conversation persistence keys are idempotent without inventing unknown IDs
   );
 });
 
-test("rejects missing or misaligned v3 process-instance keys", () => {
-  for (const processInstanceKeys of [
-    [],
-    ["102:first", "102:second"],
-    ["999:wrong-process-start"],
-  ]) {
+test("validates process-instance keys exactly as the canonical v3 schema", () => {
+  for (const processInstanceKeys of [[], ["duplicate", "duplicate"]]) {
     const invalid = JSON.parse(contractFixture("fixtures", "unknown"));
     invalid.panes[0].agent_conversations[0].process_instance_keys =
       processInstanceKeys;
     invalid.recovery[0].process_instance_keys = processInstanceKeys;
     assert.throws(() => parseStatusPayload(JSON.stringify(invalid)), PluginError);
   }
+
+  const opaque = JSON.parse(contractFixture("fixtures", "unknown"));
+  opaque.panes[0].agent_conversations[0].process_instance_keys = [
+    "opaque-process-incarnation",
+    "second-opaque-incarnation",
+  ];
+  opaque.recovery[0].process_instance_keys = [
+    "opaque-process-incarnation",
+    "second-opaque-incarnation",
+  ];
+  assert.deepEqual(parseStatusPayload(JSON.stringify(opaque)), opaque);
 });
 
 test("plugin appends immutable conversation mapping migration 002", () => {
