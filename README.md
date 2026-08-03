@@ -91,6 +91,8 @@ el tmux status --json     # tmux-status 原始快照（插件默认禁用）
 | `sync` | 日报 Markdown 同步目标目录 |
 | `notifications` | macOS 通知、ntfy 推送、超时/空闲/日报提醒规则 |
 
+`el` 默认读取 EchoLog 安装根目录的 `config.yaml`，不会误读当前 Codex 工作目录中其他项目的同名文件。测试或多实例部署需要替代配置时，显式设置 `ECHOLOG_CONFIG_PATH=/absolute/path/to/config.yaml`。
+
 ## 常驻运行（macOS launchd 示例）
 
 ```xml

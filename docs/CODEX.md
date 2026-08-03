@@ -28,6 +28,8 @@ The Codex Plugin under `integrations/codex/echolog` is unrelated to EchoLog's bu
 
 The Skills do not install dependencies, start Docker, expose the daemon publicly, or read `config.yaml` directly.
 
+`el` resolves its default configuration from the EchoLog installation root, so an unrelated `config.yaml` in the active Codex workspace cannot shadow it. Tests and multi-instance setups can select an alternate file explicitly with `ECHOLOG_CONFIG_PATH`.
+
 ## Skills-only MVP
 
 The first integration increment contains two Skills:

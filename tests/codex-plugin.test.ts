@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { parse } from "yaml";
+import { resolveConfigPath } from "../src/core/config.js";
 
 const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const pluginRoot = join(repoRoot, "integrations/codex/echolog");
@@ -58,6 +59,14 @@ test("skills-only Codex Plugin manifest does not declare deferred capabilities",
     "Use $track-work to add a blocker to my active EchoLog record.",
     "Use $review-work to summarize today's EchoLog activity.",
   ]);
+});
+
+test("EchoLog config resolution is independent of the Codex workspace", () => {
+  assert.equal(resolveConfigPath(undefined), join(repoRoot, "config.yaml"));
+  assert.equal(
+    resolveConfigPath("fixtures/echolog-config.yaml"),
+    join(process.cwd(), "fixtures/echolog-config.yaml")
+  );
 });
 
 test("track-work is explicit-only and all EchoLog examples use JSON output", async () => {
