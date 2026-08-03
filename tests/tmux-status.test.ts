@@ -166,6 +166,13 @@ test("rejects guessed or internally inconsistent v3 conversation identities", ()
   badCount.confirmed_conversation_count = 0;
   assert.throws(() => parseStatusPayload(JSON.stringify(badCount)), PluginError);
 
+  const badAnomalyCount = JSON.parse(contractFixture("fixtures", "confirmed"));
+  badAnomalyCount.panes[0].anomalies = ["high_cpu"];
+  assert.throws(
+    () => parseStatusPayload(JSON.stringify(badAnomalyCount)),
+    PluginError
+  );
+
   const wrongVersion = JSON.parse(contractFixture("fixtures", "confirmed"));
   wrongVersion.tool_version = "0.2.0";
   wrongVersion.producer.version = "0.2.0";
