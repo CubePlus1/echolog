@@ -273,6 +273,15 @@ function validatePane(value: unknown, version: number): value is TmuxPaneStatus 
       !/^@[0-9]+$/.test(value.window_id as string) ||
       !SERVER_INSTANCE_PATTERN.test(value.server_instance_id as string) ||
       (value.pane_instance_id as string).length === 0 ||
+      value.session !== value.tmux_session_name ||
+      value.window !== `${value.tmux_window_index}:${value.tmux_window_name}` ||
+      value.pane !== value.pane_id ||
+      value.target !== value.tmux_target ||
+      value.pid !== value.pane_pid ||
+      value.path !== value.working_directory ||
+      value.pane_instance_id !==
+        `${value.server_instance_id}:${value.session_id}:${value.session_created}:` +
+          `${value.window_id}:${value.pane_id}:${value.pane_pid}` ||
       !value.tools.every((tool) => tool === "codex" || tool === "grok") ||
       new Set(value.tools).size !== value.tools.length ||
       !value.anomalies.every((item) => item === "CPU" || item === "MEM" || item === "DEAD") ||

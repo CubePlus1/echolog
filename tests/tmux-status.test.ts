@@ -537,23 +537,36 @@ test("validates the canonical PID-to-incarnation map", () => {
   assert.deepEqual(parseStatusPayload(JSON.stringify(opaque)), opaque);
 });
 
-test("accepts opaque pane identities and rejects contradictory pre-restart metadata", () => {
+test("binds v3 pane identities and rejects contradictory pre-restart metadata", () => {
   const opaquePane = JSON.parse(contractFixture("fixtures", "confirmed"));
   opaquePane.panes[0].pane_instance_id = "opaque-pane-incarnation";
-  assert.deepEqual(parseStatusPayload(JSON.stringify(opaquePane)), opaquePane);
+  assert.throws(() => parseStatusPayload(JSON.stringify(opaquePane)), PluginError);
 
-  const independentAliases = JSON.parse(contractFixture("fixtures", "confirmed"));
-  Object.assign(independentAliases.panes[0], {
-    target: "legacy:9.8",
-    session: "legacy-session",
-    window: "9:legacy-window",
-    pane: "%9",
-    pid: 999,
-    path: "/legacy/path",
-  });
-  assert.deepEqual(
-    parseStatusPayload(JSON.stringify(independentAliases)),
-    independentAliases
+  for (const [field, value] of [
+    ["target", "legacy:9.8"],
+    ["session", "legacy-session"],
+    ["window", "9:legacy-window"],
+    ["pane", "%9"],
+    ["pid", 999],
+    ["path", "/legacy/path"],
+  ] as const) {
+    const contradictoryAlias = JSON.parse(
+      contractFixture("fixtures", "confirmed")
+    );
+    contradictoryAlias.panes[0][field] = value;
+    assert.throws(
+      () => parseStatusPayload(JSON.stringify(contradictoryAlias)),
+      PluginError
+    );
+  }
+
+  const mismatchedProducer = JSON.parse(
+    contractFixture("fixtures", "confirmed")
+  );
+  mismatchedProducer.producer.version = "0.3.1";
+  assert.throws(
+    () => parseStatusPayload(JSON.stringify(mismatchedProducer)),
+    PluginError
   );
 
   const emptyPaneIdentity = JSON.parse(contractFixture("fixtures", "confirmed"));
