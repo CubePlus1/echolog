@@ -163,6 +163,27 @@ test("stdio MCP exposes typed tools and preserves EchoLog HTTP results", { timeo
         markdown: "# 2026-08-03\n",
       });
     }
+    if (request.method === "GET" && url.pathname === "/api/screen/today") {
+      return sendJson(response, 200, {
+        date: "2026-08-03",
+        totalSeconds: 60,
+        byLabel: [{ label: "work", seconds: 60 }],
+        apps: [{
+          appName: "Codex",
+          bundleId: "com.openai.codex",
+          seconds: 60,
+          byLabel: { work: 60 },
+        }],
+        segments: [{
+          appName: "Codex",
+          bundleId: "com.openai.codex",
+          label: "work",
+          seconds: 60,
+          startAt: "2026-08-03T08:00:00.000Z",
+          endAt: "2026-08-03T08:01:00.000Z",
+        }],
+      });
+    }
     if (request.method === "GET" && url.pathname === "/api/screen/daily/2026-08-03") {
       return sendJson(response, 503, {
         error: "screen-time unavailable",
@@ -287,6 +308,12 @@ test("stdio MCP exposes typed tools and preserves EchoLog HTTP results", { timeo
       arguments: { date: "2026-08-03" },
     }) as CallToolResult;
     assert.equal(structured(report).markdown, "# 2026-08-03\n");
+
+    const screenToday = await client.callTool({
+      name: "get_screen_time",
+      arguments: {},
+    }) as CallToolResult;
+    assert.equal(structured(screenToday).totalSeconds, 60);
 
     const screen = await client.callTool({
       name: "get_screen_time",
