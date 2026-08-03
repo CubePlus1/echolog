@@ -240,6 +240,37 @@ test("rejects guessed or internally inconsistent v3 conversation identities", ()
   validCliSource.recovery[0].source_path = null;
   assert.deepEqual(parseStatusPayload(JSON.stringify(validCliSource)), validCliSource);
 
+  const invalidCodexSessionIdSource = structuredClone(validCliSource);
+  invalidCodexSessionIdSource.panes[0].agent_conversations[0].identity_source =
+    "cli_session_id_argument";
+  invalidCodexSessionIdSource.recovery[0].identity_source =
+    "cli_session_id_argument";
+  assert.throws(
+    () => parseStatusPayload(JSON.stringify(invalidCodexSessionIdSource)),
+    PluginError
+  );
+
+  const validGrokSessionIdSource = structuredClone(validCliSource);
+  const grokConversation =
+    validGrokSessionIdSource.panes[0].agent_conversations[0];
+  const grokRecovery = validGrokSessionIdSource.recovery[0];
+  validGrokSessionIdSource.panes[0].tools = ["grok"];
+  grokConversation.tool = "grok";
+  grokConversation.conversation_id_kind = "grok_session_id";
+  grokConversation.identity_source = "cli_session_id_argument";
+  grokConversation.stable_mapping_key = `grok:${grokConversation.conversation_id}`;
+  grokConversation.resume_command =
+    `grok --cwd /tmp/project --resume ${grokConversation.conversation_id}`;
+  grokRecovery.tool = "grok";
+  grokRecovery.conversation_id_kind = "grok_session_id";
+  grokRecovery.identity_source = "cli_session_id_argument";
+  grokRecovery.stable_mapping_key = grokConversation.stable_mapping_key;
+  grokRecovery.resume_command = grokConversation.resume_command;
+  assert.deepEqual(
+    parseStatusPayload(JSON.stringify(validGrokSessionIdSource)),
+    validGrokSessionIdSource
+  );
+
   const missingCwd = JSON.parse(contractFixture("fixtures", "unknown"));
   missingCwd.panes[0].agent_conversations[0].working_directory = null;
   missingCwd.recovery[0].working_directory = null;

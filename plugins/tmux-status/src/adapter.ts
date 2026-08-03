@@ -81,9 +81,12 @@ function isRfc3339DateTime(value: string): boolean {
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const SERVER_INSTANCE_PATTERN = /^[0-9]{1,10}:[0-9]{1,16}$/;
 const MAX_PROCESS_PID = 2_147_483_647;
-const CONFIRMED_IDENTITY_SOURCES = new Set([
+const CODEX_CONFIRMED_IDENTITY_SOURCES = new Set([
   "open_session_file",
   "cli_resume_argument",
+]);
+const GROK_CONFIRMED_IDENTITY_SOURCES = new Set([
+  ...CODEX_CONFIRMED_IDENTITY_SOURCES,
   "cli_session_id_argument",
 ]);
 const UNKNOWN_IDENTITY_SOURCES = new Set([
@@ -172,7 +175,10 @@ function validateConversation(value: unknown): boolean {
   if (status === "confirmed") {
     return typeof value.conversation_id === "string" &&
       UUID_PATTERN.test(value.conversation_id) &&
-      CONFIRMED_IDENTITY_SOURCES.has(value.identity_source) &&
+      (tool === "codex"
+        ? CODEX_CONFIRMED_IDENTITY_SOURCES
+        : GROK_CONFIRMED_IDENTITY_SOURCES
+      ).has(value.identity_source) &&
       typeof value.stable_mapping_key === "string" &&
       value.stable_mapping_key === `${tool}:${value.conversation_id}` &&
       typeof value.working_directory === "string" &&
