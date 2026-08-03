@@ -62,7 +62,7 @@ export const tmuxAgentConversations = pgTable(
       .$type<Record<string, string>>()
       .notNull()
       .default({}),
-    workingDirectory: text("working_directory").notNull(),
+    workingDirectory: text("working_directory"),
     tool: text("tool").notNull(),
     conversationIdKind: text("conversation_id_kind").notNull(),
     conversationId: text("conversation_id"),

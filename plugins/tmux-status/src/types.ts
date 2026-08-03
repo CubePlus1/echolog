@@ -44,7 +44,7 @@ export interface TmuxAgentConversation {
   conversation_id_kind: ConversationIdKind;
   identity_source: string;
   source_path: string | null;
-  working_directory: string;
+  working_directory: string | null;
   process_instances: Record<string, string>;
   stable_mapping_key: string | null;
   resume_command: string | null;
@@ -64,7 +64,7 @@ export interface TmuxRecoveryEntry {
   pane_id: string;
   pane_pid: number;
   process_instances: Record<string, string>;
-  working_directory: string;
+  working_directory: string | null;
   resume_command: string | null;
 }
 

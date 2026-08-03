@@ -156,6 +156,10 @@ test("rejects guessed or internally inconsistent v3 conversation identities", ()
   nilUuid.recovery[0].conversation_id = "00000000-0000-0000-0000-000000000000";
   nilUuid.recovery[0].stable_mapping_key =
     "codex:00000000-0000-0000-0000-000000000000";
+  nilUuid.panes[0].agent_conversations[0].resume_command =
+    "codex resume -C /tmp/project 00000000-0000-0000-0000-000000000000";
+  nilUuid.recovery[0].resume_command =
+    nilUuid.panes[0].agent_conversations[0].resume_command;
   assert.deepEqual(parseStatusPayload(JSON.stringify(nilUuid)), nilUuid);
 
   const badCount = JSON.parse(contractFixture("fixtures", "confirmed"));
@@ -171,6 +175,28 @@ test("rejects guessed or internally inconsistent v3 conversation identities", ()
   guessedSource.panes[0].agent_conversations[0].identity_source = "recent_session";
   guessedSource.recovery[0].identity_source = "recent_session";
   assert.throws(() => parseStatusPayload(JSON.stringify(guessedSource)), PluginError);
+
+  const missingCwd = JSON.parse(contractFixture("fixtures", "unknown"));
+  missingCwd.panes[0].agent_conversations[0].working_directory = null;
+  missingCwd.recovery[0].working_directory = null;
+  assert.deepEqual(parseStatusPayload(JSON.stringify(missingCwd)), missingCwd);
+
+  const wrongResume = JSON.parse(contractFixture("fixtures", "confirmed"));
+  wrongResume.panes[0].agent_conversations[0].resume_command =
+    "codex resume -C /tmp/project 00000000-0000-0000-0000-000000000000 private-text";
+  wrongResume.recovery[0].resume_command =
+    wrongResume.panes[0].agent_conversations[0].resume_command;
+  assert.throws(() => parseStatusPayload(JSON.stringify(wrongResume)), PluginError);
+
+  const quotedCwd = JSON.parse(contractFixture("fixtures", "confirmed"));
+  quotedCwd.panes[0].agent_conversations[0].working_directory =
+    "/tmp/my project's code";
+  quotedCwd.recovery[0].working_directory = "/tmp/my project's code";
+  quotedCwd.panes[0].agent_conversations[0].resume_command =
+    `codex resume -C '/tmp/my project'"'"'s code' ${quotedCwd.recovery[0].conversation_id}`;
+  quotedCwd.recovery[0].resume_command =
+    quotedCwd.panes[0].agent_conversations[0].resume_command;
+  assert.deepEqual(parseStatusPayload(JSON.stringify(quotedCwd)), quotedCwd);
 
   const mismatchedKind = JSON.parse(contractFixture("fixtures", "confirmed"));
   mismatchedKind.panes[0].agent_conversations[0].conversation_id_kind =
@@ -532,6 +558,7 @@ test("plugin appends immutable conversation migrations", () => {
       "001_tmux_observations",
       "002_tmux_agent_conversations",
       "003_tmux_process_instances",
+      "004_tmux_nullable_agent_cwd",
     ]
   );
   const sql = tmuxStatusPlugin.migrations?.[1]?.sql ?? "";
@@ -542,6 +569,10 @@ test("plugin appends immutable conversation migrations", () => {
     /ADD COLUMN IF NOT EXISTS process_instances JSONB/
   );
   assert.ok("processInstances" in tmuxAgentConversations);
+  assert.match(
+    tmuxStatusPlugin.migrations?.[3]?.sql ?? "",
+    /ALTER COLUMN working_directory DROP NOT NULL/
+  );
 });
 
 test("conversation upsert preserves earliest observation under reordered writes", () => {

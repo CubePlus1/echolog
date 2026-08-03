@@ -179,6 +179,13 @@ export const tmuxStatusPlugin: PluginDefinition = {
           DEFAULT '{}'::jsonb;
       `,
     },
+    {
+      name: "004_tmux_nullable_agent_cwd",
+      sql: `
+        ALTER TABLE tmux_agent_conversations
+          ALTER COLUMN working_directory DROP NOT NULL;
+      `,
+    },
   ],
   register(context) {
     const config = adapterConfig(context.config);

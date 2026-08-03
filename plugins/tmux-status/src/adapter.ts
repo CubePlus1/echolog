@@ -102,6 +102,17 @@ function validProcessInstances(value: unknown): value is Record<string, string> 
     );
 }
 
+function shellQuote(value: string): string {
+  if (/^[A-Za-z0-9_@%+=:,./-]+$/.test(value)) return value;
+  return `'${value.replaceAll("'", `'"'"'`)}'`;
+}
+
+function expectedResumeCommand(tool: "codex" | "grok", id: string, cwd: string): string {
+  return tool === "codex"
+    ? `codex resume -C ${shellQuote(cwd)} ${shellQuote(id)}`
+    : `grok --cwd ${shellQuote(cwd)} --resume ${shellQuote(id)}`;
+}
+
 function validateConversation(value: unknown): boolean {
   if (!isObject(value) || !hasOnlyKeys(value, V3_CONVERSATION_KEYS)) return false;
   const tool = value.tool;
@@ -113,7 +124,8 @@ function validateConversation(value: unknown): boolean {
     (status !== "confirmed" && status !== "unknown") ||
     typeof value.identity_source !== "string" ||
     (value.source_path !== null && typeof value.source_path !== "string") ||
-    typeof value.working_directory !== "string" ||
+    (value.working_directory !== null &&
+      typeof value.working_directory !== "string") ||
     !validProcessInstances(value.process_instances) ||
     typeof value.evidence !== "string" || value.evidence.length === 0
   ) {
@@ -125,8 +137,13 @@ function validateConversation(value: unknown): boolean {
       CONFIRMED_IDENTITY_SOURCES.has(value.identity_source) &&
       typeof value.stable_mapping_key === "string" &&
       value.stable_mapping_key === `${tool}:${value.conversation_id}` &&
+      typeof value.working_directory === "string" &&
       typeof value.resume_command === "string" &&
-      value.resume_command.length > 0;
+      value.resume_command === expectedResumeCommand(
+        tool,
+        value.conversation_id,
+        value.working_directory
+      );
   }
   return value.conversation_id === null &&
     UNKNOWN_IDENTITY_SOURCES.has(value.identity_source as string) &&
@@ -153,8 +170,7 @@ function validateRecoveryEntry(value: unknown): boolean {
     typeof value.tmux_target === "string" &&
     typeof value.tmux_session_name === "string" &&
     typeof value.pane_id === "string" &&
-    Number.isInteger(value.pane_pid) && Number(value.pane_pid) > 0 &&
-    typeof value.working_directory === "string";
+    Number.isInteger(value.pane_pid) && Number(value.pane_pid) > 0;
 }
 
 function projectRecoveryEntry(
