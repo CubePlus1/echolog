@@ -6,7 +6,7 @@
 
 ## Overview
 
-EchoLog 是 local-first 的个人活动记录器：Fastify HTTP server + CLI（`el`）+ MCP server 共用一套 core。ESM 项目（`"type": "module"`），pnpm 管理，tsup 打包三个入口（server/cli/mcp）。
+EchoLog 是 local-first 的个人活动记录器：Fastify HTTP server 承载业务，CLI（`el`）与 MCP server 都通过 HTTP 使用它。ESM 项目（`"type": "module"`），pnpm 管理；tsup 打包 server 与 CLI 两个入口，MCP 由 `el mcp` 随 CLI bundle 发布。
 
 ---
 
@@ -28,8 +28,9 @@ src/
 ├── server/
 │   ├── app.ts        # buildApp()：鉴权钩子、错误映射、静态托管、启动/优雅退出
 │   └── routes/       # 一域一文件：records.ts / notes.ts / summary.ts / reports.ts / screen.ts
-├── cli/           # commander CLI，经 HTTP 调 server（cli/api.ts 封装 fetch）
-├── mcp/           # MCP server，直接 import core（不走 HTTP）
+├── client/        # CLI/MCP 共用的 transport-only HTTP client
+├── cli/           # commander CLI，经 client/api.ts 调 server
+├── mcp/           # 本地 stdio MCP，经 client/api.ts 调 server，不 import Core 业务
 └── migrate.ts     # 顺序执行的原生 SQL 迁移数组（pnpm migrate）
 web/               # 零构建原生三件套前端（index.html/styles.css/app.js），Fastify 静态托管
 dist/              # tsup 产物

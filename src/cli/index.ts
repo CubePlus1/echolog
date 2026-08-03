@@ -1,6 +1,7 @@
 import { execSync } from "child_process";
 import { Command } from "commander";
 import { ApiError, ConnectionError, api, post, patch, del } from "./api.js";
+import { runStdioMcpServer } from "../mcp/index.js";
 
 const wantsJsonOutput = process.argv.includes("--json");
 
@@ -1031,6 +1032,13 @@ withJson(daemon.command("status").description("查看后台服务健康状态；
     });
   })
 );
+
+program
+  .command("mcp")
+  .description("通过 stdio 启动 EchoLog MCP server；stdout 仅用于 MCP 协议帧。")
+  .action(async () => {
+    await runStdioMcpServer();
+  });
 
 program.parseAsync().catch((error) => {
   printError(error, wantsJsonOutput);

@@ -34,7 +34,7 @@ if (error instanceof AmbiguousActiveError) {
 }
 ```
 
-响应形状：`{ "error": "...", "candidates": [{ "id", "title", "status" }] }`。CLI 人类模式打印候选列表、`--json` 模式原样透传（见 [CLI Agent Contract](./cli-agent-contract.md)）。
+响应形状：`{ "error": "...", "candidates": [{ "id", "title", "status" }] }`。CLI 人类模式打印候选列表、`--json` 模式原样透传；MCP 返回 `isError: true` 的 JSON text content 并保留这些字段（见 [CLI Agent Contract](./cli-agent-contract.md)）。
 
 ## Error Handling Patterns
 
@@ -50,7 +50,7 @@ if (error instanceof AmbiguousActiveError) {
 
 **Context**：曾经 MCP/CLI 各自内联"省略 id 时匹配唯一活跃记录"的推断，同一逻辑复制了 5 份且行为漂移。
 
-**Decision**：这类便利语义一律下沉到服务端（`/api/records/active` 系列端点，resolver 在 `core/recorder.ts`）。客户端（CLI/Web/未来任何 agent 适配层）只做展示与透传，禁止在客户端复刻服务端可提供的推断/校验逻辑。
+**Decision**：这类便利语义一律下沉到服务端（`/api/records/active` 系列端点，resolver 在 `core/recorder.ts`）。客户端（CLI/Web/MCP 等 agent 适配层）只做展示与透传，禁止在客户端复刻服务端可提供的推断/校验逻辑。
 
 **Why**：单一实现、单一鉴权口、行为一致；新客户端零成本获得同等语义。
 
