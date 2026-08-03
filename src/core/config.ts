@@ -1,6 +1,6 @@
-import { readFileSync, existsSync } from "fs";
+import { readFileSync } from "fs";
 import { parse } from "yaml";
-import { join, dirname } from "path";
+import { join, dirname, resolve } from "path";
 import { fileURLToPath } from "url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -51,11 +51,17 @@ export interface Config {
 
 let cached: Config | null = null;
 
+export function resolveConfigPath(
+  explicitPath: string | undefined = process.env.ECHOLOG_CONFIG_PATH
+): string {
+  return explicitPath?.trim()
+    ? resolve(explicitPath)
+    : join(PROJECT_ROOT, "config.yaml");
+}
+
 export function loadConfig(): Config {
   if (cached) return cached;
-  const cwdPath = join(process.cwd(), "config.yaml");
-  const rootPath = join(PROJECT_ROOT, "config.yaml");
-  const configPath = existsSync(cwdPath) ? cwdPath : rootPath;
+  const configPath = resolveConfigPath();
   const raw = readFileSync(configPath, "utf-8");
   const parsed = parse(raw) as Config;
   parsed.server.serveWeb = parsed.server.serveWeb ?? true;

@@ -72,6 +72,12 @@ el plugins list --json    # 内置插件清单与状态
 el tmux status --json     # tmux-status 原始快照（插件默认禁用）
 ```
 
+### Codex 集成
+
+仓库提供一个独立的 Codex Plugin 包：`integrations/codex/echolog`。首个增量包含两个 Skills：显式写入的 `$track-work` 和只读复盘的 `$review-work`；两者都复用 `el --json`，不直连数据库，也不复制服务端的唯一活跃记录和父子关系判断。
+
+该 Codex Plugin 与 EchoLog Core 的 Bundled Plugin API v1 是不同层次：前者运行在 Codex 侧，后者运行在 EchoLog 服务内。支持范围、前置条件与隐私边界见 [Codex Integration](docs/CODEX.md)。
+
 ## 配置
 
 `config.yaml`（参考 `config.yaml.example`）：
@@ -84,6 +90,8 @@ el tmux status --json     # tmux-status 原始快照（插件默认禁用）
 | `plugins.tmux-status` | 外部 executable、超时、采样频率与异常阈值（默认禁用） |
 | `sync` | 日报 Markdown 同步目标目录 |
 | `notifications` | macOS 通知、ntfy 推送、超时/空闲/日报提醒规则 |
+
+`el` 默认读取 EchoLog 安装根目录的 `config.yaml`，不会误读当前 Codex 工作目录中其他项目的同名文件。测试或多实例部署需要替代配置时，显式设置 `ECHOLOG_CONFIG_PATH=/absolute/path/to/config.yaml`。
 
 ## 常驻运行（macOS launchd 示例）
 
@@ -119,6 +127,8 @@ EchoLog Core (records, notes, subtasks, reports, sync)
 Bundled Plugin API v1
         |-- screen-time
         `-- tmux-status -> external tmux-status executable
+
+Codex Plugin Skills -> el --json -> EchoLog HTTP API
 ```
 
 一切能力沉在服务端：客户端不复刻推断/校验逻辑，新客户端（包括未来的 MCP 适配层）以 HTTP 瘦客户端形式接入即可。开发工作流由 [Trellis](.trellis/workflow.md) 管理，编码规范见 `.trellis/spec/`。
@@ -150,6 +160,9 @@ EchoLog 的近期方向不是做普通的工时计时器，而是成为本地优
 - **P1 · 内置插件架构**：Core 插件平台与 screen-time 拆分已实现；tmux-status 观测层依赖独立 JSON v2 合约。显式 link 与 Agent 工时仍依赖前述 actor/span Core 能力。
   - GitHub：[P1 Issue #10](https://github.com/CubePlus1/echolog/issues/10)（[tmux-status JSON v2 #1](https://github.com/CubePlus1/tmux-status/issues/1)）
   - Trellis：`.trellis/tasks/07-31-plugin-architecture/`
+- **P1 · Codex 集成**：按顺序交付 Skills-only Plugin、本地 stdio MCP 适配层、Plugin 打包与发布验收；每一步独立 Issue、PR 和 review。
+  - GitHub：[#13 Skills MVP](https://github.com/CubePlus1/echolog/issues/13) → [#14 MCP 适配](https://github.com/CubePlus1/echolog/issues/14) → [#15 打包发布](https://github.com/CubePlus1/echolog/issues/15)
+  - Trellis：`.trellis/tasks/08-03-codex-integration/`
 
 ### 三处任务同步规则
 

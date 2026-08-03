@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 
 const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 
-function runCli(cwd: string, args: string[]): Promise<{
+function runCli(cwd: string, configPath: string, args: string[]): Promise<{
   exitCode: number;
   stdout: string;
   stderr: string;
@@ -18,7 +18,10 @@ function runCli(cwd: string, args: string[]): Promise<{
     execFile(
       join(repoRoot, "node_modules/.bin/tsx"),
       [join(repoRoot, "src/cli/index.ts"), ...args],
-      { cwd },
+      {
+        cwd,
+        env: { ...process.env, ECHOLOG_CONFIG_PATH: configPath },
+      },
       (error, stdout, stderr) => {
         resolve({
           exitCode: typeof error?.code === "number" ? error.code : 0,
@@ -48,7 +51,8 @@ test("plugins doctor preserves structured 503 diagnostics in human and JSON mode
   const address = server.address();
   assert.ok(address && typeof address === "object");
   const cwd = await mkdtemp(join(tmpdir(), "echolog-cli-doctor-"));
-  await writeFile(join(cwd, "config.yaml"), [
+  const configPath = join(cwd, "config.yaml");
+  await writeFile(configPath, [
     "server:",
     `  port: ${address.port}`,
     "  host: localhost",
@@ -56,12 +60,12 @@ test("plugins doctor preserves structured 503 diagnostics in human and JSON mode
   ].join("\n"));
 
   try {
-    const json = await runCli(cwd, ["plugins", "doctor", "--json"]);
+    const json = await runCli(cwd, configPath, ["plugins", "doctor", "--json"]);
     assert.equal(json.exitCode, 1);
     assert.equal(json.stdout, "");
     assert.deepEqual(JSON.parse(json.stderr), body);
 
-    const human = await runCli(cwd, ["plugins", "doctor"]);
+    const human = await runCli(cwd, configPath, ["plugins", "doctor"]);
     assert.equal(human.exitCode, 1);
     assert.equal(human.stdout, "");
     assert.match(human.stderr, /One or more enabled plugin checks failed/);

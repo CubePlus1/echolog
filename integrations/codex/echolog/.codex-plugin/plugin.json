@@ -1,0 +1,27 @@
+{
+  "name": "echolog",
+  "version": "0.1.0",
+  "description": "Record and review local EchoLog activity from Codex.",
+  "author": {
+    "name": "CubePlus1",
+    "url": "https://github.com/CubePlus1"
+  },
+  "homepage": "https://github.com/CubePlus1/echolog",
+  "repository": "https://github.com/CubePlus1/echolog",
+  "license": "MIT",
+  "keywords": ["activity", "local-first", "productivity", "codex"],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "EchoLog",
+    "shortDescription": "Record and review local work with EchoLog.",
+    "longDescription": "Use the local EchoLog CLI from Codex to explicitly track work and review activity without sending records to a remote service.",
+    "developerName": "CubePlus1",
+    "category": "Productivity",
+    "capabilities": ["Local", "Read", "Write"],
+    "defaultPrompt": [
+      "Use $track-work to start recording my current task in EchoLog.",
+      "Use $track-work to add a blocker to my active EchoLog record.",
+      "Use $review-work to summarize today's EchoLog activity."
+    ]
+  }
+}

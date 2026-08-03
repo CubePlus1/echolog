@@ -14,6 +14,7 @@
 ### 2. Signatures
 
 - CLI 是 HTTP 瘦客户端（`src/cli/api.ts` → `/api/*`），**不 import core**（读 config 拿 port/apiKey 除外）。
+- CLI 默认只读 EchoLog 安装根的 `config.yaml`；不得因当前工作目录存在其他项目的同名文件而切换配置。替代配置必须显式通过 `ECHOLOG_CONFIG_PATH` 指定。
 - 全局 `--json` 选项：program 级注册，子命令 action 内经 `program.opts()` 读取。
 - 省略 id 的命令（stop/pause/resume/note/cancel）走 `/api/records/active` 系列端点，客户端不做推断（见 error-handling.md 能力下沉原则）。
 
@@ -69,3 +70,16 @@ if (!id) {
 const path = id ? `/api/records/${id}` : "/api/records/active";  // 服务端推断
 const record = await patch(path, { action: "stop" });            // 409 由统一错误处理展开 candidates 并置非 0 退出码
 ```
+
+### 8. Codex Skill Client
+
+`integrations/codex/echolog` 是 EchoLog 的外部 Codex Plugin 包，不属于 Core 的 Bundled Plugin API v1。Skills-only 阶段必须维持以下边界：
+
+- `$track-work` 的写操作只允许显式调用或用户明确要求修改 EchoLog 记录，禁止因普通编码任务隐式开始/停止记录。
+- `$review-work` 只调用 status、today、log、subtasks、notes、report、screen 等读向命令，不得调用记录、规则、插件或 daemon 写操作。
+- 两个 Skill 都先检查 `el` 与 `el daemon status --json`，所有业务命令都使用 `--json`。
+- 已知 record id 时必须显式传 id；收到 409 `candidates` 时展示候选并请求选择，禁止客户端猜测。
+- Skill 不读取 `config.yaml`、不直连 PostgreSQL、不 import Core，也不自动启动 Docker/daemon。
+- 自动化契约由 `tests/codex-plugin.test.ts` 覆盖；结构另用官方 Skill/Plugin validators 验证。
+
+未来 MCP 适配层仍遵守同一 HTTP 瘦客户端与结构化错误透传原则，不以 MCP 为由复制服务端逻辑。
