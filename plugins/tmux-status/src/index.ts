@@ -171,6 +171,14 @@ export const tmuxStatusPlugin: PluginDefinition = {
           ON tmux_agent_conversations(last_observed_at);
       `,
     },
+    {
+      name: "003_tmux_process_instances",
+      sql: `
+        ALTER TABLE tmux_agent_conversations
+          ADD COLUMN IF NOT EXISTS process_instances JSONB NOT NULL
+          DEFAULT '{}'::jsonb;
+      `,
+    },
   ],
   register(context) {
     const config = adapterConfig(context.config);

@@ -25,7 +25,7 @@ Confirmed entries require a UUID, a derived `<tool>:<conversation_id>` stable ke
 
 The existing tmux-status scheduled job remains the only collection loop. `TmuxObservationStore.observe()` continues pane-minute persistence and additionally upserts conversation mappings in the same transaction.
 
-Migration `002_tmux_agent_conversations` creates an additive table keyed by an observation identity. Confirmed mappings include pane instance, cwd, tool, verified conversation ID, and the producer's derived stable mapping key. Unknown observations include the PID-to-incarnation map; this key identifies an observation row and is never presented as a conversation ID.
+Migration `002_tmux_agent_conversations` creates an additive table keyed by a SHA-256 digest of the observation identity. Migration `003_tmux_process_instances` preserves the complete PID-to-incarnation map without changing the immutable earlier migration. Confirmed mappings include pane instance, cwd, tool, verified conversation ID, and the producer's derived stable mapping key. Unknown observations include the PID-to-incarnation map; this key identifies an observation row and is never presented as a conversation ID.
 
 The row preserves tmux target/IDs, pane and agent PIDs, cwd, identity status/source/path, optional verified ID, stable key, resume command, and first/last observation timestamps. Repeated or older snapshots are idempotent, and reordered writes retain the earliest first-observed timestamp without replacing newer metadata.
 

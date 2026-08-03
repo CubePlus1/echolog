@@ -387,10 +387,7 @@ test("conversation persistence keys are idempotent without inventing unknown IDs
     confirmedPane,
     confirmedConversation
   );
-  assert.equal(
-    JSON.parse(confirmedKey).at(-1),
-    confirmedConversation.stable_mapping_key
-  );
+  assert.match(confirmedKey, /^[0-9a-f]{64}$/);
   assert.notEqual(
     conversationObservationKey(
       { ...confirmedPane, pane_instance_id: `${confirmedPane.pane_instance_id}:other` },
@@ -412,7 +409,7 @@ test("conversation persistence keys are idempotent without inventing unknown IDs
   const unknownPane = unknownPayload.panes[0] as TmuxPaneStatus;
   const unknownConversation = unknownPane.agent_conversations![0]!;
   const key = conversationObservationKey(unknownPane, unknownConversation);
-  assert.equal(JSON.parse(key)[0], "unknown");
+  assert.match(key, /^[0-9a-f]{64}$/);
   assert.equal(unknownConversation.conversation_id, null);
   assert.equal(unknownConversation.stable_mapping_key, null);
   assert.equal(unknownConversation.resume_command, null);
@@ -426,6 +423,17 @@ test("conversation persistence keys are idempotent without inventing unknown IDs
   assert.equal(
     conversationObservationKey(unknownPane, sameProcessesDifferentOrder),
     key
+  );
+  assert.equal(
+    conversationObservationKey(
+      { ...unknownPane, pane_instance_id: "p".repeat(20_000) },
+      {
+        ...unknownConversation,
+        working_directory: `/${"deep/".repeat(5_000)}`,
+        process_instances: { "102": "i".repeat(20_000) },
+      }
+    ).length,
+    64
   );
   assert.notEqual(
     conversationObservationKey(unknownPane, {
@@ -516,14 +524,22 @@ test("accepts opaque pane identities and rejects contradictory pre-restart metad
   }
 });
 
-test("plugin appends immutable conversation mapping migration 002", () => {
+test("plugin appends immutable conversation migrations", () => {
   assert.deepEqual(
     tmuxStatusPlugin.migrations?.map((migration) => migration.name),
-    ["001_tmux_observations", "002_tmux_agent_conversations"]
+    [
+      "001_tmux_observations",
+      "002_tmux_agent_conversations",
+      "003_tmux_process_instances",
+    ]
   );
   const sql = tmuxStatusPlugin.migrations?.[1]?.sql ?? "";
   assert.match(sql, /CREATE TABLE IF NOT EXISTS tmux_agent_conversations/);
   assert.match(sql, /conversation_id_status = 'unknown'/);
+  assert.match(
+    tmuxStatusPlugin.migrations?.[2]?.sql ?? "",
+    /ADD COLUMN IF NOT EXISTS process_instances JSONB/
+  );
 });
 
 test("conversation upsert preserves earliest observation under reordered writes", () => {

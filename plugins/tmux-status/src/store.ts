@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import postgres from "postgres";
 import type {
   TmuxAgentConversation,
@@ -24,29 +25,32 @@ export function conversationObservationKey(
   pane: TmuxPaneStatus,
   conversation: TmuxAgentConversation
 ): string {
+  let identity: unknown[];
   if (
     conversation.conversation_id_status === "confirmed" &&
     conversation.stable_mapping_key
   ) {
-    return JSON.stringify([
+    identity = [
       "confirmed",
       pane.pane_instance_id ?? paneIdentity(pane),
       conversation.working_directory,
       conversation.tool,
       conversation.conversation_id,
       conversation.stable_mapping_key,
-    ]);
+    ];
+  } else {
+    identity = [
+      "unknown",
+      pane.pane_instance_id ?? paneIdentity(pane),
+      conversation.tool,
+      conversation.conversation_id_kind,
+      conversation.working_directory,
+      Object.entries(conversation.process_instances).sort(([left], [right]) =>
+        Number(left) - Number(right)
+      ),
+    ];
   }
-  return JSON.stringify([
-    "unknown",
-    pane.pane_instance_id ?? paneIdentity(pane),
-    conversation.tool,
-    conversation.conversation_id_kind,
-    conversation.working_directory,
-    Object.entries(conversation.process_instances).sort(([left], [right]) =>
-      Number(left) - Number(right)
-    ),
-  ]);
+  return createHash("sha256").update(JSON.stringify(identity)).digest("hex");
 }
 
 function minuteBucket(generatedAt: Date): Date {
@@ -128,7 +132,8 @@ export class TmuxObservationStore {
           await transaction`
             INSERT INTO tmux_agent_conversations (
               observation_key, session_key, pane_identity, tmux_target,
-              pane_id, pane_pid, agent_process_pids, working_directory,
+              pane_id, pane_pid, agent_process_pids, process_instances,
+              working_directory,
               tool, conversation_id_kind, conversation_id,
               conversation_id_status, identity_source, source_path,
               stable_mapping_key, resume_command, first_observed_at,
@@ -138,6 +143,7 @@ export class TmuxObservationStore {
               ${pane.tmux_target ?? pane.target}, ${pane.pane_id ?? pane.pane},
               ${pane.pane_pid ?? pane.pid},
               ${Object.keys(conversation.process_instances).map(Number)},
+              ${JSON.stringify(conversation.process_instances)}::jsonb,
               ${conversation.working_directory}, ${conversation.tool},
               ${conversation.conversation_id_kind}, ${conversation.conversation_id},
               ${conversation.conversation_id_status}, ${conversation.identity_source},
@@ -166,6 +172,11 @@ export class TmuxObservationStore {
                   < EXCLUDED.last_generated_at
                 THEN EXCLUDED.agent_process_pids
                 ELSE tmux_agent_conversations.agent_process_pids END,
+              process_instances = CASE
+                WHEN tmux_agent_conversations.last_generated_at
+                  < EXCLUDED.last_generated_at
+                THEN EXCLUDED.process_instances
+                ELSE tmux_agent_conversations.process_instances END,
               working_directory = CASE
                 WHEN tmux_agent_conversations.last_generated_at
                   < EXCLUDED.last_generated_at
