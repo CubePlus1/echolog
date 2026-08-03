@@ -74,14 +74,14 @@ const V3_PRODUCER_KEYS = new Set(["name", "version"]);
 const V3_THRESHOLD_KEYS = new Set(["cpu_percent", "memory_mb"]);
 const V3_CONVERSATION_KEYS = new Set([
   "tool", "conversation_id", "conversation_id_status", "conversation_id_kind",
-  "identity_source", "source_path", "working_directory", "process_pids",
-  "process_instance_keys", "stable_mapping_key", "resume_command", "evidence",
+  "identity_source", "source_path", "working_directory", "process_instances",
+  "stable_mapping_key", "resume_command", "evidence",
 ]);
 const V3_RECOVERY_KEYS = new Set([
   "tool", "conversation_id", "conversation_id_status", "conversation_id_kind",
   "identity_source", "source_path", "stable_mapping_key", "tmux_target",
-  "tmux_session_name", "pane_id", "pane_pid", "process_pids",
-  "process_instance_keys", "working_directory", "resume_command",
+  "tmux_session_name", "pane_id", "pane_pid", "process_instances",
+  "working_directory", "resume_command",
 ]);
 const V3_PANE_KEYS = new Set([
   "session", "window", "pane", "target", "pid", "command", "path",
@@ -94,16 +94,12 @@ const V3_PANE_KEYS = new Set([
   "agent_conversations",
 ]);
 
-function positiveIntegerArray(value: unknown): value is number[] {
-  return Array.isArray(value) && value.length > 0 && value.every(
-    (item) => Number.isInteger(item) && item > 0
-  ) && new Set(value).size === value.length;
-}
-
-function uniqueNonEmptyStringArray(value: unknown): value is string[] {
-  return Array.isArray(value) && value.length > 0 && value.every(
-    (item) => typeof item === "string" && item.length > 0
-  ) && new Set(value).size === value.length;
+function validProcessInstances(value: unknown): value is Record<string, string> {
+  return isObject(value) && Object.keys(value).length > 0 &&
+    Object.entries(value).every(([pid, instanceKey]) =>
+      /^[1-9][0-9]*$/.test(pid) &&
+      typeof instanceKey === "string" && instanceKey.length > 0
+    );
 }
 
 function validateConversation(value: unknown): boolean {
@@ -118,8 +114,7 @@ function validateConversation(value: unknown): boolean {
     typeof value.identity_source !== "string" ||
     (value.source_path !== null && typeof value.source_path !== "string") ||
     typeof value.working_directory !== "string" ||
-    !positiveIntegerArray(value.process_pids) ||
-    !uniqueNonEmptyStringArray(value.process_instance_keys) ||
+    !validProcessInstances(value.process_instances) ||
     typeof value.evidence !== "string" || value.evidence.length === 0
   ) {
     return false;
@@ -128,7 +123,8 @@ function validateConversation(value: unknown): boolean {
     return typeof value.conversation_id === "string" &&
       UUID_PATTERN.test(value.conversation_id) &&
       CONFIRMED_IDENTITY_SOURCES.has(value.identity_source) &&
-      value.stable_mapping_key === `${tool}:${value.conversation_id}` &&
+      typeof value.stable_mapping_key === "string" &&
+      value.stable_mapping_key.length > 0 &&
       typeof value.resume_command === "string" &&
       value.resume_command.length > 0;
   }
@@ -148,8 +144,7 @@ function validateRecoveryEntry(value: unknown): boolean {
     identity_source: value.identity_source,
     source_path: value.source_path,
     working_directory: value.working_directory,
-    process_pids: value.process_pids,
-    process_instance_keys: value.process_instance_keys,
+    process_instances: value.process_instances,
     stable_mapping_key: value.stable_mapping_key,
     resume_command: value.resume_command,
     evidence: "recovery projection",
@@ -178,8 +173,7 @@ function projectRecoveryEntry(
     tmux_session_name: pane.tmux_session_name!,
     pane_id: pane.pane_id!,
     pane_pid: pane.pane_pid!,
-    process_pids: conversation.process_pids,
-    process_instance_keys: conversation.process_instance_keys,
+    process_instances: conversation.process_instances,
     working_directory: conversation.working_directory,
     resume_command: conversation.resume_command,
   };
@@ -198,8 +192,9 @@ function recoveryEntryKey(entry: TmuxRecoveryEntry): string {
     entry.tmux_session_name,
     entry.pane_id,
     entry.pane_pid,
-    [...entry.process_pids].sort((left, right) => left - right),
-    [...entry.process_instance_keys].sort(),
+    Object.entries(entry.process_instances).sort(([left], [right]) =>
+      Number(left) - Number(right)
+    ),
     entry.working_directory,
     entry.resume_command,
   ]);

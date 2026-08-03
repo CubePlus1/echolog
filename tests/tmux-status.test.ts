@@ -141,8 +141,9 @@ test("rejects guessed or internally inconsistent v3 conversation identities", ()
   assert.throws(() => parseStatusPayload(JSON.stringify(unknown)), PluginError);
 
   const confirmed = JSON.parse(contractFixture("fixtures", "confirmed"));
-  confirmed.panes[0].agent_conversations[0].stable_mapping_key = "codex:wrong";
-  assert.throws(() => parseStatusPayload(JSON.stringify(confirmed)), PluginError);
+  confirmed.panes[0].agent_conversations[0].stable_mapping_key = "opaque-stable-key";
+  confirmed.recovery[0].stable_mapping_key = "opaque-stable-key";
+  assert.deepEqual(parseStatusPayload(JSON.stringify(confirmed)), confirmed);
 
   const badCount = JSON.parse(contractFixture("fixtures", "confirmed"));
   badCount.confirmed_conversation_count = 0;
@@ -397,8 +398,9 @@ test("conversation persistence keys are idempotent without inventing unknown IDs
 
   const sameProcessesDifferentOrder = {
     ...unknownConversation,
-    process_pids: [...unknownConversation.process_pids].reverse(),
-    process_instance_keys: [...unknownConversation.process_instance_keys].reverse(),
+    process_instances: Object.fromEntries(
+      Object.entries(unknownConversation.process_instances).reverse()
+    ),
   };
   assert.equal(
     conversationObservationKey(unknownPane, sameProcessesDifferentOrder),
@@ -407,9 +409,7 @@ test("conversation persistence keys are idempotent without inventing unknown IDs
   assert.notEqual(
     conversationObservationKey(unknownPane, {
       ...unknownConversation,
-      process_instance_keys: [
-        `${unknownConversation.process_pids[0]!}:different-process-start`,
-      ],
+      process_instances: { "102": "102:different-process-start" },
     }),
     key
   );
@@ -424,33 +424,37 @@ test("conversation persistence keys are idempotent without inventing unknown IDs
   assert.notEqual(
     conversationObservationKey(unknownPane, {
       ...unknownConversation,
-      process_instance_keys: ["a,b", "c"],
+      process_instances: { "102": "a,b", "103": "c" },
     }),
     conversationObservationKey(unknownPane, {
       ...unknownConversation,
-      process_instance_keys: ["a", "b,c"],
+      process_instances: { "102": "a", "103": "b,c" },
     })
   );
 });
 
-test("validates process-instance keys exactly as the canonical v3 schema", () => {
-  for (const processInstanceKeys of [[], ["duplicate", "duplicate"]]) {
+test("validates the canonical PID-to-incarnation map", () => {
+  for (const processInstances of [
+    {},
+    { "0": "invalid-pid" },
+    { abc: "invalid-pid" },
+    { "102": "" },
+  ]) {
     const invalid = JSON.parse(contractFixture("fixtures", "unknown"));
-    invalid.panes[0].agent_conversations[0].process_instance_keys =
-      processInstanceKeys;
-    invalid.recovery[0].process_instance_keys = processInstanceKeys;
+    invalid.panes[0].agent_conversations[0].process_instances = processInstances;
+    invalid.recovery[0].process_instances = processInstances;
     assert.throws(() => parseStatusPayload(JSON.stringify(invalid)), PluginError);
   }
 
   const opaque = JSON.parse(contractFixture("fixtures", "unknown"));
-  opaque.panes[0].agent_conversations[0].process_instance_keys = [
-    "opaque-process-incarnation",
-    "second-opaque-incarnation",
-  ];
-  opaque.recovery[0].process_instance_keys = [
-    "opaque-process-incarnation",
-    "second-opaque-incarnation",
-  ];
+  opaque.panes[0].agent_conversations[0].process_instances = {
+    "102": "opaque-process-incarnation",
+    "103": "second-opaque-incarnation",
+  };
+  opaque.recovery[0].process_instances = {
+    "102": "opaque-process-incarnation",
+    "103": "second-opaque-incarnation",
+  };
   assert.deepEqual(parseStatusPayload(JSON.stringify(opaque)), opaque);
 });
 

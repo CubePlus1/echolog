@@ -41,7 +41,9 @@ export function conversationObservationKey(
     conversation.tool,
     conversation.conversation_id_kind,
     conversation.working_directory,
-    [...conversation.process_instance_keys].sort(),
+    Object.entries(conversation.process_instances).sort(([left], [right]) =>
+      Number(left) - Number(right)
+    ),
   ]);
 }
 
@@ -132,7 +134,8 @@ export class TmuxObservationStore {
             ) VALUES (
               ${observationKey}, ${key}, ${identity},
               ${pane.tmux_target ?? pane.target}, ${pane.pane_id ?? pane.pane},
-              ${pane.pane_pid ?? pane.pid}, ${conversation.process_pids},
+              ${pane.pane_pid ?? pane.pid},
+              ${Object.keys(conversation.process_instances).map(Number)},
               ${conversation.working_directory}, ${conversation.tool},
               ${conversation.conversation_id_kind}, ${conversation.conversation_id},
               ${conversation.conversation_id_status}, ${conversation.identity_source},
