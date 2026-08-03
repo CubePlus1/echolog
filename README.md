@@ -88,7 +88,7 @@ el tmux status --json     # tmux-status 原始快照（插件默认禁用）
 | `server` | 端口（默认 19827）、`apiKey`（本机豁免，非本机必带）、`serveWeb`（false = 纯 API 服务）、`corsOrigins`（跨源白名单，默认不允许跨源） |
 | `database` | PostgreSQL 连接（与 docker-compose 默认值对应） |
 | `plugins.screen-time` | 屏幕采样开关、频率与空闲阈值（默认启用） |
-| `plugins.tmux-status` | 外部 executable、超时、采样频率与异常阈值（默认禁用） |
+| `plugins.tmux-status` | 外部 executable、超时、采样频率、异常阈值，以及 v3 Agent conversation↔pane 恢复映射（默认禁用） |
 | `sync` | 日报 Markdown 同步目标目录 |
 | `notifications` | macOS 通知、ntfy 推送、超时/空闲/日报提醒规则 |
 

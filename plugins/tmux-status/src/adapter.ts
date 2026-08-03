@@ -20,6 +20,57 @@ function stringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((item) => typeof item === "string");
 }
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function positiveIntegerArray(value: unknown): value is number[] {
+  return Array.isArray(value) && value.length > 0 && value.every(
+    (item) => Number.isInteger(item) && item > 0
+  );
+}
+
+function validateConversation(value: unknown): boolean {
+  if (!isObject(value)) return false;
+  const tool = value.tool;
+  const kind = value.conversation_id_kind;
+  const status = value.conversation_id_status;
+  if (
+    (tool !== "codex" && tool !== "grok") ||
+    kind !== (tool === "codex" ? "codex_thread_id" : "grok_session_id") ||
+    (status !== "confirmed" && status !== "unknown") ||
+    typeof value.identity_source !== "string" ||
+    (value.source_path !== null && typeof value.source_path !== "string") ||
+    !positiveIntegerArray(value.process_pids) ||
+    typeof value.evidence !== "string" || value.evidence.length === 0
+  ) {
+    return false;
+  }
+  if (status === "confirmed") {
+    return typeof value.conversation_id === "string" &&
+      UUID_PATTERN.test(value.conversation_id) &&
+      value.stable_mapping_key === `${tool}:${value.conversation_id}` &&
+      typeof value.resume_command === "string" &&
+      value.resume_command.length > 0;
+  }
+  return value.conversation_id === null &&
+    value.stable_mapping_key === null &&
+    value.resume_command === null;
+}
+
+function validateRecoveryEntry(value: unknown): boolean {
+  if (!isObject(value)) return false;
+  const conversation = {
+    ...value,
+    process_pids: value.process_pids,
+    evidence: "recovery projection",
+  };
+  return validateConversation(conversation) &&
+    typeof value.tmux_target === "string" &&
+    typeof value.tmux_session_name === "string" &&
+    typeof value.pane_id === "string" &&
+    Number.isInteger(value.pane_pid) && Number(value.pane_pid) > 0 &&
+    typeof value.working_directory === "string";
+}
+
 function validatePane(value: unknown, version: number): value is TmuxPaneStatus {
   if (!isObject(value)) return false;
   const requiredStrings = [
@@ -54,6 +105,26 @@ function validatePane(value: unknown, version: number): value is TmuxPaneStatus 
   ) {
     return false;
   }
+  if (
+    version >= 3 &&
+    (typeof value.tmux_target !== "string" ||
+      value.tmux_target !== value.target ||
+      typeof value.tmux_session_name !== "string" ||
+      value.tmux_session_name !== value.session ||
+      !Number.isInteger(value.tmux_window_index) ||
+      typeof value.tmux_window_name !== "string" ||
+      !Number.isInteger(value.tmux_pane_index) ||
+      typeof value.pane_id !== "string" ||
+      value.pane_id !== value.pane ||
+      !Number.isInteger(value.pane_pid) ||
+      value.pane_pid !== value.pid ||
+      typeof value.working_directory !== "string" ||
+      value.working_directory !== value.path ||
+      !Array.isArray(value.agent_conversations) ||
+      !value.agent_conversations.every(validateConversation))
+  ) {
+    return false;
+  }
   return true;
 }
 
@@ -75,7 +146,7 @@ export function parseStatusPayload(stdout: string): TmuxStatusPayload {
     throw invalidOutput("tmux-status output must be an object");
   }
   const version = parsed.schema_version == null ? 1 : parsed.schema_version;
-  if (version !== 1 && version !== 2) {
+  if (version !== 1 && version !== 2 && version !== 3) {
     throw invalidOutput(`Unsupported tmux-status schema_version: ${String(version)}`);
   }
   if (
@@ -108,7 +179,35 @@ export function parseStatusPayload(stdout: string): TmuxStatusPayload {
             (pane) => pane.server_instance_id === parsed.server_instance_id
           )))
   ) {
-    throw invalidOutput("tmux-status v2 producer metadata is invalid");
+    throw invalidOutput(`tmux-status v${version} producer metadata is invalid`);
+  }
+  if (version === 3) {
+    const conversations = parsed.panes.flatMap((pane) =>
+      (pane as Record<string, unknown>).agent_conversations as unknown[]
+    );
+    const confirmed = conversations.filter((value) =>
+      isObject(value) && value.conversation_id_status === "confirmed"
+    ).length;
+    const unknown = conversations.filter((value) =>
+      isObject(value) && value.conversation_id_status === "unknown"
+    ).length;
+    if (
+      (parsed.report_type !== "status" &&
+        parsed.report_type !== "snapshot" &&
+        parsed.report_type !== "recovery") ||
+      typeof parsed.pre_restart !== "boolean" ||
+      parsed.pre_restart !== (parsed.report_type === "recovery") ||
+      typeof parsed.host !== "string" || parsed.host.length === 0 ||
+      !Number.isInteger(parsed.confirmed_conversation_count) ||
+      parsed.confirmed_conversation_count !== confirmed ||
+      !Number.isInteger(parsed.unknown_conversation_count) ||
+      parsed.unknown_conversation_count !== unknown ||
+      !Array.isArray(parsed.recovery) ||
+      parsed.recovery.length !== conversations.length ||
+      !parsed.recovery.every(validateRecoveryEntry)
+    ) {
+      throw invalidOutput("tmux-status v3 conversation metadata is invalid");
+    }
   }
   return parsed as unknown as TmuxStatusPayload;
 }
@@ -172,7 +271,7 @@ function readSupportedVersion(output: string): string | null {
   if (!match) return null;
   const major = Number(match[1]);
   const minor = Number(match[2]);
-  return major === 0 && (minor === 1 || minor === 2)
+  return major === 0 && (minor === 1 || minor === 2 || minor === 3)
     ? `${match[1]}.${match[2]}.${match[3]}`
     : null;
 }

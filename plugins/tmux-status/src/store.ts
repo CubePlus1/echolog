@@ -1,5 +1,9 @@
 import postgres from "postgres";
-import type { TmuxPaneStatus, TmuxStatusPayload } from "./types.js";
+import type {
+  TmuxAgentConversation,
+  TmuxPaneStatus,
+  TmuxStatusPayload,
+} from "./types.js";
 
 export function sessionKey(pane: TmuxPaneStatus): string {
   return pane.server_instance_id && pane.session_id && pane.session_created
@@ -13,6 +17,24 @@ export function paneIdentity(pane: TmuxPaneStatus): string {
     pane.window_id ?? "legacy-window",
     pane.pane,
     String(pane.pid),
+  ].join(":");
+}
+
+export function conversationObservationKey(
+  pane: TmuxPaneStatus,
+  conversation: TmuxAgentConversation
+): string {
+  if (
+    conversation.conversation_id_status === "confirmed" &&
+    conversation.stable_mapping_key
+  ) {
+    return conversation.stable_mapping_key;
+  }
+  return [
+    "unknown",
+    pane.pane_instance_id ?? paneIdentity(pane),
+    conversation.tool,
+    conversation.conversation_id_kind,
   ].join(":");
 }
 
@@ -90,6 +112,44 @@ export class TmuxObservationStore {
               + EXCLUDED.anomaly_count
           WHERE tmux_pane_minutes.last_generated_at < EXCLUDED.last_generated_at
         `;
+        for (const conversation of pane.agent_conversations ?? []) {
+          const observationKey = conversationObservationKey(pane, conversation);
+          await transaction`
+            INSERT INTO tmux_agent_conversations (
+              observation_key, session_key, pane_identity, tmux_target,
+              pane_id, pane_pid, agent_process_pids, working_directory,
+              tool, conversation_id_kind, conversation_id,
+              conversation_id_status, identity_source, source_path,
+              stable_mapping_key, resume_command, first_observed_at,
+              last_observed_at, last_generated_at
+            ) VALUES (
+              ${observationKey}, ${key}, ${identity},
+              ${pane.tmux_target ?? pane.target}, ${pane.pane_id ?? pane.pane},
+              ${pane.pane_pid ?? pane.pid}, ${conversation.process_pids},
+              ${pane.working_directory ?? pane.path}, ${conversation.tool},
+              ${conversation.conversation_id_kind}, ${conversation.conversation_id},
+              ${conversation.conversation_id_status}, ${conversation.identity_source},
+              ${conversation.source_path}, ${conversation.stable_mapping_key},
+              ${conversation.resume_command}, ${generatedAt}, ${generatedAt},
+              ${generatedAt}
+            )
+            ON CONFLICT (observation_key) DO UPDATE SET
+              session_key = EXCLUDED.session_key,
+              pane_identity = EXCLUDED.pane_identity,
+              tmux_target = EXCLUDED.tmux_target,
+              pane_id = EXCLUDED.pane_id,
+              pane_pid = EXCLUDED.pane_pid,
+              agent_process_pids = EXCLUDED.agent_process_pids,
+              working_directory = EXCLUDED.working_directory,
+              identity_source = EXCLUDED.identity_source,
+              source_path = EXCLUDED.source_path,
+              resume_command = EXCLUDED.resume_command,
+              last_observed_at = EXCLUDED.last_observed_at,
+              last_generated_at = EXCLUDED.last_generated_at
+            WHERE tmux_agent_conversations.last_generated_at
+              < EXCLUDED.last_generated_at
+          `;
+        }
       }
     });
   }

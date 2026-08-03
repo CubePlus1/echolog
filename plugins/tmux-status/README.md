@@ -17,16 +17,23 @@ plugins:
 ```
 
 The adapter calls the configured executable with argument arrays and no shell.
-It accepts the migration-window v1 JSON envelope and the versioned v2 contract,
-rejecting corrupt or unsupported output before returning or storing it.
-`doctor` accepts the matching `0.1.x` and `0.2.x` executable lines, then runs a
+It accepts the migration-window v1 JSON envelope, the versioned v2 identity
+contract, and the strict v3 conversation-recovery contract, rejecting corrupt
+or unsupported output before returning or storing it. `doctor` accepts matching
+`0.1.x`, `0.2.x`, and `0.3.x` executable lines, then runs a
 real `status --json` request through the same schema validation used by normal
 status calls and scheduled collection.
 
-Plugin tables retain only session/pane instance identity, detected tool names,
-observation times, sample count, average/peak CPU, peak memory and anomaly
-count. They do not store command, path, manual-mark note, prompt, reply,
-reasoning, tool arguments or pane content.
+Plugin tables retain session/pane instance identity, detected tool names,
+observation times, sampled resource aggregates, and v3 conversation recovery
+metadata. Recovery rows include cwd and the local identity evidence path because
+both are required to diagnose and resume a verified mapping. They never include
+command text, manual-mark notes, prompt, reply, reasoning, tool arguments,
+terminal transcript, or pane content.
+
+The producer-owned v3 JSON Schema and fixtures are mirrored under
+`contracts/tmux-status/v3` with a SHA-256 manifest. EchoLog validates and stores
+the contract; it does not copy the Python collector or infer conversation IDs.
 
 Routes:
 

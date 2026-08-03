@@ -1,0 +1,77 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: verify
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out EchoLog
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check out pinned OpenAI validators
+        uses: actions/checkout@v5
+        with:
+          repository: openai/skills
+          ref: 49f948faa9258a0c61caceaf225e179651397431
+          path: .ci/openai-skills
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.15.1
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - uses: astral-sh/setup-uv@v6
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Test
+        run: pnpm test
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Build
+        run: pnpm build
+
+      - name: Verify controlled tmux-status contract
+        working-directory: contracts/tmux-status/v3
+        run: |
+          shasum -a 256 -c SHA256SUMS
+          uvx --from check-jsonschema==0.33.3 check-jsonschema \
+            --schemafile tmux-status.schema.json fixtures/*.json
+          if uvx --from check-jsonschema==0.33.3 check-jsonschema \
+            --schemafile tmux-status.schema.json fixtures-invalid/*.json; then
+            echo "invalid tmux-status fixture unexpectedly passed" >&2
+            exit 1
+          fi
+
+      - name: Validate Codex Skills and Plugin
+        run: |
+          validator_root=.ci/openai-skills/skills/.system
+          uv run --with pyyaml==6.0.2 python \
+            "$validator_root/skill-creator/scripts/quick_validate.py" \
+            integrations/codex/echolog/skills/track-work
+          uv run --with pyyaml==6.0.2 python \
+            "$validator_root/skill-creator/scripts/quick_validate.py" \
+            integrations/codex/echolog/skills/review-work
+          uv run --with pyyaml==6.0.2 python \
+            "$validator_root/plugin-creator/scripts/validate_plugin.py" \
+            integrations/codex/echolog

@@ -129,6 +129,48 @@ export const tmuxStatusPlugin: PluginDefinition = {
           ON tmux_pane_minutes(minute_bucket);
       `,
     },
+    {
+      name: "002_tmux_agent_conversations",
+      sql: `
+        CREATE TABLE IF NOT EXISTS tmux_agent_conversations (
+          observation_key TEXT PRIMARY KEY,
+          session_key TEXT NOT NULL REFERENCES tmux_sessions(session_key)
+            ON DELETE CASCADE,
+          pane_identity TEXT NOT NULL,
+          tmux_target TEXT NOT NULL,
+          pane_id TEXT NOT NULL,
+          pane_pid INTEGER NOT NULL,
+          agent_process_pids INTEGER[] NOT NULL DEFAULT '{}'::integer[],
+          working_directory TEXT NOT NULL,
+          tool TEXT NOT NULL,
+          conversation_id_kind TEXT NOT NULL,
+          conversation_id TEXT,
+          conversation_id_status TEXT NOT NULL,
+          identity_source TEXT NOT NULL,
+          source_path TEXT,
+          stable_mapping_key TEXT,
+          resume_command TEXT,
+          first_observed_at TIMESTAMPTZ NOT NULL,
+          last_observed_at TIMESTAMPTZ NOT NULL,
+          last_generated_at TIMESTAMPTZ NOT NULL,
+          CONSTRAINT tmux_agent_conversations_status_check CHECK (
+            (
+              conversation_id_status = 'confirmed'
+              AND conversation_id IS NOT NULL
+              AND stable_mapping_key IS NOT NULL
+              AND resume_command IS NOT NULL
+            ) OR (
+              conversation_id_status = 'unknown'
+              AND conversation_id IS NULL
+              AND stable_mapping_key IS NULL
+              AND resume_command IS NULL
+            )
+          )
+        );
+        CREATE INDEX IF NOT EXISTS idx_tmux_agent_conversations_last_observed
+          ON tmux_agent_conversations(last_observed_at);
+      `,
+    },
   ],
   register(context) {
     const config = adapterConfig(context.config);

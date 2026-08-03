@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import {
   PluginError,
@@ -9,9 +10,11 @@ import {
   TmuxStatusAdapter,
 } from "../plugins/tmux-status/src/adapter.js";
 import {
+  conversationObservationKey,
   paneIdentity,
   sessionKey,
 } from "../plugins/tmux-status/src/store.js";
+import { tmuxStatusPlugin } from "../plugins/tmux-status/src/index.js";
 import type {
   TmuxPaneStatus,
   TmuxStatusPayload,
@@ -59,6 +62,13 @@ function payload(overrides: Partial<TmuxStatusPayload> = {}): TmuxStatusPayload 
     panes: [pane()],
     ...overrides,
   };
+}
+
+function contractFixture(directory: "fixtures" | "fixtures-invalid", name: string) {
+  return readFileSync(
+    new URL(`../contracts/tmux-status/v3/${directory}/${name}.json`, import.meta.url),
+    "utf8"
+  );
 }
 
 function context(
@@ -109,6 +119,34 @@ test("accepts v2 Codex/Grok panes and a v1 no-server snapshot", () => {
     panes: [],
   };
   assert.deepEqual(parseStatusPayload(JSON.stringify(v1)), v1);
+});
+
+test("accepts canonical v3 fixtures and rejects v3 missing v2 identity", () => {
+  for (const name of ["confirmed", "unknown", "conflicting", "no-server"]) {
+    const fixture = contractFixture("fixtures", name);
+    assert.deepEqual(parseStatusPayload(fixture), JSON.parse(fixture));
+  }
+
+  assert.throws(
+    () => parseStatusPayload(contractFixture("fixtures-invalid", "missing-v2-identity")),
+    (error) =>
+      error instanceof PluginError && error.code === "PLUGIN_OUTPUT_INVALID"
+  );
+});
+
+test("rejects guessed or internally inconsistent v3 conversation identities", () => {
+  const unknown = JSON.parse(contractFixture("fixtures", "unknown"));
+  unknown.panes[0].agent_conversations[0].conversation_id =
+    "019fc532-c5ba-7b90-a199-5ecd6d99bf69";
+  assert.throws(() => parseStatusPayload(JSON.stringify(unknown)), PluginError);
+
+  const confirmed = JSON.parse(contractFixture("fixtures", "confirmed"));
+  confirmed.panes[0].agent_conversations[0].stable_mapping_key = "codex:wrong";
+  assert.throws(() => parseStatusPayload(JSON.stringify(confirmed)), PluginError);
+
+  const badCount = JSON.parse(contractFixture("fixtures", "confirmed"));
+  badCount.confirmed_conversation_count = 0;
+  assert.throws(() => parseStatusPayload(JSON.stringify(badCount)), PluginError);
 });
 
 test("rejects corrupted and unsupported tmux JSON", () => {
@@ -224,6 +262,35 @@ test("session and pane observation identities survive reuse scenarios", () => {
       pane_instance_id: "new-window-pane",
     }))
   );
+});
+
+test("conversation persistence keys are idempotent without inventing unknown IDs", () => {
+  const confirmedPayload = JSON.parse(contractFixture("fixtures", "confirmed"));
+  const confirmedPane = confirmedPayload.panes[0] as TmuxPaneStatus;
+  const confirmedConversation = confirmedPane.agent_conversations![0]!;
+  assert.equal(
+    conversationObservationKey(confirmedPane, confirmedConversation),
+    confirmedConversation.stable_mapping_key
+  );
+
+  const unknownPayload = JSON.parse(contractFixture("fixtures", "unknown"));
+  const unknownPane = unknownPayload.panes[0] as TmuxPaneStatus;
+  const unknownConversation = unknownPane.agent_conversations![0]!;
+  const key = conversationObservationKey(unknownPane, unknownConversation);
+  assert.match(key, /^unknown:/);
+  assert.equal(unknownConversation.conversation_id, null);
+  assert.equal(unknownConversation.stable_mapping_key, null);
+  assert.equal(unknownConversation.resume_command, null);
+});
+
+test("plugin appends immutable conversation mapping migration 002", () => {
+  assert.deepEqual(
+    tmuxStatusPlugin.migrations?.map((migration) => migration.name),
+    ["001_tmux_observations", "002_tmux_agent_conversations"]
+  );
+  const sql = tmuxStatusPlugin.migrations?.[1]?.sql ?? "";
+  assert.match(sql, /CREATE TABLE IF NOT EXISTS tmux_agent_conversations/);
+  assert.match(sql, /conversation_id_status = 'unknown'/);
 });
 
 test("manual mark passes target, state, and note as separate arguments", async () => {
