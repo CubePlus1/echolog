@@ -392,10 +392,9 @@ export function parseStatusPayload(stdout: string): TmuxStatusPayload {
       pane.agent_conversations!.map((conversation) =>
         recoveryEntryKey(projectRecoveryEntry(pane, conversation))
       )
-    ).sort();
+    );
     const actualRecovery = (parsed.recovery as unknown as TmuxRecoveryEntry[])
-      .map(recoveryEntryKey)
-      .sort();
+      .map(recoveryEntryKey);
     if (expectedRecovery.some((entry, index) => entry !== actualRecovery[index])) {
       throw invalidOutput("tmux-status v3 recovery projection is inconsistent");
     }

@@ -225,6 +225,22 @@ test("rejects guessed or internally inconsistent v3 conversation identities", ()
       error.message.includes("recovery projection is inconsistent")
   );
 
+  const reorderedRecovery = JSON.parse(
+    contractFixture("fixtures", "confirmed")
+  );
+  const unknownEntry = JSON.parse(contractFixture("fixtures", "unknown"));
+  reorderedRecovery.panes.push(unknownEntry.panes[0]);
+  reorderedRecovery.recovery.push(unknownEntry.recovery[0]);
+  reorderedRecovery.pane_count = 2;
+  reorderedRecovery.unknown_conversation_count = 1;
+  reorderedRecovery.recovery.reverse();
+  assert.throws(
+    () => parseStatusPayload(JSON.stringify(reorderedRecovery)),
+    (error) =>
+      error instanceof PluginError &&
+      error.message.includes("recovery projection is inconsistent")
+  );
+
   for (const invalidValue of [0, -1]) {
     const invalidPid = JSON.parse(contractFixture("fixtures", "confirmed"));
     invalidPid.panes[0].pid = invalidValue;
