@@ -274,6 +274,18 @@ test("rejects guessed or internally inconsistent v3 conversation identities", ()
     contractFixture("fixtures", "confirmed")
   );
   const unknownEntry = JSON.parse(contractFixture("fixtures", "unknown"));
+  unknownEntry.panes[0].pane = "%4";
+  unknownEntry.panes[0].pane_id = "%4";
+  unknownEntry.panes[0].pid = 200;
+  unknownEntry.panes[0].pane_pid = 200;
+  unknownEntry.panes[0].target = "work:0.1";
+  unknownEntry.panes[0].tmux_target = "work:0.1";
+  unknownEntry.panes[0].tmux_pane_index = 1;
+  unknownEntry.panes[0].pane_instance_id =
+    "500:1784999999:$1:1785000000:@2:%4:200";
+  unknownEntry.recovery[0].tmux_target = "work:0.1";
+  unknownEntry.recovery[0].pane_id = "%4";
+  unknownEntry.recovery[0].pane_pid = 200;
   reorderedRecovery.panes.push(unknownEntry.panes[0]);
   reorderedRecovery.recovery.push(unknownEntry.recovery[0]);
   reorderedRecovery.pane_count = 2;
@@ -596,6 +608,23 @@ test("validates the canonical PID-to-incarnation map", () => {
     "103": "103:second-opaque-incarnation",
   };
   assert.deepEqual(parseStatusPayload(JSON.stringify(opaque)), opaque);
+
+  const reusedPid = JSON.parse(contractFixture("fixtures", "unknown"));
+  const secondUnknown = structuredClone(
+    reusedPid.panes[0].agent_conversations[0]
+  );
+  secondUnknown.process_instances = {
+    "102": "102:different-process-incarnation",
+  };
+  reusedPid.panes[0].agent_conversations.push(secondUnknown);
+  const secondRecovery = structuredClone(reusedPid.recovery[0]);
+  secondRecovery.process_instances = secondUnknown.process_instances;
+  reusedPid.recovery.push(secondRecovery);
+  reusedPid.unknown_conversation_count = 2;
+  assert.throws(
+    () => parseStatusPayload(JSON.stringify(reusedPid)),
+    PluginError
+  );
 });
 
 test("binds v3 pane identities and rejects contradictory pre-restart metadata", () => {
@@ -689,6 +718,37 @@ test("binds v3 pane identities and rejects contradictory pre-restart metadata", 
   deadPaneConversation.panes[0].dead = true;
   assert.throws(
     () => parseStatusPayload(JSON.stringify(deadPaneConversation)),
+    PluginError
+  );
+
+  const duplicateConfirmedMapping = JSON.parse(
+    contractFixture("fixtures", "confirmed")
+  );
+  const secondConfirmed = structuredClone(
+    duplicateConfirmedMapping.panes[0].agent_conversations[0]
+  );
+  secondConfirmed.process_instances = { "102": "102:second-process" };
+  duplicateConfirmedMapping.panes[0].agent_conversations.push(secondConfirmed);
+  const secondConfirmedRecovery = structuredClone(
+    duplicateConfirmedMapping.recovery[0]
+  );
+  secondConfirmedRecovery.process_instances = secondConfirmed.process_instances;
+  duplicateConfirmedMapping.recovery.push(secondConfirmedRecovery);
+  duplicateConfirmedMapping.confirmed_conversation_count = 2;
+  assert.throws(
+    () => parseStatusPayload(JSON.stringify(duplicateConfirmedMapping)),
+    PluginError
+  );
+
+  const duplicatePaneIdentity = JSON.parse(
+    contractFixture("fixtures", "confirmed")
+  );
+  const secondPane = structuredClone(duplicatePaneIdentity.panes[0]);
+  secondPane.agent_conversations = [];
+  duplicatePaneIdentity.panes.push(secondPane);
+  duplicatePaneIdentity.pane_count = 2;
+  assert.throws(
+    () => parseStatusPayload(JSON.stringify(duplicatePaneIdentity)),
     PluginError
   );
 

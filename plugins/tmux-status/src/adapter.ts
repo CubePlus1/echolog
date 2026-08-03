@@ -384,12 +384,43 @@ export function parseStatusPayload(stdout: string): TmuxStatusPayload {
     }
     const panes = parsed.panes as unknown as TmuxPaneStatus[];
     const conversations = panes.flatMap((pane) => pane.agent_conversations!);
+    const paneIds = new Set<string>();
+    const paneInstanceIds = new Set<string>();
+    const paneIdentitiesAreUnique = panes.every((pane) => {
+      if (
+        paneIds.has(pane.pane_id!) ||
+        paneInstanceIds.has(pane.pane_instance_id!)
+      ) {
+        return false;
+      }
+      paneIds.add(pane.pane_id!);
+      paneInstanceIds.add(pane.pane_instance_id!);
+      return true;
+    });
+    const confirmedMappingsAreUnique = panes.every((pane) => {
+      const confirmedMappings = new Set<string>();
+      return pane.agent_conversations!.every((conversation) => {
+        if (conversation.conversation_id_status !== "confirmed") return true;
+        const mapping = `${conversation.tool}\0${conversation.conversation_id}`;
+        if (confirmedMappings.has(mapping)) return false;
+        confirmedMappings.add(mapping);
+        return true;
+      });
+    });
     const processInstances = new Set<string>();
+    const processInstanceByPid = new Map<string, string>();
     const processInstancesAreUnique = conversations.every((conversation) =>
       Object.entries(conversation.process_instances).every(([pid, instanceKey]) => {
         const identity = `${pid}\0${instanceKey}`;
-        if (processInstances.has(identity)) return false;
+        const priorInstanceKey = processInstanceByPid.get(pid);
+        if (
+          processInstances.has(identity) ||
+          (priorInstanceKey !== undefined && priorInstanceKey !== instanceKey)
+        ) {
+          return false;
+        }
         processInstances.add(identity);
+        processInstanceByPid.set(pid, instanceKey);
         return true;
       })
     );
@@ -408,6 +439,8 @@ export function parseStatusPayload(stdout: string): TmuxStatusPayload {
         parsed.report_type !== "recovery") ||
       typeof parsed.pre_restart !== "boolean" ||
       parsed.pre_restart !== (parsed.report_type === "recovery") ||
+      !paneIdentitiesAreUnique ||
+      !confirmedMappingsAreUnique ||
       !processInstancesAreUnique ||
       parsed.anomaly_count !== anomalousPanes ||
       typeof parsed.tool_version !== "string" ||
