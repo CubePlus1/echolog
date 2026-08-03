@@ -72,6 +72,4 @@ jobs:
           uv run --with pyyaml==6.0.2 python \
             "$validator_root/skill-creator/scripts/quick_validate.py" \
             integrations/codex/echolog/skills/review-work
-          uv run --with pyyaml==6.0.2 python \
-            "$validator_root/plugin-creator/scripts/validate_plugin.py" \
-            integrations/codex/echolog
+          pnpm exec tsx --test tests/codex-plugin.test.ts
