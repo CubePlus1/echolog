@@ -727,11 +727,20 @@ test("binds v3 pane identities and rejects contradictory pre-restart metadata", 
   const secondConfirmed = structuredClone(
     duplicateConfirmedMapping.panes[0].agent_conversations[0]
   );
+  const uppercaseConversationId = secondConfirmed.conversation_id.toUpperCase();
+  secondConfirmed.conversation_id = uppercaseConversationId;
+  secondConfirmed.stable_mapping_key = `codex:${uppercaseConversationId}`;
+  secondConfirmed.resume_command =
+    `codex resume -C /tmp/project ${uppercaseConversationId}`;
   secondConfirmed.process_instances = { "102": "102:second-process" };
   duplicateConfirmedMapping.panes[0].agent_conversations.push(secondConfirmed);
   const secondConfirmedRecovery = structuredClone(
     duplicateConfirmedMapping.recovery[0]
   );
+  secondConfirmedRecovery.conversation_id = uppercaseConversationId;
+  secondConfirmedRecovery.stable_mapping_key = `codex:${uppercaseConversationId}`;
+  secondConfirmedRecovery.resume_command =
+    `codex resume -C /tmp/project ${uppercaseConversationId}`;
   secondConfirmedRecovery.process_instances = secondConfirmed.process_instances;
   duplicateConfirmedMapping.recovery.push(secondConfirmedRecovery);
   duplicateConfirmedMapping.confirmed_conversation_count = 2;

@@ -401,7 +401,8 @@ export function parseStatusPayload(stdout: string): TmuxStatusPayload {
       const confirmedMappings = new Set<string>();
       return pane.agent_conversations!.every((conversation) => {
         if (conversation.conversation_id_status !== "confirmed") return true;
-        const mapping = `${conversation.tool}\0${conversation.conversation_id}`;
+        const mapping =
+          `${conversation.tool}\0${conversation.conversation_id!.toLowerCase()}`;
         if (confirmedMappings.has(mapping)) return false;
         confirmedMappings.add(mapping);
         return true;
