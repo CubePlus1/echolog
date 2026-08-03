@@ -1,6 +1,6 @@
 interface:
   display_name: "Review Work with EchoLog"
   short_description: "Review EchoLog history, status, and daily reports"
-  default_prompt: "Use $review-work to summarize my EchoLog activity today."
+  default_prompt: "Use $echolog:review-work to summarize my EchoLog activity today."
 policy:
   allow_implicit_invocation: true

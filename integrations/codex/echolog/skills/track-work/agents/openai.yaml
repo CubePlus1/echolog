@@ -1,6 +1,6 @@
 interface:
   display_name: "Track Work with EchoLog"
   short_description: "Explicitly record work and progress in EchoLog"
-  default_prompt: "Use $track-work to start recording this task in EchoLog."
+  default_prompt: "Use $echolog:track-work to start recording this task in EchoLog."
 policy:
   allow_implicit_invocation: false

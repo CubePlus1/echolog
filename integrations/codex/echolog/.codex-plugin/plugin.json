@@ -1,7 +1,7 @@
 {
   "name": "echolog",
-  "version": "0.1.0",
-  "description": "Record and review local EchoLog activity from Codex.",
+  "version": "0.2.0",
+  "description": "Record and review local EchoLog activity from Codex with guided Skills and typed MCP tools.",
   "author": {
     "name": "CubePlus1",
     "url": "https://github.com/CubePlus1"
@@ -11,17 +11,23 @@
   "license": "MIT",
   "keywords": ["activity", "local-first", "productivity", "codex"],
   "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
   "interface": {
     "displayName": "EchoLog",
-    "shortDescription": "Record and review local work with EchoLog.",
-    "longDescription": "Use the local EchoLog CLI from Codex to explicitly track work and review activity without sending records to a remote service.",
+    "shortDescription": "Record and review local work with Skills and MCP tools.",
+    "longDescription": "Explicitly track work and review local EchoLog history from Codex. The Plugin launches el mcp on the same machine and keeps records in the user's EchoLog daemon and PostgreSQL.",
     "developerName": "CubePlus1",
     "category": "Productivity",
-    "capabilities": ["Local", "Read", "Write"],
+    "capabilities": ["Local", "MCP", "Read", "Write"],
+    "websiteURL": "https://github.com/CubePlus1/echolog",
+    "privacyPolicyURL": "https://github.com/CubePlus1/echolog/blob/main/docs/CODEX.md#privacy-and-data-boundary",
+    "brandColor": "#0F766E",
+    "composerIcon": "./assets/echolog.svg",
+    "logo": "./assets/echolog.svg",
     "defaultPrompt": [
-      "Use $track-work to start recording my current task in EchoLog.",
-      "Use $track-work to add a blocker to my active EchoLog record.",
-      "Use $review-work to summarize today's EchoLog activity."
+      "Use $echolog:track-work to record my current task in EchoLog.",
+      "Use $echolog:track-work to add a blocker to my active EchoLog record.",
+      "Use $echolog:review-work to summarize today's EchoLog activity."
     ]
   }
 }

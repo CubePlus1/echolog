@@ -1,0 +1,19 @@
+{
+  "mcpServers": {
+    "echolog": {
+      "title": "EchoLog",
+      "description": "Record and review activity through the local EchoLog daemon.",
+      "icons": [
+        {
+          "src": "./assets/echolog.svg",
+          "mimeType": "image/svg+xml",
+          "sizes": ["64x64"]
+        }
+      ],
+      "command": "./scripts/echolog-mcp",
+      "args": [],
+      "cwd": ".",
+      "env_vars": ["PATH"]
+    }
+  }
+}
