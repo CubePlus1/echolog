@@ -141,9 +141,21 @@ test("rejects guessed or internally inconsistent v3 conversation identities", ()
   assert.throws(() => parseStatusPayload(JSON.stringify(unknown)), PluginError);
 
   const confirmed = JSON.parse(contractFixture("fixtures", "confirmed"));
-  confirmed.panes[0].agent_conversations[0].stable_mapping_key = "opaque-stable-key";
-  confirmed.recovery[0].stable_mapping_key = "opaque-stable-key";
-  assert.deepEqual(parseStatusPayload(JSON.stringify(confirmed)), confirmed);
+  confirmed.panes[0].agent_conversations[0].stable_mapping_key =
+    "codex:019fb21f-84c9-7692-8371-1f9aa3e75401";
+  confirmed.recovery[0].stable_mapping_key =
+    "codex:019fb21f-84c9-7692-8371-1f9aa3e75401";
+  assert.throws(() => parseStatusPayload(JSON.stringify(confirmed)), PluginError);
+
+  const nilUuid = JSON.parse(contractFixture("fixtures", "confirmed"));
+  nilUuid.panes[0].agent_conversations[0].conversation_id =
+    "00000000-0000-0000-0000-000000000000";
+  nilUuid.panes[0].agent_conversations[0].stable_mapping_key =
+    "codex:00000000-0000-0000-0000-000000000000";
+  nilUuid.recovery[0].conversation_id = "00000000-0000-0000-0000-000000000000";
+  nilUuid.recovery[0].stable_mapping_key =
+    "codex:00000000-0000-0000-0000-000000000000";
+  assert.deepEqual(parseStatusPayload(JSON.stringify(nilUuid)), nilUuid);
 
   const badCount = JSON.parse(contractFixture("fixtures", "confirmed"));
   badCount.confirmed_conversation_count = 0;

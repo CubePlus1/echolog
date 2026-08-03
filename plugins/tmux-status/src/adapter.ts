@@ -53,7 +53,7 @@ function isRfc3339DateTime(value: string): boolean {
     offsetHour <= 23 && offsetMinute <= 59;
 }
 
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const SERVER_INSTANCE_PATTERN = /^[0-9]+:[0-9]+$/;
 const CONFIRMED_IDENTITY_SOURCES = new Set([
   "open_session_file",
@@ -124,7 +124,7 @@ function validateConversation(value: unknown): boolean {
       UUID_PATTERN.test(value.conversation_id) &&
       CONFIRMED_IDENTITY_SOURCES.has(value.identity_source) &&
       typeof value.stable_mapping_key === "string" &&
-      value.stable_mapping_key.length > 0 &&
+      value.stable_mapping_key === `${tool}:${value.conversation_id}` &&
       typeof value.resume_command === "string" &&
       value.resume_command.length > 0;
   }
