@@ -10,6 +10,7 @@ import {
   getActiveRecordsEnriched,
   resolveSoleActiveRecord,
   getRecord,
+  getSubtaskOverview,
   getRecords,
   stopAllActive,
 } from "../../core/recorder.js";
@@ -23,6 +24,12 @@ const startSchema = {
       type: { type: "string", enum: ["learning", "project", "task"] },
       tags: { type: "array", items: { type: "string" } },
       project: { type: "string" },
+      parentId: {
+        anyOf: [
+          { type: "string", minLength: 1 },
+          { type: "null" },
+        ],
+      },
       source: { type: "string" },
     },
   },
@@ -39,6 +46,12 @@ const patchSchema = {
       type: { type: "string", enum: ["learning", "project", "task"] },
       tags: { type: "array", items: { type: "string" } },
       project: { type: "string" },
+      parentId: {
+        anyOf: [
+          { type: "string", minLength: 1 },
+          { type: "null" },
+        ],
+      },
     },
   },
 } as const;
@@ -52,6 +65,12 @@ const backfillSchema = {
       type: { type: "string", enum: ["learning", "project", "task"] },
       tags: { type: "array", items: { type: "string" } },
       project: { type: "string" },
+      parentId: {
+        anyOf: [
+          { type: "string", minLength: 1 },
+          { type: "null" },
+        ],
+      },
       startAt: { type: "string", format: "date-time" },
       durationMinutes: { type: "number", minimum: 1 },
       result: { type: "string" },
@@ -77,6 +96,7 @@ export async function recordRoutes(app: FastifyInstance) {
         type?: string;
         tags?: string[];
         project?: string;
+        parentId?: string | null;
       };
       const record = await resolveSoleActiveRecord(body.action as any);
 
@@ -97,6 +117,7 @@ export async function recordRoutes(app: FastifyInstance) {
               tags: body.tags,
               project: body.project,
               result: body.result,
+              parentId: body.parentId,
             })
           );
         default:
@@ -113,6 +134,7 @@ export async function recordRoutes(app: FastifyInstance) {
       type?: string;
       tags?: string[];
       project?: string;
+      parentId?: string | null;
       source?: string;
     };
     const record = await startRecord({
@@ -120,6 +142,7 @@ export async function recordRoutes(app: FastifyInstance) {
       type: body.type as any,
       tags: body.tags,
       project: body.project,
+      parentId: body.parentId,
       source: (body.source as any) ?? "api",
     });
     return reply.code(201).send(record);
@@ -137,6 +160,7 @@ export async function recordRoutes(app: FastifyInstance) {
         type?: string;
         tags?: string[];
         project?: string;
+        parentId?: string | null;
       };
 
       switch (body.action) {
@@ -154,6 +178,7 @@ export async function recordRoutes(app: FastifyInstance) {
               tags: body.tags,
               project: body.project,
               result: body.result,
+              parentId: body.parentId,
             })
           );
         default:
@@ -181,6 +206,7 @@ export async function recordRoutes(app: FastifyInstance) {
       since?: string;
       project?: string;
       type?: string;
+      parentId?: string;
       limit?: string;
     };
 
@@ -190,6 +216,12 @@ export async function recordRoutes(app: FastifyInstance) {
         since: query.since,
         project: query.project,
         type: query.type,
+        parentId:
+          query.parentId === undefined
+            ? undefined
+            : query.parentId === "root"
+              ? null
+              : query.parentId,
         limit: query.limit ? parseInt(query.limit) : undefined,
       })
     );
@@ -200,6 +232,11 @@ export async function recordRoutes(app: FastifyInstance) {
     const record = await getRecord(id);
     if (!record) return reply.code(404).send({ error: "Not found" });
     return reply.send(record);
+  });
+
+  app.get("/api/records/:id/subtasks", async (req, reply) => {
+    const { id } = req.params as { id: string };
+    return reply.send(await getSubtaskOverview(id));
   });
 
   app.post("/api/records/stop-all", async (_req, reply) => {
@@ -215,6 +252,7 @@ export async function recordRoutes(app: FastifyInstance) {
         type?: string;
         tags?: string[];
         project?: string;
+        parentId?: string | null;
         startAt: string;
         durationMinutes: number;
         result?: string;
@@ -225,6 +263,7 @@ export async function recordRoutes(app: FastifyInstance) {
         type: body.type as any,
         tags: body.tags,
         project: body.project,
+        parentId: body.parentId,
         startAt: new Date(body.startAt),
         durationMinutes: body.durationMinutes,
         result: body.result,

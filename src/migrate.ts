@@ -75,6 +75,15 @@ const MIGRATIONS = [
       CREATE INDEX IF NOT EXISTS idx_app_usage_start_at ON app_usage(start_at);
     `,
   },
+  {
+    name: "003_record_subtasks",
+    sql: `
+      ALTER TABLE records
+        ADD COLUMN IF NOT EXISTS parent_id TEXT REFERENCES records(id) ON DELETE SET NULL;
+
+      CREATE INDEX IF NOT EXISTS idx_records_parent_id ON records(parent_id);
+    `,
+  },
 ];
 
 async function migrate() {

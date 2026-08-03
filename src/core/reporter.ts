@@ -5,6 +5,7 @@ import { fileURLToPath } from "url";
 import { getRecordsByDate, getRecordNotes } from "./recorder.js";
 import type { Record, Note } from "./schema.js";
 import { localDateStr, formatDuration } from "./utils.js";
+import { getCurrentPluginHost } from "./plugins/current.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -61,7 +62,7 @@ export async function generateDailyReport(date?: string): Promise<string> {
   const templatePath = join(__dirname, "../../templates/daily.md.ejs");
   const template = readFileSync(templatePath, "utf-8");
 
-  return render(template, {
+  const coreMarkdown = render(template, {
     date: targetDate,
     records: recordsWithNotes,
     learning,
@@ -76,4 +77,9 @@ export async function generateDailyReport(date?: string): Promise<string> {
     percent,
     generatedAt: new Date().toISOString(),
   });
+  const pluginSections =
+    (await getCurrentPluginHost()?.renderReportSections(targetDate)) ?? [];
+  return pluginSections.length > 0
+    ? `${coreMarkdown.trimEnd()}\n\n${pluginSections.join("\n\n")}\n`
+    : coreMarkdown;
 }

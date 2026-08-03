@@ -46,6 +46,7 @@ curl -H "X-API-Key: $ECHOLOG_KEY" "http://<host>:19827/api/records?limit=20"
 | `type` | string | `learning` \| `project` \| `task` |
 | `tags` | string[] | 标签 |
 | `project` | string \| null | 所属项目 |
+| `parentId` | string \| null | 父任务记录 id；null 表示根任务 |
 | `startAt` / `endAt` | ISO 时间 | 开始 / 结束（进行中为 null） |
 | `status` | string | `running` \| `paused` \| `done` \| `cancelled` |
 | `durationSeconds` | number | 净时长（不含暂停） |
@@ -72,8 +73,12 @@ curl "http://localhost:19827/api/records?limit=100"
 # 某一天（本地日期）
 curl "http://localhost:19827/api/records?date=2026-07-04"
 
-# 某时刻之后 / 按项目 / 按类型（可组合）
+# 某时刻之后 / 按项目 / 按类型 / 按父任务（可组合）
 curl "http://localhost:19827/api/records?since=2026-07-01T00:00:00+08:00&project=eoove&type=learning"
+
+# 直接子任务；parentId=root 查询根任务
+curl "http://localhost:19827/api/records?parentId=<parent-id>"
+curl "http://localhost:19827/api/records?parentId=root"
 
 # 单条
 curl "http://localhost:19827/api/records/<id>"
@@ -82,7 +87,41 @@ curl "http://localhost:19827/api/records/<id>"
 curl "http://localhost:19827/api/records/active"
 ```
 
-查询参数：`date`（YYYY-MM-DD，设置后忽略其余过滤）、`since`（ISO 时间）、`project`、`type`、`limit`。
+查询参数：`date`（YYYY-MM-DD，设置后忽略其余过滤）、`since`（ISO 时间）、`project`、`type`、`parentId`（记录 id 或 `root`）、`limit`。
+
+### 父任务与子任务
+
+创建或补录时通过 `parentId` 把记录挂到父任务；编辑时传字符串可改挂，传 `null` 可提升为根任务。父任务必须存在且不能是已取消记录，关系不能自指或形成环。
+
+```bash
+# 创建子任务
+curl -X POST http://localhost:19827/api/records \
+  -H "Content-Type: application/json" \
+  -d '{"title":"实现登录接口","type":"task","parentId":"<parent-id>"}'
+
+# 改挂 / 清除父任务
+curl -X PATCH http://localhost:19827/api/records/<id> \
+  -H "Content-Type: application/json" -d '{"action":"edit","parentId":"<new-parent-id>"}'
+curl -X PATCH http://localhost:19827/api/records/<id> \
+  -H "Content-Type: application/json" -d '{"action":"edit","parentId":null}'
+
+# 父任务、直接子任务与进度
+curl http://localhost:19827/api/records/<id>/subtasks
+```
+
+`GET /api/records/<id>/subtasks` 返回：
+
+```json
+{
+  "parent": { "id": "parent", "title": "大任务", "parentId": null },
+  "subtasks": [
+    { "id": "child", "title": "小任务", "parentId": "parent", "status": "done" }
+  ],
+  "progress": { "total": 1, "done": 1, "active": 0, "cancelled": 0, "percent": 100 }
+}
+```
+
+`percent` 按 `done / (total - cancelled)` 计算；没有有效子任务时为 0。父任务不会因为子任务完成而自动改变状态。
 
 ### 开始 / 控制记录
 
@@ -90,7 +129,7 @@ curl "http://localhost:19827/api/records/active"
 # 开始一条记录（只有 title 必填；type 默认 task，source 默认 api）→ 201
 curl -X POST http://localhost:19827/api/records \
   -H "Content-Type: application/json" \
-  -d '{"title":"读《史记》三十页","type":"learning","tags":["读书"],"project":"修身"}'
+  -d '{"title":"读《史记》三十页","type":"learning","tags":["读书"],"project":"修身","parentId":null}'
 
 # 暂停 / 继续 / 停止（可附结果）/ 编辑
 curl -X PATCH http://localhost:19827/api/records/<id> \
@@ -140,9 +179,26 @@ curl -X POST http://localhost:19827/api/records/active/notes \
 curl "http://localhost:19827/api/records/<id>/notes"
 ```
 
-### 屏幕使用（macOS 被动采样）
+### 插件状态
 
-daemon 每 5 秒采样前台应用（可在 `config.yaml` 的 `tracker` 段关闭/调参），落成连续使用片段。分类**在查询时**按规则计算——改规则即可追溯重分历史。
+```bash
+# 清单：enabled/state/version/capabilities/permissions/error
+curl "http://localhost:19827/api/plugins"
+
+# 执行各插件依赖检查；任一启用插件失败时返回 503，且响应保留 error/ok/plugins
+curl "http://localhost:19827/api/plugins/doctor"
+```
+
+插件 API 使用 `/api/plugins/<id>/*`。disabled/degraded 插件不会影响
+`/api/health`，其自身端点返回结构化 503。doctor 失败体为
+`{"error":"...","ok":false,"plugins":[...]}`，因此 CLI 在非零退出时仍可
+展示每个插件的检查结果。
+
+### screen-time（macOS 被动采样）
+
+screen-time 内置插件默认启用。它每 5 秒采样前台应用（通过
+`plugins.screen-time.config` 调参），落成连续使用片段。分类**在查询时**
+按规则计算——改规则即可追溯重分历史。
 
 ```bash
 # 今日屏幕使用：{ date, totalSeconds, byLabel, apps, segments }
@@ -168,6 +224,10 @@ curl -X POST http://localhost:19827/api/screen/rules \
 curl -X DELETE http://localhost:19827/api/screen/rules/<id>
 ```
 
+以上 `/api/screen/*` 是兼容别名；规范路径为
+`/api/plugins/screen-time/*`，响应相同。插件禁用时两者均返回
+`PLUGIN_DISABLED`。
+
 规则语义：
 
 - `appMatch`：大小写不敏感**子串**，同时匹配 bundle id（`com.tencent.xinWeChat`）与应用名（`微信`）
@@ -175,6 +235,29 @@ curl -X DELETE http://localhost:19827/api/screen/rules/<id>
 - `weekdays`：整数数组，0=周日；省略即每天
 - `priority`：整数，高者胜；平局时带时段的规则胜过全天规则
 - 片段会按规则时段边界自动切开，各段独立归名；无匹配规则 → `未分`
+
+### tmux-status
+
+tmux-status 插件默认禁用，只通过无 shell 的 `execFile` 适配外部
+`tmux-status` 可执行程序。
+
+```bash
+# 已校验但未包装的上游 JSON snapshot
+curl "http://localhost:19827/api/plugins/tmux-status/status"
+
+# 显式手动标记；state: active | inactive | auto
+curl -X POST http://localhost:19827/api/plugins/tmux-status/mark \
+  -H "Content-Type: application/json" \
+  -d '{"target":"%3","state":"active","note":"release task"}'
+
+# executable 版本和真实 status JSON contract 诊断
+curl "http://localhost:19827/api/plugins/tmux-status/doctor"
+```
+
+无 tmux server 是成功空结果。缺 executable、非零退出、超时、损坏 JSON
+和不支持的 schema version 会分别返回插件错误。观测不会自动创建 Agent
+工时；CPU、selected pane、进程存活和 `activity_source=auto` 都不是有效工时
+判据。
 
 ### 汇总与日报
 
@@ -202,6 +285,9 @@ curl -X POST http://localhost:19827/api/sync \
 | 401 | 缺少或错误的 API key（仅非本机请求） |
 | 404 | 记录不存在 / 未知 API 路径 |
 | 409 | 状态不允许该操作（如停止一条已完成的记录） |
+| 502 | 插件外部命令失败或输出损坏 |
+| 503 | 插件禁用、degraded 或缺少依赖 |
+| 504 | 插件外部命令超时 |
 | 500 | 服务端错误 |
 
 错误响应至少包含 `{"error": "<message>"}`。

@@ -9,9 +9,10 @@
 ## 功能
 
 - **活动记录**：`start / stop / pause / resume / cancel`，类型 `learning | project | task`，标签、项目归属、结果总结；多任务并行
+- **父子任务**：一个大任务可挂多层小任务；服务端防止自指/成环，CLI 与 Web 可创建、查询并查看直接子任务进度
 - **笔记**：给任意记录追加 `note | blocker | next`
 - **补录与编辑**：`el add --at --for`、`el edit`
-- **屏幕使用**（macOS）：每 5 秒采样前台应用，落成连续片段；分类规则在**查询时**计算——改规则即可追溯重分全部历史
+- **内置插件**：screen-time 采样和追溯分类前台应用；tmux-status 通过外部 CLI 提供结构化 pane/资源观测
 - **汇总与日报**：今日/指定日汇总、日报 Markdown 生成、可同步到指定目录
 - **提醒**（可选）：任务超时、空闲提醒、macOS 通知 + ntfy 推送到手机
 - **三个界面，一套 REST API**：免构建的 Web 控制台、`el` CLI、HTTP API（`docs/API.md`）
@@ -45,6 +46,8 @@ node dist/cli/index.js status
 
 ```bash
 el start "读《史记》三十页" --type learning -t 读书
+el start "整理人物关系" --parent <父任务id>
+el subtasks <父任务id>          # 直接子任务 + 完成进度
 el note "卡在第三章" -b        # 给唯一活跃任务加阻塞项，无需 id
 el stop -n "读毕，摘记三条"
 el today
@@ -65,6 +68,8 @@ el report                        # 输出日报 Markdown
 el status --json          # 今日概览 + 活跃任务
 el log --json -n 50       # 历史记录
 el screen --json          # 今日屏幕使用（macOS）
+el plugins list --json    # 内置插件清单与状态
+el tmux status --json     # tmux-status 原始快照（插件默认禁用）
 ```
 
 ## 配置
@@ -75,7 +80,8 @@ el screen --json          # 今日屏幕使用（macOS）
 |---|---|
 | `server` | 端口（默认 19827）、`apiKey`（本机豁免，非本机必带）、`serveWeb`（false = 纯 API 服务）、`corsOrigins`（跨源白名单，默认不允许跨源） |
 | `database` | PostgreSQL 连接（与 docker-compose 默认值对应） |
-| `tracker` | 屏幕采样开关与频率（仅 macOS） |
+| `plugins.screen-time` | 屏幕采样开关、频率与空闲阈值（默认启用） |
+| `plugins.tmux-status` | 外部 executable、超时、采样频率与异常阈值（默认禁用） |
 | `sync` | 日报 Markdown 同步目标目录 |
 | `notifications` | macOS 通知、ntfy 推送、超时/空闲/日报提醒规则 |
 
@@ -105,13 +111,56 @@ launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.echolog.daemon.plist
 
 ## 架构
 
-```
-web (vanilla JS, 免构建)  ─┐
-                            ├─→  src/server (Fastify, /api/*)  ─→  src/core (领域逻辑, Drizzle + PostgreSQL)
-src/cli (el, HTTP 瘦客户端) ─┘
+```text
+Web Shell / el CLI
+        |
+EchoLog Core (records, notes, subtasks, reports, sync)
+        |
+Bundled Plugin API v1
+        |-- screen-time
+        `-- tmux-status -> external tmux-status executable
 ```
 
 一切能力沉在服务端：客户端不复刻推断/校验逻辑，新客户端（包括未来的 MCP 适配层）以 HTTP 瘦客户端形式接入即可。开发工作流由 [Trellis](.trellis/workflow.md) 管理，编码规范见 `.trellis/spec/`。
+
+插件协议、信任边界、manifest、生命周期、迁移和错误码见
+[Bundled Plugin API v1](docs/PLUGIN_API.md)。
+
+## 产品路线与任务管理
+
+EchoLog 的近期方向不是做普通的工时计时器，而是成为本地优先、面向 AI agent 的个人工作记忆与复盘系统：既记录做过什么，也帮助回看能力如何积累、下一步往哪里走。
+
+### 当前路线
+
+- **P0 · 大任务支持子任务**：记录支持多层父子关系，父任务可查看直接子任务和完成进度；后端/API、CLI、Web 分为三个实施子任务。
+  - GitHub：[P0 Issue #1](https://github.com/CubePlus1/echolog/issues/1)（[#4 后端/API](https://github.com/CubePlus1/echolog/issues/4) · [#5 CLI](https://github.com/CubePlus1/echolog/issues/5) · [#6 Web](https://github.com/CubePlus1/echolog/issues/6)）
+  - Trellis：`.trellis/tasks/07-17-p0-record-subtasks/`
+- **P0 · 可视化左页命中 Bug**：修复 CSS 3D 翻页后，书本左页内部的目录、任务和父子导航按钮无法点击的问题；这是独立 P0，不从属于父子任务能力。
+  - GitHub：[P0 Bug #3](https://github.com/CubePlus1/echolog/issues/3)
+  - Trellis：`.trellis/tasks/07-17-p0-visual-left-button/`
+- **P0 · 关闭任务无需二次确认**：Web 端点击“罢”后直接作废任务，保留操作结果提示，不再弹出确认框。
+  - GitHub：[P0 Bug #7](https://github.com/CubePlus1/echolog/issues/7)
+  - Trellis：`.trellis/tasks/07-18-p0-close-no-confirm/`
+- **P1 · 个人成长路径可视化**：以时间、项目、标签、学习主题、结果、阻塞项和下一步为证据，生成可回溯的成长时间轴。
+  - GitHub：[P1 Issue #2](https://github.com/CubePlus1/echolog/issues/2)
+  - Trellis：`.trellis/tasks/07-17-p1-growth-path-visualization/`
+- **P1 · 人类 / Agent 工时与工作里程碑**：区分人类投入、Agent 运行、并行重叠和端到端历时；阶段完成时记录成果摘要、验证证据与工时快照，用于复盘和后续工作量估算。
+  - GitHub：[P1 Issue #8](https://github.com/CubePlus1/echolog/issues/8)
+  - Trellis：`.trellis/tasks/07-22-p1-actor-effort-milestones/`
+- **P1 · 内置插件架构**：Core 插件平台与 screen-time 拆分已实现；tmux-status 观测层依赖独立 JSON v2 合约。显式 link 与 Agent 工时仍依赖前述 actor/span Core 能力。
+  - GitHub：[P1 Issue #10](https://github.com/CubePlus1/echolog/issues/10)（[tmux-status JSON v2 #1](https://github.com/CubePlus1/tmux-status/issues/1)）
+  - Trellis：`.trellis/tasks/07-31-plugin-architecture/`
+
+### 三处任务同步规则
+
+README 维护产品方向和里程碑，Trellis 维护实施上下文和验收标准，GitHub Issue 维护公开追踪与关闭记录。后续开发必须遵守：
+
+1. 开始前确认三处指向同一个任务；认领 GitHub Issue，并执行 `python3 .trellis/scripts/task.py start <slug>` 激活 Trellis task。
+2. 一个会话只保留一个当前激活的 Trellis task；独立交付物拆成父任务下的子任务，不把多个目标混在一个实现清单里。
+3. 完成后先验证验收标准，再关闭 GitHub Issue、归档 Trellis task，并更新 README 状态；历史 Issue 和归档任务保留，不直接删除。
+4. 三处内容冲突时，以已验证的实现和 Trellis task 为准，并在同一变更中同步修正 README 与 Issue。
+
+以上五项互相独立；只有 P0“子任务能力”的后端、CLI、Web 实施项属于父任务 #1。
 
 ## License
 

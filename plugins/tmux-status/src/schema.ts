@@ -1,0 +1,48 @@
+import {
+  bigint,
+  doublePrecision,
+  index,
+  integer,
+  pgTable,
+  primaryKey,
+  text,
+  timestamp,
+} from "drizzle-orm/pg-core";
+
+export const tmuxSessions = pgTable("tmux_sessions", {
+  sessionKey: text("session_key").primaryKey(),
+  sessionName: text("session_name").notNull(),
+  sessionId: text("session_id"),
+  sessionCreated: bigint("session_created", { mode: "number" }),
+  firstObservedAt: timestamp("first_observed_at", { withTimezone: true }).notNull(),
+  lastObservedAt: timestamp("last_observed_at", { withTimezone: true }).notNull(),
+});
+
+export const tmuxPaneMinutes = pgTable(
+  "tmux_pane_minutes",
+  {
+    sessionKey: text("session_key").notNull(),
+    paneIdentity: text("pane_identity").notNull(),
+    minuteBucket: timestamp("minute_bucket", { withTimezone: true }).notNull(),
+    paneId: text("pane_id").notNull(),
+    panePid: integer("pane_pid").notNull(),
+    windowId: text("window_id"),
+    target: text("target").notNull(),
+    tools: text("tools").array().notNull().default([]),
+    firstObservedAt: timestamp("first_observed_at", { withTimezone: true }).notNull(),
+    lastObservedAt: timestamp("last_observed_at", { withTimezone: true }).notNull(),
+    lastGeneratedAt: timestamp("last_generated_at", { withTimezone: true }).notNull(),
+    sampleCount: integer("sample_count").notNull().default(1),
+    cpuAverage: doublePrecision("cpu_average").notNull().default(0),
+    cpuPeak: doublePrecision("cpu_peak").notNull().default(0),
+    memoryPeakMb: doublePrecision("memory_peak_mb").notNull().default(0),
+    anomalyCount: integer("anomaly_count").notNull().default(0),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.sessionKey, table.paneIdentity, table.minuteBucket],
+      name: "tmux_pane_minutes_pkey",
+    }),
+    index("idx_tmux_pane_minutes_bucket").on(table.minuteBucket),
+  ]
+);

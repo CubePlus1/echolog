@@ -159,7 +159,13 @@ function formatMinute(minute: number | null | undefined): string | undefined {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 }
 
-// el start "title" -t tag1,tag2 --type learning -p project
+function formatHierarchyTitle(record: { title: string; parentId?: string | null }): string {
+  return record.parentId
+    ? `↳ ${record.title} (父任务 ${record.parentId})`
+    : record.title;
+}
+
+// el start "title" -t tag1,tag2 --type learning -p project --parent <id>
 withJson(
   program
     .command("start <title>")
@@ -167,25 +173,28 @@ withJson(
     .option("-t, --tags <tags>", "标签，逗号分隔，如 docs,api")
     .option("--type <type>", "记录类型: learning | project | task", "task")
     .option("-p, --project <project>", "所属项目名")
+    .option("--parent <id>", "父任务记录 id；指定后创建为该记录的子任务")
     .addHelpText(
       "after",
       `
 示例:
   $ el start "读论文" --type learning -t paper,ai
   $ el start "实现 CLI JSON 输出" --type project -p echolog --json
+  $ el start "补接口测试" --parent <parent-id> --json
 `
     )
 ).action(
-  action(async (thisCommand, title: string, opts: { tags?: string; type: string; project?: string }) => {
+  action(async (thisCommand, title: string, opts: { tags?: string; type: string; project?: string; parent?: string }) => {
     const record = await post("/api/records", {
       title,
       type: parseType(opts.type),
       tags: splitCsv(opts.tags),
       project: opts.project,
+      parentId: opts.parent,
       source: "cli",
     });
     printSuccess(thisCommand, record, () => {
-      console.log(`✓ 已开始: ${(record as any).title} [${(record as any).id}]`);
+      console.log(`✓ 已开始: ${formatHierarchyTitle(record as any)} [${(record as any).id}]`);
     });
   })
 );
@@ -293,7 +302,7 @@ withJson(
         for (const r of active) {
           const elapsed = Math.round((Date.now() - new Date(r.startAt).getTime()) / 1000);
           const icon = r.status === "paused" ? "⏸" : "▶";
-          console.log(`  ${icon} ${r.title} [${r.id}] ${formatDuration(elapsed)} (${r.status})`);
+          console.log(`  ${icon} ${formatHierarchyTitle(r)} [${r.id}] ${formatDuration(elapsed)} (${r.status})`);
         }
         console.log();
       } else {
@@ -370,7 +379,7 @@ withJson(
       for (const r of (data as any).records) {
         if (r.status === "cancelled") continue;
         const status = r.status === "running" ? "▶" : r.status === "paused" ? "⏸" : "✓";
-        console.log(`  ${status} ${formatTime(r.startAt)} ${r.title} (${formatDuration(r.durationSeconds)}) [${r.type}]`);
+        console.log(`  ${status} ${formatTime(r.startAt)} ${formatHierarchyTitle(r)} (${formatDuration(r.durationSeconds)}) [${r.type}]`);
       }
     });
   })
@@ -384,6 +393,8 @@ withJson(
     .option("--since <date>", "起始时间，如 2026-07-01 或 2026-07-01T00:00:00+08:00")
     .option("-p, --project <project>", "按项目过滤")
     .option("--type <type>", "按类型过滤: learning | project | task")
+    .option("--parent <id>", "只看指定父任务的直接子任务")
+    .option("--roots", "只看根任务；不能与 --parent 同时使用")
     .option("-n, --limit <n>", "数量限制", "20")
     .addHelpText(
       "after",
@@ -391,21 +402,27 @@ withJson(
 示例:
   $ el log --since 2026-07-01 --type project
   $ el log -p echolog -n 50 --json
+  $ el log --parent <parent-id>
 `
     )
 ).action(
-  action(async (thisCommand, opts: { since?: string; project?: string; type?: string; limit: string }) => {
+  action(async (thisCommand, opts: { since?: string; project?: string; type?: string; parent?: string; roots?: boolean; limit: string }) => {
+    if (opts.parent && opts.roots) {
+      throw new CliUsageError("--parent 和 --roots 不能同时使用");
+    }
     const params = new URLSearchParams();
     if (opts.since) params.set("since", opts.since);
     if (opts.project) params.set("project", opts.project);
     if (opts.type) params.set("type", parseType(opts.type));
+    if (opts.parent) params.set("parentId", opts.parent);
+    if (opts.roots) params.set("parentId", "root");
     params.set("limit", opts.limit);
     const records = await api(`/api/records?${params}`);
     printSuccess(thisCommand, records, () => {
       for (const r of records as any[]) {
         const date = r.startAt.slice(0, 10);
         const status = r.status === "done" ? "✓" : r.status === "running" ? "▶" : r.status === "paused" ? "⏸" : "✗";
-        console.log(`  ${status} ${date} ${r.title} (${formatDuration(r.durationSeconds)}) [${r.type}] ${r.id}`);
+        console.log(`  ${status} ${date} ${formatHierarchyTitle(r)} (${formatDuration(r.durationSeconds)}) [${r.type}] ${r.id}`);
       }
     });
   })
@@ -467,6 +484,7 @@ withJson(
     .option("-t, --tags <tags>", "标签，逗号分隔")
     .option("--type <type>", "记录类型: learning | project | task", "task")
     .option("-p, --project <project>", "所属项目")
+    .option("--parent <id>", "父任务记录 id；指定后补记为该记录的子任务")
     .option("-n, --note <result>", "结果总结")
     .addHelpText(
       "after",
@@ -474,6 +492,7 @@ withJson(
 示例:
   $ el add "晨会" --at "2026-07-08T09:30:00+08:00" --for 30m
   $ el add "补写报告" --at "2026-07-08 14:00" --for 2h --type project --json
+  $ el add "补接口测试" --at "2026-07-08 16:00" --for 30m --parent <parent-id>
 `
     )
 ).action(
@@ -481,7 +500,7 @@ withJson(
     async (
       thisCommand,
       title: string,
-      opts: { at?: string; for?: string; tags?: string; type: string; project?: string; note?: string }
+      opts: { at?: string; for?: string; tags?: string; type: string; project?: string; parent?: string; note?: string }
     ) => {
       if (!opts.at || !opts.for) {
         throw new CliUsageError("补记需要 --at 和 --for 参数");
@@ -501,12 +520,13 @@ withJson(
         type: parseType(opts.type),
         tags: splitCsv(opts.tags),
         project: opts.project,
+        parentId: opts.parent,
         startAt: startAt.toISOString(),
         durationMinutes: minutes,
         result: opts.note,
       });
       printSuccess(thisCommand, record, () => {
-        console.log(`✓ 已补记: ${(record as any).title} [${formatDuration((record as any).durationSeconds)}]`);
+        console.log(`✓ 已补记: ${formatHierarchyTitle(record as any)} [${formatDuration((record as any).durationSeconds)}]`);
       });
     }
   )
@@ -522,25 +542,34 @@ withJson(
     .option("--type <type>", "更新类型: learning | project | task")
     .option("-t, --tags <tags>", "更新标签，逗号分隔")
     .option("-p, --project <project>", "更新项目")
+    .option("--parent <id>", "改挂到指定父任务")
+    .option("--clear-parent", "清除父任务，提升为根任务")
     .addHelpText(
       "after",
       `
 示例:
   $ el edit <id> --title "新标题"
   $ el edit <id> --type learning -t reading,history --json
+  $ el edit <id> --parent <parent-id>
+  $ el edit <id> --clear-parent --json
 `
     )
 ).action(
-  action(async (thisCommand, id: string, opts: { note?: string; title?: string; type?: string; tags?: string; project?: string }) => {
+  action(async (thisCommand, id: string, opts: { note?: string; title?: string; type?: string; tags?: string; project?: string; parent?: string; clearParent?: boolean }) => {
+    if (opts.parent && opts.clearParent) {
+      throw new CliUsageError("--parent 和 --clear-parent 不能同时使用");
+    }
     const updates: any = { action: "edit" };
     if (opts.note) updates.result = opts.note;
     if (opts.title) updates.title = opts.title;
     if (opts.type) updates.type = parseType(opts.type);
     if (opts.tags) updates.tags = splitCsv(opts.tags);
     if (opts.project) updates.project = opts.project;
+    if (opts.parent) updates.parentId = opts.parent;
+    if (opts.clearParent) updates.parentId = null;
     const record = await patch(`/api/records/${id}`, updates);
     printSuccess(thisCommand, record, () => {
-      console.log(`✓ 已更新: ${(record as any).title}`);
+      console.log(`✓ 已更新: ${formatHierarchyTitle(record as any)}`);
     });
   })
 );
@@ -567,6 +596,39 @@ withJson(
   })
 );
 
+// el subtasks <id>
+withJson(
+  program
+    .command("subtasks <id>")
+    .description("查看父任务的直接子任务与完成进度；id 为父任务记录 id。")
+    .addHelpText(
+      "after",
+      `
+示例:
+  $ el subtasks <parent-id>
+  $ el subtasks <parent-id> --json
+`
+    )
+).action(
+  action(async (thisCommand, id: string) => {
+    const data = await api(`/api/records/${id}/subtasks`);
+    printSuccess(thisCommand, data, () => {
+      const overview = data as any;
+      const progress = overview.progress;
+      console.log(`父任务: ${overview.parent.title} [${overview.parent.id}]`);
+      console.log(`进度: ${progress.done}/${progress.total - progress.cancelled} (${progress.percent}%) · 活跃 ${progress.active} · 已取消 ${progress.cancelled}`);
+      if (overview.subtasks.length === 0) {
+        console.log("  暂无子任务");
+        return;
+      }
+      for (const record of overview.subtasks) {
+        const icon = record.status === "done" ? "✓" : record.status === "running" ? "▶" : record.status === "paused" ? "⏸" : "✗";
+        console.log(`  ${icon} ${record.title} [${record.id}] ${record.status}`);
+      }
+    });
+  })
+);
+
 // el notes <id>
 withJson(
   program
@@ -589,6 +651,185 @@ withJson(
         console.log(`  ${formatTime(note.createdAt)} [${type}] ${note.content}`);
       }
     });
+  })
+);
+
+const plugins = program
+  .command("plugins")
+  .description("查看内置插件的启用状态、版本、能力与诊断结果。");
+
+withJson(
+  plugins
+    .command("list")
+    .description("列出所有内置插件；JSON 模式透传 /api/plugins。")
+).action(
+  action(async (thisCommand) => {
+    const result = await api("/api/plugins");
+    printSuccess(thisCommand, result, () => {
+      const items = (result as { plugins?: any[] }).plugins ?? [];
+      if (items.length === 0) {
+        console.log("暂无内置插件");
+        return;
+      }
+      for (const plugin of items) {
+        const error = plugin.error
+          ? ` · ${plugin.error.code}: ${plugin.error.message}`
+          : "";
+        console.log(
+          `${plugin.id}\t${plugin.state}\tv${plugin.version}\t${plugin.capabilities.join(",") || "-"}${error}`
+        );
+      }
+    });
+  })
+);
+
+withJson(
+  plugins
+    .command("doctor")
+    .description("检查已启用插件及其外部依赖；任一检查失败时退出码非零。")
+).action(
+  action(async (thisCommand) => {
+    let result: { ok: boolean; plugins: any[]; error?: string };
+    try {
+      result = await api("/api/plugins/doctor");
+    } catch (error) {
+      const body = error instanceof ApiError ? error.body : null;
+      if (
+        !(error instanceof ApiError) ||
+        error.status !== 503 ||
+        typeof body !== "object" ||
+        body === null ||
+        !Array.isArray((body as { plugins?: unknown }).plugins) ||
+        (body as { ok?: unknown }).ok !== false ||
+        typeof (body as { error?: unknown }).error !== "string"
+      ) {
+        throw error;
+      }
+      result = body as typeof result;
+      if (jsonMode(thisCommand)) {
+        console.error(JSON.stringify(result, null, 2));
+      } else {
+        console.error(result.error);
+        printPluginDoctorChecks(result.plugins, console.error);
+      }
+      process.exitCode = 1;
+      return;
+    }
+    printSuccess(thisCommand, result, () => {
+      printPluginDoctorChecks(result.plugins, console.log);
+    });
+  })
+);
+
+function printPluginDoctorChecks(
+  plugins: any[],
+  write: (...data: unknown[]) => void
+): void {
+  for (const plugin of plugins) {
+    write(`${plugin.id}\t${plugin.state}`);
+    for (const check of plugin.checks) {
+      write(`  ${check.ok ? "ok" : "fail"}\t${check.id}\t${check.message}`);
+    }
+  }
+}
+
+function printTmuxStatus(snapshot: any): void {
+  console.log(
+    `tmux panes: ${snapshot.pane_count} · anomalies: ${snapshot.anomaly_count}`
+  );
+  for (const pane of snapshot.panes) {
+    const tools = pane.tools.length ? pane.tools.join(",") : "-";
+    const anomalies = pane.anomalies.length
+      ? ` !${pane.anomalies.join("+")}`
+      : "";
+    console.log(
+      `  ${pane.target}\t${tools}\tCPU ${pane.cpu_percent}%\tMEM ${pane.memory_mb}MB${anomalies}`
+    );
+  }
+}
+
+const tmux = program
+  .command("tmux")
+  .description("查看 tmux-status 观测、手动标记和依赖诊断。");
+
+withJson(
+  tmux
+    .command("status")
+    .description("获取一份已校验的 tmux-status JSON 快照。")
+).action(
+  action(async (thisCommand) => {
+    const snapshot = await api("/api/plugins/tmux-status/status");
+    printSuccess(thisCommand, snapshot, () => printTmuxStatus(snapshot));
+  })
+);
+
+withJson(
+  tmux
+    .command("watch")
+    .description("通过 EchoLog API 持续轮询 tmux 状态；JSON 模式输出 NDJSON。")
+    .option("--interval <seconds>", "轮询间隔秒数，最小 1", "2")
+).action(
+  action(async (thisCommand, opts: { interval: string }) => {
+    const interval = Number(opts.interval);
+    if (!Number.isFinite(interval) || interval < 1) {
+      throw new CliUsageError("--interval 必须是大于或等于 1 的数字");
+    }
+    while (true) {
+      const snapshot = await api("/api/plugins/tmux-status/status");
+      if (jsonMode(thisCommand)) {
+        console.log(JSON.stringify(snapshot));
+      } else {
+        console.clear();
+        printTmuxStatus(snapshot);
+      }
+      await new Promise((resolve) => setTimeout(resolve, interval * 1_000));
+    }
+  })
+);
+
+withJson(
+  tmux
+    .command("mark <target> <state>")
+    .description("设置 active/inactive 手动标记；state=auto 时解除标记。")
+    .option("--note <note>", "可选标记说明", "")
+).action(
+  action(
+    async (
+      thisCommand,
+      target: string,
+      state: string,
+      opts: { note: string }
+    ) => {
+      if (state !== "active" && state !== "inactive" && state !== "auto") {
+        throw new CliUsageError("state 只能是 active、inactive 或 auto");
+      }
+      const result = await post("/api/plugins/tmux-status/mark", {
+        target,
+        state,
+        note: opts.note,
+      });
+      printSuccess(thisCommand, result, () => {
+        console.log((result as { message: string }).message);
+      });
+    }
+  )
+);
+
+withJson(
+  tmux
+    .command("doctor")
+    .description("检查 tmux-status 可执行程序及插件配置。")
+).action(
+  action(async (thisCommand) => {
+    const result = await api("/api/plugins/tmux-status/doctor");
+    printSuccess(thisCommand, result, () => {
+      for (const check of (result as { checks: any[] }).checks) {
+        console.log(
+          `${check.ok ? "ok" : "fail"}\t${check.id}\t${check.message}`
+        );
+      }
+    });
+    if (!(result as { ok: boolean }).ok) process.exitCode = 1;
   })
 );
 

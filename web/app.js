@@ -1,3 +1,5 @@
+import { createPluginWebHost } from "./plugin-host.js";
+
 /**
  * 回声志 · EchoLog 立体前端逻辑
  * - CSS 3D 翻页书（每张 sheet 正反两面，翻转 rotateY）
@@ -30,6 +32,7 @@
   const post = (path, body) => api(path, { method: "POST", body: JSON.stringify(body || {}) });
   const patchReq = (path, body) => api(path, { method: "PATCH", body: JSON.stringify(body) });
   const del = (path) => api(path, { method: "DELETE" });
+  const pluginWebHost = createPluginWebHost(api);
 
   /* ============ 汉字数字 ============ */
 
@@ -100,6 +103,7 @@
   /* ============ 数据 ============ */
 
   const data = {
+    records: [],   // 全部记录（父子关系与表单候选）
     history: [],   // done/cancelled 记录，升序
     active: [],    // running/paused（enriched）
     summary: null, // 今日总览
@@ -109,43 +113,107 @@
     ok: false,     // 是否成功连上后端
   };
 
-  async function loadAll() {
-    const [records, active, summary, screen, rules] = await Promise.all([
-      api("/records?limit=1000"),
-      api("/records/active"),
-      api("/summary/today"),
-      api("/screen/today").catch(() => null),
-      api("/screen/rules").catch(() => []),
-    ]);
+  function applyRecords(records) {
+    data.records = records;
     data.history = records
       .filter((r) => r.status === "done" || r.status === "cancelled")
       .sort((a, b) => new Date(a.startAt) - new Date(b.startAt));
+  }
+
+  const recordById = (id) => id ? data.records.find((r) => r.id === id) || null : null;
+  const directChildren = (id) => data.records.filter((r) => r.parentId === id);
+
+  function recordDepth(record) {
+    let depth = 0;
+    let cursor = record;
+    const visited = new Set([record.id]);
+    while (cursor.parentId && depth < 8) {
+      if (visited.has(cursor.parentId)) break;
+      visited.add(cursor.parentId);
+      cursor = recordById(cursor.parentId);
+      if (!cursor) break;
+      depth++;
+    }
+    return depth;
+  }
+
+  function subtaskProgress(id) {
+    const children = directChildren(id);
+    const done = children.filter((r) => r.status === "done").length;
+    const cancelled = children.filter((r) => r.status === "cancelled").length;
+    const active = children.filter((r) => r.status === "running" || r.status === "paused").length;
+    const effectiveTotal = children.length - cancelled;
+    return {
+      children,
+      done,
+      cancelled,
+      active,
+      total: children.length,
+      percent: effectiveTotal > 0 ? Math.round((done / effectiveTotal) * 100) : 0,
+    };
+  }
+
+  function orderHierarchically(records) {
+    const ids = new Set(records.map((r) => r.id));
+    const byParent = new Map();
+    for (const record of records) {
+      const key = record.parentId && ids.has(record.parentId) ? record.parentId : null;
+      if (!byParent.has(key)) byParent.set(key, []);
+      byParent.get(key).push(record);
+    }
+    for (const group of byParent.values()) {
+      group.sort((a, b) => new Date(b.startAt) - new Date(a.startAt));
+    }
+    const ordered = [];
+    const seen = new Set();
+    const visit = (record) => {
+      if (seen.has(record.id)) return;
+      seen.add(record.id);
+      ordered.push(record);
+      for (const child of byParent.get(record.id) || []) visit(child);
+    };
+    for (const root of byParent.get(null) || []) visit(root);
+    for (const record of records) visit(record);
+    return ordered;
+  }
+
+  async function loadAll() {
+    const [records, active, summary] = await Promise.all([
+      api("/records?limit=1000"),
+      api("/records/active"),
+      api("/summary/today"),
+    ]);
+    applyRecords(records);
     data.active = active;
     data.summary = summary;
-    data.screen = screen;
-    data.rules = rules;
     data.fetchedAt = Date.now();
     data.ok = true;
+    await pluginWebHost.refresh({
+      api,
+      refresh: refreshBook,
+      root: document.body,
+    });
+    await pluginWebHost.loadData(data);
   }
 
   async function loadLive() {
-    const [active, summary, screen, rules] = await Promise.all([
+    const [records, active, summary] = await Promise.all([
+      api("/records?limit=1000"),
       api("/records/active"),
       api("/summary/today"),
-      api("/screen/today").catch(() => data.screen),
-      api("/screen/rules").catch(() => data.rules),
     ]);
+    applyRecords(records);
     data.active = active;
     data.summary = summary;
-    data.screen = screen;
-    data.rules = rules;
+    await pluginWebHost.loadData(data);
     data.fetchedAt = Date.now();
   }
 
   // 活动集签名：变了才整本重排
   function liveSignature() {
     return JSON.stringify([
-      data.active.map((r) => [r.id, r.status, r.title, r.project, r.tags]),
+      data.active.map((r) => [r.id, r.status, r.title, r.project, r.tags, r.parentId]),
+      data.records.map((r) => [r.id, r.status, r.title, r.parentId, r.updatedAt]),
       data.summary ? data.summary.recordCount : 0,
     ]);
   }
@@ -177,6 +245,7 @@
       cancelled,
       date: `${cnMonth(d.getMonth() + 1)}${cnNum(d.getDate())}日 · 周${WEEKDAYS[d.getDay()]} · ${fmtClockHM(d)}${end ? "—" + fmtClockHM(end) : ""}`,
       title: r.title,
+      parentId: r.parentId,
       typeLabel: info.label,
       project: r.project,
       tags: r.tags || [],
@@ -231,14 +300,15 @@
     });
     if (data.ok) {
       faces.push({ type: "summary" });
-      faces.push({ type: "screen" });
-      faces.push({ type: "rules" });
-      for (const r of data.active) {
+      faces.push(...pluginWebHost.faces());
+      for (const r of orderHierarchically(data.active)) {
         tocFace.active.push({
           id: r.id,
           title: r.title,
           status: r.status,
           base: r.liveDurationSeconds ?? r.durationSeconds,
+          parentId: r.parentId,
+          depth: recordDepth(r),
           faceIndex: faces.length,
         });
         faces.push({ type: "active", record: r });
@@ -260,7 +330,77 @@
 
   /* ============ 渲染一面 ============ */
 
+  function statusMark(status) {
+    if (status === "done") return "毕";
+    if (status === "running") return "行";
+    if (status === "paused") return "憩";
+    return "罢";
+  }
+
+  function statusText(status) {
+    if (status === "done") return "已毕";
+    if (status === "running") return "进行中";
+    if (status === "paused") return "已暂停";
+    return "已作废";
+  }
+
+  function renderParentLink(parentId) {
+    if (!parentId) return "";
+    const parent = recordById(parentId);
+    const title = parent ? parent.title : parentId;
+    return `<button class="hier-parent" type="button" data-goto-record="${escA(parentId)}">
+      <span class="hier-branch">隶</span>
+      <span>隶于 ${esc(title)}</span>
+    </button>`;
+  }
+
+  function renderSubtaskPanel(recordId) {
+    const progress = subtaskProgress(recordId);
+    const record = recordById(recordId);
+    const canAdd = record && record.status !== "cancelled";
+    if (progress.total === 0) {
+      return canAdd
+        ? `<button class="subtask-empty" type="button" data-act="new-child" data-parent-id="${escA(recordId)}">
+            <span>尚无支脉</span><span>添一支</span>
+          </button>`
+        : "";
+    }
+    const effectiveTotal = progress.total - progress.cancelled;
+    const visible = progress.children.slice(0, 4);
+    const rows = visible.map((child) =>
+      `<button class="subtask-row" type="button" data-goto-record="${escA(child.id)}">
+        <span class="subtask-mark ${escA(child.status)}">${statusMark(child.status)}</span>
+        <span class="subtask-title">${esc(child.title)}</span>
+        <span class="subtask-state">${statusText(child.status)}</span>
+      </button>`
+    ).join("");
+    const rest = progress.total > visible.length
+      ? `<div class="subtask-rest">另有 ${progress.total - visible.length} 项，见目录</div>`
+      : "";
+    return `<section class="subtask-panel" aria-label="直接子任务">
+      <div class="subtask-head">
+        <span>支 脉</span>
+        <span class="subtask-head-actions">
+          <span>${progress.done}/${effectiveTotal} · ${progress.percent}%</span>
+          ${canAdd ? `<button type="button" data-act="new-child" data-parent-id="${escA(recordId)}">添支</button>` : ""}
+        </span>
+      </div>
+      <div class="subtask-meter" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${progress.percent}">
+        <span style="width:${progress.percent}%"></span>
+      </div>
+      <div class="subtask-list">${rows}${rest}</div>
+    </section>`;
+  }
+
   function renderFace(face) {
+    const pluginFace = pluginWebHost.renderFace(face, {
+      data,
+      esc,
+      escA,
+      fmtDur,
+    });
+    if (pluginFace != null) return pluginFace;
+
     if (!face || face.type === "blank") return `<div class="leaf-inner"></div>`;
 
     if (face.type === "plate") {
@@ -278,7 +418,8 @@
 
     if (face.type === "toc") {
       const act = face.active.map((a) =>
-        `<button class="toc-row" type="button" data-goto="${a.faceIndex}">
+        `<button class="toc-row toc-hier-row${a.parentId ? " is-child" : ""}" type="button" data-goto="${a.faceIndex}" style="--hier-depth:${Math.min(a.depth || 0, 4)}">
+          ${a.parentId ? `<span class="toc-branch">└</span>` : ""}
           <span class="toc-state${a.status === "running" ? "" : " paused"}">${a.status === "running" ? "行" : "憩"}</span>
           <span class="toc-name">${esc(a.title)}</span>
           <span class="toc-dots"></span>
@@ -311,17 +452,21 @@
     }
 
     if (face.type === "entry") {
+      const parentLink = renderParentLink(face.parentId);
+      const subtaskPanel = renderSubtaskPanel(face.id);
       const metaBits = [
         `<span>${esc(face.typeLabel)}</span>`,
         face.project ? `<span>${esc(face.project)}</span>` : "",
         `<span class="m-dur">用时 ${esc(fmtDur(face.duration))}</span>`,
         ...face.tags.map((t) => `<span class="entry-tag">${esc(t)}</span>`),
       ].filter(Boolean).join("");
-      return `<div class="leaf-inner${face.cancelled ? " entry-cancelled" : ""}">
+      return `<div class="leaf-inner${face.cancelled ? " entry-cancelled" : ""}${subtaskPanel ? " has-subtasks" : ""}">
         <div class="entry-date">${esc(face.date)}</div>
+        ${parentLink}
         <h3 class="entry-title">${esc(face.title)}</h3>
         <div class="entry-rule"></div>
         <div class="entry-meta">${metaBits}</div>
+        ${subtaskPanel}
         <div class="entry-text">${face.text ? esc(face.text) : `<span class="no-result">未留一言。</span>`}</div>
         <div class="entry-foot">
           <span class="mood-seal">${esc(face.mood)}</span>
@@ -346,74 +491,10 @@
       </div>`;
     }
 
-    if (face.type === "screen") {
-      const sc = data.screen;
-      let body;
-      if (!sc || sc.totalSeconds === 0) {
-        body = `<p class="toc-empty">屏中尚无光阴，或采样器未启。</p>`;
-      } else {
-        const labelOrder = sc.byLabel.map((b) => b.label);
-        const sections = labelOrder.map((label) => {
-          const labelTotal = sc.byLabel.find((b) => b.label === label).seconds;
-          const apps = sc.apps
-            .filter((a) => a.byLabel[label])
-            .sort((a, b) => b.byLabel[label] - a.byLabel[label]);
-          const top = apps.slice(0, 6);
-          const restSec = apps.slice(6).reduce((s, a) => s + a.byLabel[label], 0);
-          const rows = top.map((a) =>
-            `<div class="toc-row scr-row">
-              <span class="toc-name">${esc(a.appName)}</span>
-              <span class="toc-dots"></span>
-              <span class="toc-time">${esc(fmtDur(a.byLabel[label]))}</span>
-            </div>`).join("");
-          const rest = restSec > 0
-            ? `<div class="toc-row scr-row"><span class="toc-name scr-rest">其余 ${apps.length - 6} 应用</span><span class="toc-dots"></span><span class="toc-time">${esc(fmtDur(restSec))}</span></div>`
-            : "";
-          return `<div class="toc-section">${esc(label)} · ${esc(fmtDur(labelTotal))}</div>${rows}${rest}`;
-        }).join("");
-        body = sections;
-      }
-      return `<div class="leaf-inner toc-face screen-face">
-        <div class="toc-title">屏中光阴</div>
-        <div class="scr-total">今日在屏 ${esc(sc ? fmtDur(sc.totalSeconds) : "—")}</div>
-        <div class="toc-scroll" id="screenScroll">${body}</div>
-      </div>`;
-    }
-
-    if (face.type === "rules") {
-      const fmtMin = (m) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
-      const rows = data.rules.map((r) =>
-        `<div class="toc-row rule-row">
-          <span class="rule-when">${r.startMinute != null ? `${fmtMin(r.startMinute)}–${fmtMin(r.endMinute)}` : "全天"}</span>
-          <span class="toc-name">${esc(r.appMatch)}</span>
-          <span class="toc-dots"></span>
-          <span class="rule-label">${esc(r.label)}</span>
-          <button class="rule-del" type="button" data-act="del-rule" data-id="${escA(r.id)}" title="废除此例">✕</button>
-        </div>`).join("");
-      return `<div class="leaf-inner toc-face rules-face">
-        <div class="toc-title">立 例</div>
-        <div class="form-hint">同一应用，何时何名——如 04:00–06:00 的微信为「工作」，其余为「生活」</div>
-        <div class="toc-scroll">
-          ${rows || `<p class="toc-empty">尚未立例，屏中光阴皆「未分」。</p>`}
-        </div>
-        <div class="rule-form">
-          <div class="rule-form-grid">
-            <input class="form-input" type="text" id="rlApp" placeholder="何应用（如 微信）" />
-            <input class="form-input" type="text" id="rlLabel" placeholder="何名（如 工作）" />
-            <input class="form-input" type="text" id="rlStart" placeholder="何时 04:00（可空）" />
-            <input class="form-input" type="text" id="rlEnd" placeholder="何讫 06:00（可空）" />
-          </div>
-          <div class="form-error" id="rlError"></div>
-          <div class="rule-form-foot">
-            <span class="form-hint" style="margin:0">带时段者自动优先于全天例</span>
-            <button class="seal-btn" type="button" data-act="add-rule"><span class="s-face">立</span><span class="s-label">立例</span></button>
-          </div>
-        </div>
-      </div>`;
-    }
-
     if (face.type === "active") {
       const r = face.record;
+      const parentLink = renderParentLink(r.parentId);
+      const subtaskPanel = renderSubtaskPanel(r.id);
       const info = typeInfo(r.type);
       const running = r.status === "running";
       const started = new Date(r.startAt);
@@ -426,14 +507,16 @@
       const seals = running
         ? `<button class="seal-btn s-calm" type="button" data-act="pause" data-id="${escA(r.id)}"><span class="s-face">憩</span><span class="s-label">暂停</span></button>`
         : `<button class="seal-btn s-gold" type="button" data-act="resume" data-id="${escA(r.id)}"><span class="s-face">续</span><span class="s-label">继续</span></button>`;
-      return `<div class="leaf-inner live-entry" data-record-id="${escA(r.id)}">
+      return `<div class="leaf-inner live-entry${subtaskPanel ? " has-subtasks" : ""}" data-record-id="${escA(r.id)}">
         <div class="entry-date">
           <span>始于 ${esc(fmtClockHM(started))}</span>
           <span class="live-state${running ? "" : " paused"}">${running ? "行 · 进行中" : "憩 · 已暂停"}</span>
         </div>
+        ${parentLink}
         <h3 class="entry-title">${esc(r.title)}</h3>
         <div class="entry-rule"></div>
         <div class="entry-meta">${metaBits}</div>
+        ${subtaskPanel}
         <div class="live-timer${running ? "" : " paused"}" data-timer data-fmt="clock" data-live-id="${escA(r.id)}" data-base="${base}" data-fetched="${data.fetchedAt}" data-paused="${running ? 0 : 1}">${esc(fmtTimer(base))}</div>
         <div class="live-since">笔未搁，事未毕</div>
         <div class="result-row">
@@ -450,6 +533,18 @@
     if (face.type === "form") {
       const chip = (t, label) =>
         `<button class="type-chip${formType === t ? " on" : ""}" type="button" data-type="${t}">${label}</button>`;
+      const parentOptions = [...data.records]
+        .filter((r) => r.status !== "cancelled")
+        .sort((a, b) => {
+          const activeA = a.status === "running" || a.status === "paused" ? 1 : 0;
+          const activeB = b.status === "running" || b.status === "paused" ? 1 : 0;
+          return activeB - activeA || new Date(b.startAt) - new Date(a.startAt);
+        })
+        .map((r) => {
+          const branch = recordDepth(r) > 0 ? `${"· ".repeat(Math.min(recordDepth(r), 3))}` : "";
+          return `<option value="${escA(r.id)}"${r.id === formParentId ? " selected" : ""}>${esc(`${branch}${r.title}［${statusMark(r.status)}］`)}</option>`;
+        })
+        .join("");
       return `<div class="leaf-inner new-form">
         <div class="form-title">始一事</div>
         <div class="form-hint">落笔即开始计时</div>
@@ -465,9 +560,18 @@
             ${chip("task", "任务")}
           </div>
         </div>
-        <div class="form-field">
-          <label class="form-label">何 门</label>
-          <input class="form-input" type="text" id="nfProject" placeholder="所属项目，可空" />
+        <div class="form-pair">
+          <div class="form-field">
+            <label class="form-label">何 门</label>
+            <input class="form-input" type="text" id="nfProject" placeholder="所属项目，可空" />
+          </div>
+          <div class="form-field">
+            <label class="form-label">何 属</label>
+            <select class="form-input form-select" id="nfParent" aria-label="父任务">
+              <option value=""${formParentId ? "" : " selected"}>根任务 · 无所隶</option>
+              ${parentOptions}
+            </select>
+          </div>
         </div>
         <div class="form-field">
           <label class="form-label">何 签</label>
@@ -522,6 +626,15 @@
       pagesEl.appendChild(sheet);
       state.sheets.push(sheet);
     }
+
+    // Chrome 对 preserve-3d 中翻转背面的按钮命中不稳定。左页保留真实内容，
+    // 另用一个平面、透明的同构层接收按钮点击，再转发给真实可见按钮。
+    const leftHitProxy = document.createElement("div");
+    leftHitProxy.id = "leftPageHitProxy";
+    leftHitProxy.className = "left-page-hit-proxy";
+    leftHitProxy.setAttribute("aria-hidden", "true");
+    pagesEl.appendChild(leftHitProxy);
+
     layoutSheets();
     buildTimeline();
     updateIndicator();
@@ -531,17 +644,56 @@
     requestAnimationFrame(() => requestAnimationFrame(() => pagesEl.classList.remove("no-anim")));
   }
 
+  function visibleLeftLeaf() {
+    return state.flipped > 0 ? state.sheets[state.flipped - 1]?.children[1] : null;
+  }
+
+  function syncLeftHitProxy() {
+    const proxy = $("leftPageHitProxy");
+    const source = visibleLeftLeaf();
+    if (!proxy) return;
+
+    proxy.hidden = !source;
+    proxy.innerHTML = source ? source.innerHTML : "";
+    if (!source) return;
+
+    // 克隆层只负责鼠标/触控命中，不能制造重复 id 或进入键盘焦点序列。
+    proxy.querySelectorAll("[id]").forEach((el) => el.removeAttribute("id"));
+    proxy.querySelectorAll("input, textarea, select").forEach((el) => {
+      el.removeAttribute("name");
+      el.tabIndex = -1;
+    });
+
+    const sourceButtons = source.querySelectorAll("button");
+    proxy.querySelectorAll("button").forEach((button, index) => {
+      button.dataset.hitSourceIndex = String(index);
+      button.tabIndex = -1;
+      button.disabled = sourceButtons[index]?.disabled ?? true;
+    });
+  }
+
   // 维持正确堆叠：preserve-3d 下由真实 Z 值决定，每张 Z 必须唯一
   function layoutSheets() {
     const n = state.sheets.length;
     state.sheets.forEach((sheet, i) => {
+      const frontActive = i === state.flipped;
+      const backActive = i === state.flipped - 1;
       sheet.classList.toggle("flipped", i < state.flipped);
+      sheet.classList.toggle("page-right-active", frontActive);
+      sheet.classList.toggle("page-left-active", backActive);
       sheet.style.zIndex = i < state.flipped ? String(i + 1) : String(n - i);
       const depth = i < state.flipped ? (state.flipped - i) : (i - state.flipped);
       const dz = -depth * 0.55;
-      sheet.children[0].style.transform = `translateZ(${dz}px)`;
-      sheet.children[1].style.transform = `rotateY(180deg) translateZ(${dz}px)`;
+      const front = sheet.children[0];
+      const back = sheet.children[1];
+      front.style.transform = `translateZ(${dz}px)`;
+      back.style.transform = `rotateY(180deg) translateZ(${dz}px)`;
+      front.inert = !frontActive;
+      back.inert = !backActive;
+      front.setAttribute("aria-hidden", String(!frontActive));
+      back.setAttribute("aria-hidden", String(!backActive));
     });
+    syncLeftHitProxy();
   }
 
   function flipTo(target) {
@@ -605,6 +757,7 @@
   /* ============ 任务操作 ============ */
 
   let formType = "task";
+  let formParentId = "";
 
   function isEditing() {
     const el = document.activeElement;
@@ -627,6 +780,17 @@
     const id = btn.dataset.id;
     btn.disabled = true;
     try {
+      const pluginResult = await pluginWebHost.handleAction(act, {
+        id,
+        $,
+        confirm: (message) => window.confirm(message),
+      });
+      if (pluginResult.handled) {
+        if (pluginResult.message) flash(pluginResult.message);
+        if (pluginResult.refresh !== false) await refreshBook({});
+        else btn.disabled = false;
+        return;
+      }
       if (act === "pause") {
         await patchReq(`/records/${id}`, { action: "pause" });
         flash("已暂停 · 憩");
@@ -639,46 +803,16 @@
         await patchReq(`/records/${id}`, { action: "stop", result });
         flash("已收笔，此事载入史册 · 毕");
       } else if (act === "cancel") {
-        if (!window.confirm("作废此事？将以「罢」印载入书中。")) { btn.disabled = false; return; }
         await del(`/records/${id}`);
         flash("已作废 · 罢");
-      } else if (act === "del-rule") {
-        if (!window.confirm("废除此例？屏中光阴将按余例重新归名。")) { btn.disabled = false; return; }
-        await del(`/screen/rules/${id}`);
-        flash("已废除 · 例消");
-      } else if (act === "add-rule") {
-        const errEl = $("rlError");
-        const appMatch = ($("rlApp") ? $("rlApp").value : "").trim();
-        const label = ($("rlLabel") ? $("rlLabel").value : "").trim();
-        const startTime = ($("rlStart") ? $("rlStart").value : "").trim();
-        const endTime = ($("rlEnd") ? $("rlEnd").value : "").trim();
-        const timeRe = /^([01]\d|2[0-3]):([0-5]\d)$/;
-        if (!appMatch || !label) {
-          if (errEl) errEl.textContent = "何应用、何名，缺一不可。";
-          btn.disabled = false;
-          return;
-        }
-        if ((startTime === "") !== (endTime === "")) {
-          if (errEl) errEl.textContent = "何时、何讫须成对，或都留空表全天。";
-          btn.disabled = false;
-          return;
-        }
-        if (startTime && (!timeRe.test(startTime) || !timeRe.test(endTime))) {
-          if (errEl) errEl.textContent = "时刻格式须为 HH:MM，如 04:00。";
-          btn.disabled = false;
-          return;
-        }
-        if (startTime && startTime === endTime) {
-          if (errEl) errEl.textContent = "何时与何讫相同；全天请两者留空。";
-          btn.disabled = false;
-          return;
-        }
-        await post("/screen/rules", {
-          appMatch,
-          label,
-          ...(startTime ? { startTime, endTime, priority: 10 } : {}),
-        });
-        flash("已立例 · 立");
+      } else if (act === "new-child") {
+        formParentId = btn.dataset.parentId || "";
+        const parentSelect = $("nfParent");
+        if (parentSelect) parentSelect.value = formParentId;
+        const formIndex = state.faces.findIndex((face) => face.type === "form");
+        if (formIndex >= 0) flipTo(faceToFlip(formIndex));
+        btn.disabled = false;
+        return;
       } else if (act === "start") {
         const title = ($("nfTitle") ? $("nfTitle").value : "").trim();
         const errEl = $("nfError");
@@ -688,15 +822,18 @@
           return;
         }
         const project = ($("nfProject") ? $("nfProject").value : "").trim();
+        const parentId = ($("nfParent") ? $("nfParent").value : "").trim();
         const tags = ($("nfTags") ? $("nfTags").value : "")
           .split(/[,，]/).map((t) => t.trim()).filter(Boolean);
         const created = await post("/records", {
           title,
           type: formType,
           project: project || undefined,
+          parentId: parentId || undefined,
           tags: tags.length ? tags : undefined,
           source: "web",
         });
+        formParentId = "";
         flash("落笔 · 始");
         await refreshBook();
         // 翻到新任务那一面
@@ -715,6 +852,25 @@
     const pages = $("pages");
 
     pages.addEventListener("click", (e) => {
+      const hitProxy = e.target.closest("[data-hit-source-index]");
+      if (hitProxy) {
+        const sourceButtons = visibleLeftLeaf()?.querySelectorAll("button");
+        const sourceButton = sourceButtons?.[Number(hitProxy.dataset.hitSourceIndex)];
+        if (sourceButton && !sourceButton.disabled) sourceButton.click();
+        return;
+      }
+
+      const recordGoto = e.target.closest("[data-goto-record]");
+      if (recordGoto) {
+        const id = recordGoto.dataset.gotoRecord;
+        const idx = state.faces.findIndex((face) =>
+          (face.type === "entry" && face.id === id) ||
+          (face.type === "active" && face.record.id === id)
+        );
+        if (idx >= 0) flipTo(faceToFlip(idx));
+        else flash("此记录不在当前卷中");
+        return;
+      }
       const goto = e.target.closest("[data-goto]");
       if (goto) {
         flipTo(faceToFlip(Number(goto.dataset.goto)));
@@ -739,9 +895,15 @@
       } else if (t.closest && t.closest(".rule-form")) {
         const addBtn = pages.querySelector(`[data-act="add-rule"]`);
         if (addBtn) doAction(addBtn);
-      } else if (t.matches && t.matches(".form-input")) {
+      } else if (t.matches && t.matches("input.form-input")) {
         const startBtn = pages.querySelector(`[data-act="start"]`);
         if (startBtn) doAction(startBtn);
+      }
+    });
+
+    pages.addEventListener("change", (e) => {
+      if (e.target && e.target.id === "nfParent") {
+        formParentId = e.target.value;
       }
     });
   }
@@ -842,11 +1004,17 @@
 
   /* ============ 输入：键盘 / 滚轮 / 拖拽 ============ */
 
-  const INTERACTIVE = "input, textarea, select, button, .entry-text, .toc-scroll";
+  const INTERACTIVE = "input, textarea, select, button, .entry-text, .toc-scroll, .new-form, .live-entry.has-subtasks";
 
   function setupInput() {
-    $("prevBtn").addEventListener("click", prev);
-    $("nextBtn").addEventListener("click", next);
+    // 事件委托让控制按钮不受 3D 书页重排影响；controls 位于 book-scene
+    // 之后，但仍显式阻止默认行为，避免点击被拖拽/翻页手势吞掉。
+    $("pageControls").addEventListener("click", (e) => {
+      const btn = e.target instanceof Element ? e.target.closest("[data-nav]") : null;
+      if (!btn || btn.disabled) return;
+      e.preventDefault();
+      btn.dataset.nav === "prev" ? prev() : next();
+    });
 
     window.addEventListener("keydown", (e) => {
       if ($("stage").hidden) return;
@@ -949,19 +1117,19 @@
       await loading;
       buildBook(false);
       startLoops();
+      // 先确定可见页，再展示舞台；不让用户在开卷动画期间看到一个
+      // 仍停在第 0 页、因此被 disabled 的左侧按钮。
+      const h = location.hash;
+      if (h === "#today") gotoLive();
+      else if (h === "#screen" || h === "#rules") {
+        const idx = state.faces.findIndex((f) => f.type === h.slice(1));
+        flipTo(idx >= 0 ? faceToFlip(idx) : 1);
+      } else {
+        flipTo(1);
+      }
       $("prologue").classList.add("gone");
       $("stage").hidden = false;
       state.opened = true;
-      // 开卷动画：翻开扉页露出目录；深链则直达对应页
-      setTimeout(() => {
-        const h = location.hash;
-        if (h === "#today") return gotoLive();
-        if (h === "#screen" || h === "#rules") {
-          const idx = state.faces.findIndex((f) => f.type === h.slice(1));
-          if (idx >= 0) return flipTo(faceToFlip(idx));
-        }
-        flipTo(1);
-      }, 700);
     });
 
     // 深链：/#open、/#toc 直达目录；/#today 今日总览；/#screen 屏中光阴；/#rules 立例

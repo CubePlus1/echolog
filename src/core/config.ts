@@ -27,6 +27,13 @@ export interface Config {
     sample_seconds?: number;
     idle_seconds?: number;
   };
+  plugins?: Record<
+    string,
+    {
+      enabled?: boolean;
+      config?: Record<string, unknown>;
+    }
+  >;
   notifications: {
     enabled: boolean;
     mac: boolean;
@@ -52,6 +59,18 @@ export function loadConfig(): Config {
   const raw = readFileSync(configPath, "utf-8");
   const parsed = parse(raw) as Config;
   parsed.server.serveWeb = parsed.server.serveWeb ?? true;
+  parsed.plugins = parsed.plugins ?? {};
+  if (parsed.tracker) {
+    const current = parsed.plugins["screen-time"] ?? {};
+    parsed.plugins["screen-time"] = {
+      enabled: current.enabled ?? parsed.tracker.enabled,
+      config: {
+        sample_seconds: parsed.tracker.sample_seconds,
+        idle_seconds: parsed.tracker.idle_seconds,
+        ...(current.config ?? {}),
+      },
+    };
+  }
   cached = parsed;
   return cached;
 }
