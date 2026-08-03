@@ -10,7 +10,8 @@ PostgreSQL or imports Core business logic directly.
 - The EchoLog daemon and PostgreSQL are running.
 - `el daemon status --json` reports a healthy daemon.
 
-Register the server with Codex CLI:
+The EchoLog Codex Plugin bundles this connection in `.mcp.json`. For standalone
+use without the Plugin, register the server with Codex CLI:
 
 ```bash
 codex mcp add echolog -- el mcp
@@ -73,5 +74,5 @@ remote HTTP transport, resources, prompts, lifecycle hooks, or custom UI. It
 never reads or stores Codex prompts, responses, reasoning traces, terminal
 transcripts, or tmux pane content.
 
-Codex Plugin packaging and automatic `.mcp.json` registration are tracked in
-GitHub Issue #15.
+The packaged Plugin, personal marketplace development flow, supported Codex
+surfaces, and privacy boundary are documented in [Codex Integration](CODEX.md).

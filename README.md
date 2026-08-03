@@ -75,9 +75,9 @@ el tmux status --json     # tmux-status 原始快照（插件默认禁用）
 
 ### Codex 集成
 
-仓库提供一个独立的 Codex Plugin 包：`integrations/codex/echolog`。它包含显式写入的 `$track-work` 和只读复盘的 `$review-work`；同机 Codex 还可用 `codex mcp add echolog -- el mcp` 注册 8 个类型化工具。Skills 与 MCP 都只经 HTTP API 访问 daemon，不直连数据库，也不复制服务端的唯一活跃记录和父子关系判断。
+仓库提供一个可安装的 Codex Plugin 包：`integrations/codex/echolog`。它组合显式写入的 `$echolog:track-work`、只读复盘的 `$echolog:review-work` 和自动注册的本地 `el mcp`（8 个类型化工具）；standalone Skill 则使用无前缀名称，也保留手动 MCP 注册方式。Skills 与 MCP 都只经 HTTP API 访问 daemon，不直连数据库，也不复制服务端的唯一活跃记录和父子关系判断。
 
-该 Codex Plugin 与 EchoLog Core 的 Bundled Plugin API v1 是不同层次：前者运行在 Codex 侧，后者运行在 EchoLog 服务内。支持范围、前置条件与隐私边界见 [Codex Integration](docs/CODEX.md)。
+该 Codex Plugin 与 EchoLog Core 的 Bundled Plugin API v1 是不同层次：前者运行在 Codex 侧，后者运行在 EchoLog 服务内。personal marketplace 安装/更新、支持范围、前置条件与隐私边界见 [Codex Integration](docs/CODEX.md)。
 
 ## 配置
 
@@ -165,7 +165,7 @@ EchoLog 的近期方向不是做普通的工时计时器，而是成为本地优
   - GitHub：[P1 Issue #10](https://github.com/CubePlus1/echolog/issues/10)（[tmux-status JSON v2 #1](https://github.com/CubePlus1/tmux-status/issues/1)）
   - Trellis：`.trellis/tasks/07-31-plugin-architecture/`
 - **P1 · Codex 集成**：按顺序交付 Skills-only Plugin、本地 stdio MCP 适配层、Plugin 打包与发布验收；每一步独立 Issue、PR 和 review。
-  - GitHub：✅ [#13 Skills MVP](https://github.com/CubePlus1/echolog/issues/13) → ✅ [#14 MCP 适配](https://github.com/CubePlus1/echolog/issues/14) → ⏳ [#15 打包发布](https://github.com/CubePlus1/echolog/issues/15)
+  - GitHub：✅ [#13 Skills MVP](https://github.com/CubePlus1/echolog/issues/13) → ✅ [#14 MCP 适配](https://github.com/CubePlus1/echolog/issues/14) → ✅ [#15 打包发布](https://github.com/CubePlus1/echolog/issues/15)
   - Trellis：`.trellis/tasks/08-03-codex-integration/`
 
 ### 三处任务同步规则

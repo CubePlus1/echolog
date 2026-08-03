@@ -1,0 +1,9 @@
+#!/bin/sh
+set -eu
+
+if ! command -v el >/dev/null 2>&1; then
+  echo "EchoLog CLI not found. Install EchoLog and make el available on PATH." >&2
+  exit 127
+fi
+
+exec el mcp

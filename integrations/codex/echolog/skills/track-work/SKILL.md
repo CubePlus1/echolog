@@ -1,32 +1,44 @@
 ---
 name: track-work
-description: Explicitly start, pause, resume, stop, or annotate local EchoLog work records through the `el` CLI. Use only when the user invokes this skill or clearly asks to change an EchoLog record; never trigger it implicitly for an ordinary coding task.
+description: Explicitly start, pause, resume, stop, or annotate local EchoLog work records through bundled MCP tools or the `el` CLI fallback. Use only when the user invokes this skill or clearly asks to change an EchoLog record; never trigger it implicitly for an ordinary coding task.
 ---
 
 # Track Work
 
-Use the existing `el` HTTP client as the only write surface. Do not access the EchoLog database, Core modules, configuration file, or REST API directly.
+Prefer the bundled `echolog` MCP tools. If they are not available because this Skill was installed standalone, use the existing `el` HTTP client as the fallback write surface. Do not access the EchoLog database, Core modules, configuration file, or REST API directly.
 
 ## Check availability
 
-1. Resolve `el` from `PATH` with `command -v el`.
-2. If it is missing, stop without attempting installation. Point the user to EchoLog's installation instructions.
-3. Run `el daemon status --json` before the first EchoLog operation.
-4. If the command exits non-zero or returns a status other than `ok`, preserve its JSON error and stop. Suggest `el daemon start`; do not start Docker or the daemon automatically.
+1. When the bundled MCP server is available, call `get_status` before the first write.
+2. If it returns an MCP tool error, preserve its JSON fields. For `CONNECTION_ERROR`, suggest `el daemon start` and stop; do not retry through CLI because it uses the same daemon.
+3. If the MCP server itself is unavailable, resolve `el` from `PATH` with `command -v el`. If it is missing, stop without attempting installation and point the user to EchoLog's installation instructions.
+4. For CLI fallback, run `el daemon status --json`. If it exits non-zero or is not healthy, preserve its JSON error and stop. Do not start Docker or the daemon automatically.
 
 ## Apply safety rules
 
 - Require explicit user intent for every write. Never start a record merely because Codex begins work.
-- Add `--json` to every EchoLog command and use the returned object as the source of truth.
+- Use MCP `structuredContent` for successful tool calls. Parse the JSON text content of `isError: true` results without dropping fields.
+- In CLI fallback, add `--json` to every EchoLog command and use the returned object as the source of truth.
 - When a record ID is known, pass it explicitly to later operations.
 - When an omitted ID returns HTTP 409 with `candidates`, show each candidate's `id`, `title`, and `status`, then ask which record to use. Never guess.
-- Treat any non-zero exit as failure even if output was produced. Preserve the structured JSON error instead of replacing it with a generic message.
+- Treat `isError: true` or any non-zero CLI exit as failure even if output was produced. Preserve the structured JSON error instead of replacing it with a generic message.
 - Pass titles, notes, and results as single shell arguments. Do not interpolate their content into executable shell fragments.
 - Do not use `stop --all`, `cancel`, `edit`, `add`, `sync`, `screen rules`, `tmux mark`, or daemon stop in this skill.
 
-## Map explicit requests
+## Map explicit requests to MCP
 
-Use the smallest command that matches the request:
+Use the smallest tool that matches the request:
+
+- Start: `start_record` with `title`, optional `type`, `tags`, `project`, and `parentId`.
+- Pause, resume, or stop: `control_record` with the known `id`, `action`, and `result` only for stop.
+- Note, blocker, or next action: `add_note` with the known `id`, `content`, and `type`.
+- Parent progress needed to choose or report context: read-only `get_subtasks` with the parent `id`.
+
+Only include `tags` or `project` when the user supplies those values or they are unambiguous from the request. Do not invent classification metadata.
+
+## CLI fallback
+
+Use these only when the bundled MCP server is unavailable:
 
 ```bash
 el start "<title>" --type <learning|project|task> --json
@@ -39,8 +51,6 @@ el note "<content>" --blocker --record <id> --json
 el note "<content>" --next --record <id> --json
 el subtasks <parent-id> --json
 ```
-
-Only add `--tags` or `--project` when the user supplies those values or they are unambiguous from the request. Do not invent classification metadata.
 
 ## Complete a workflow
 
