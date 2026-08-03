@@ -5,12 +5,10 @@ EchoLog's Codex integration is a local-first client package for Codex App and Co
 ## Architecture
 
 ```text
-Codex Plugin Skills
-        |
-        v
-     el --json
-        |
-        v
+Codex Plugin Skills ----> el --json ---+
+Codex MCP host ---------> el mcp ------+
+                                      |
+                                      v
 EchoLog HTTP API on localhost:19827
         |
         v
@@ -30,7 +28,7 @@ The Skills do not install dependencies, start Docker, expose the daemon publicly
 
 `el` resolves its default configuration from the EchoLog installation root, so an unrelated `config.yaml` in the active Codex workspace cannot shadow it. Tests and multi-instance setups can select an alternate file explicitly with `ECHOLOG_CONFIG_PATH`.
 
-## Skills-only MVP
+## Skills
 
 The first integration increment contains two Skills:
 
@@ -47,9 +45,23 @@ Use $track-work to add a blocker to record <id>.
 Use $review-work to summarize my EchoLog activity today.
 ```
 
+## MCP tools
+
+Register the local stdio server with Codex CLI:
+
+```bash
+codex mcp add echolog -- el mcp
+codex mcp list
+```
+
+The adapter exposes eight typed tools for status, history, subtasks, explicit
+start/control/note writes, daily report generation, and screen-time. It uses the
+same HTTP thin-client boundary as the CLI. Full contracts and limits are in
+[MCP Server](MCP.md).
+
 ## Current limits
 
-- This increment does not include MCP tools or lifecycle hooks.
+- The MCP increment does not include lifecycle hooks, remote transport, resources, prompts, or custom UI.
 - It does not support Codex Cloud or ChatGPT Web reaching a daemon on the user's Mac.
 - It never records Codex prompts, responses, reasoning traces, terminal transcripts, or tmux pane content.
 - Personal marketplace installation, update, and release verification are tracked separately in GitHub Issue #15.
@@ -64,4 +76,4 @@ el daemon status --json
 el status --json
 ```
 
-The later MCP increment will remain an HTTP thin client. It must not connect directly to PostgreSQL or import EchoLog Core business logic.
+The MCP adapter is covered by an SDK client/stdio black-box test, including its exact tool inventory, schemas, annotations, start → note → stop flow, HTTP error preservation, daemon-offline behavior, and optional-plugin degradation.

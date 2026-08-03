@@ -1,6 +1,6 @@
 # EchoLog HTTP API
 
-EchoLog server（默认 `http://<host>:19827`）暴露一组 REST 接口，可以从任何地方用 HTTP 请求读写自己的记录。Web 前端与 CLI（`el`）都走同一组 REST 接口；智能体通过 CLI 使用 EchoLog。
+EchoLog server（默认 `http://<host>:19827`）暴露一组 REST 接口，可以从任何地方用 HTTP 请求读写自己的记录。Web 前端、CLI（`el`）和本地 stdio MCP 都走同一组 REST 接口。
 
 ## 鉴权
 
@@ -33,7 +33,7 @@ curl -H "X-API-Key: $ECHOLOG_KEY" "http://<host>:19827/api/records?limit=20"
 
 需要机器可读结果时，优先使用支持 `--json` 的命令（例如 `el status --json`、`el log --json`、`el start <title> --json`）。命令成功返回 0；连接失败、鉴权失败、找不到记录、唯一活跃记录存在歧义等错误场景返回非 0，错误信息写到 stderr 或 JSON 错误体。
 
-未来如果需要 Model Context Protocol 适配层，可以基于现有 HTTP API 以瘦客户端形式重建；业务逻辑仍由 REST API 与 core 承载。
+支持 MCP 的本机 agent 可运行 `el mcp`；它是本页 HTTP API 的瘦适配层，业务逻辑仍由 REST API 与 core 承载。工具清单、Codex 注册方式和 MCP 错误契约见 [MCP Server](MCP.md)。
 
 ## 数据模型
 

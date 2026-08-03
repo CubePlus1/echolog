@@ -15,7 +15,7 @@
 - **内置插件**：screen-time 采样和追溯分类前台应用；tmux-status 通过外部 CLI 提供结构化 pane/资源观测
 - **汇总与日报**：今日/指定日汇总、日报 Markdown 生成、可同步到指定目录
 - **提醒**（可选）：任务超时、空闲提醒、macOS 通知 + ntfy 推送到手机
-- **三个界面，一套 REST API**：免构建的 Web 控制台、`el` CLI、HTTP API（`docs/API.md`）
+- **四个入口，一套 REST API**：免构建的 Web 控制台、`el` CLI、本地 stdio MCP、HTTP API（`docs/API.md`）
 
 ## 快速开始
 
@@ -63,6 +63,7 @@ el report                        # 输出日报 Markdown
 - 退出码契约：成功 0；连接失败 / 校验失败 / 404 / 409 等一律非 0，错误走 stderr 或 JSON 错误体 `{"error", ...}`
 - 省略 id 的 `stop/pause/resume/note/cancel` 由**服务端**匹配唯一活跃记录；歧义时返回 409 和候选列表 `{"error", "candidates":[{id,title,status}]}`，按提示带 id 重试
 - 无 shell 的 agent 可直接走 HTTP API（[docs/API.md](docs/API.md)）；跨机器访问带 `X-API-Key`
+- 支持 MCP 的本机 agent 可注册 `el mcp`；工具清单、错误契约与 Codex 配置见 [MCP Server](docs/MCP.md)
 
 ```bash
 el status --json          # 今日概览 + 活跃任务
@@ -74,7 +75,7 @@ el tmux status --json     # tmux-status 原始快照（插件默认禁用）
 
 ### Codex 集成
 
-仓库提供一个独立的 Codex Plugin 包：`integrations/codex/echolog`。首个增量包含两个 Skills：显式写入的 `$track-work` 和只读复盘的 `$review-work`；两者都复用 `el --json`，不直连数据库，也不复制服务端的唯一活跃记录和父子关系判断。
+仓库提供一个独立的 Codex Plugin 包：`integrations/codex/echolog`。它包含显式写入的 `$track-work` 和只读复盘的 `$review-work`；同机 Codex 还可用 `codex mcp add echolog -- el mcp` 注册 8 个类型化工具。Skills 与 MCP 都只经 HTTP API 访问 daemon，不直连数据库，也不复制服务端的唯一活跃记录和父子关系判断。
 
 该 Codex Plugin 与 EchoLog Core 的 Bundled Plugin API v1 是不同层次：前者运行在 Codex 侧，后者运行在 EchoLog 服务内。支持范围、前置条件与隐私边界见 [Codex Integration](docs/CODEX.md)。
 
@@ -120,7 +121,9 @@ launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.echolog.daemon.plist
 ## 架构
 
 ```text
-Web Shell / el CLI
+Web Shell / el CLI / el mcp
+        |
+     HTTP API
         |
 EchoLog Core (records, notes, subtasks, reports, sync)
         |
@@ -128,10 +131,11 @@ Bundled Plugin API v1
         |-- screen-time
         `-- tmux-status -> external tmux-status executable
 
-Codex Plugin Skills -> el --json -> EchoLog HTTP API
+Codex Plugin Skills -> el --json ---------^
+Codex MCP host ------> el mcp ------------^
 ```
 
-一切能力沉在服务端：客户端不复刻推断/校验逻辑，新客户端（包括未来的 MCP 适配层）以 HTTP 瘦客户端形式接入即可。开发工作流由 [Trellis](.trellis/workflow.md) 管理，编码规范见 `.trellis/spec/`。
+一切能力沉在服务端：客户端不复刻推断/校验逻辑；CLI、Web 和 MCP 都以 HTTP 瘦客户端形式接入。开发工作流由 [Trellis](.trellis/workflow.md) 管理，编码规范见 `.trellis/spec/`。
 
 插件协议、信任边界、manifest、生命周期、迁移和错误码见
 [Bundled Plugin API v1](docs/PLUGIN_API.md)。
@@ -161,7 +165,7 @@ EchoLog 的近期方向不是做普通的工时计时器，而是成为本地优
   - GitHub：[P1 Issue #10](https://github.com/CubePlus1/echolog/issues/10)（[tmux-status JSON v2 #1](https://github.com/CubePlus1/tmux-status/issues/1)）
   - Trellis：`.trellis/tasks/07-31-plugin-architecture/`
 - **P1 · Codex 集成**：按顺序交付 Skills-only Plugin、本地 stdio MCP 适配层、Plugin 打包与发布验收；每一步独立 Issue、PR 和 review。
-  - GitHub：[#13 Skills MVP](https://github.com/CubePlus1/echolog/issues/13) → [#14 MCP 适配](https://github.com/CubePlus1/echolog/issues/14) → [#15 打包发布](https://github.com/CubePlus1/echolog/issues/15)
+  - GitHub：✅ [#13 Skills MVP](https://github.com/CubePlus1/echolog/issues/13) → ✅ [#14 MCP 适配](https://github.com/CubePlus1/echolog/issues/14) → ⏳ [#15 打包发布](https://github.com/CubePlus1/echolog/issues/15)
   - Trellis：`.trellis/tasks/08-03-codex-integration/`
 
 ### 三处任务同步规则
