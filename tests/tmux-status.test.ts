@@ -575,6 +575,7 @@ test("validates the canonical PID-to-incarnation map", () => {
     { "0": "invalid-pid" },
     { abc: "invalid-pid" },
     { "102": "" },
+    { "102": "102:" },
     { "102": "103:different-process" },
     { "2147483648": "2147483648:outside-postgres-integer-range" },
   ]) {

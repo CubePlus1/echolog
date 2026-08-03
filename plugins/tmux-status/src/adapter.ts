@@ -100,7 +100,9 @@ function validProcessInstances(value: unknown): value is Record<string, string> 
     Object.entries(value).every(([pid, instanceKey]) =>
       /^[1-9][0-9]*$/.test(pid) &&
       Number.isInteger(Number(pid)) && Number(pid) <= MAX_PROCESS_PID &&
-      typeof instanceKey === "string" && instanceKey.startsWith(`${pid}:`)
+      typeof instanceKey === "string" &&
+      instanceKey.startsWith(`${pid}:`) &&
+      instanceKey.length > pid.length + 1
     );
 }
 
