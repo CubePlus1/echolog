@@ -453,6 +453,7 @@ test("enforces v3 resource constraints and additionalProperties false", () => {
     "2026-08-03T12:00:00.0000001Z",
     "2026-08-03T12:00:00+16:00",
     "2026-08-03T12:00:00-23:59",
+    "0000-01-01T00:00:00Z",
   ]) {
     const invalidTimestamp = JSON.parse(contractFixture("fixtures", "confirmed"));
     invalidTimestamp.generated_at = generatedAt;

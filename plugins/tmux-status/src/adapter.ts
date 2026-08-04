@@ -72,7 +72,7 @@ function isRfc3339DateTime(value: string): boolean {
     31, leapYear ? 29 : 28, 31, 30, 31, 30,
     31, 31, 30, 31, 30, 31,
   ];
-  return month >= 1 && month <= 12 &&
+  return year >= 1 && month >= 1 && month <= 12 &&
     day >= 1 && day <= daysInMonth[month - 1]! &&
     hour <= 23 && minute <= 59 && second <= 59 &&
     offsetHour <= 15 && offsetMinute <= 59;
