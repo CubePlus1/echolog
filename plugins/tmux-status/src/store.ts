@@ -127,9 +127,8 @@ export class TmuxObservationStore {
             last_generated_at = EXCLUDED.last_generated_at,
             tools = EXCLUDED.tools,
             sample_count = tmux_pane_minutes.sample_count + 1,
-            cpu_average = (
-              tmux_pane_minutes.cpu_average * tmux_pane_minutes.sample_count
-              + EXCLUDED.cpu_average
+            cpu_average = tmux_pane_minutes.cpu_average + (
+              EXCLUDED.cpu_average - tmux_pane_minutes.cpu_average
             ) / (tmux_pane_minutes.sample_count + 1),
             cpu_peak = GREATEST(
               tmux_pane_minutes.cpu_peak,

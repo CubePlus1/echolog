@@ -486,6 +486,17 @@ test("enforces v3 resource constraints and additionalProperties false", () => {
     microsecondTimestamp
   );
 
+  const hugeCpuSample = JSON.parse(
+    contractFixture("fixtures", "confirmed")
+  );
+  hugeCpuSample.panes[0].cpu_percent = 1e308;
+  hugeCpuSample.panes[0].anomalies = ["CPU"];
+  hugeCpuSample.anomaly_count = 1;
+  assert.deepEqual(
+    parseStatusPayload(JSON.stringify(hugeCpuSample)),
+    hugeCpuSample
+  );
+
   for (const mutate of [
     (value: any) => { value.panes[0].cpu_percent = 100; },
     (value: any) => { value.panes[0].memory_mb = 2_048; },
@@ -1013,6 +1024,14 @@ test("conversation upsert preserves earliest observation under reordered writes"
   assert.doesNotMatch(
     source,
     /WHERE tmux_agent_conversations\.last_generated_at\s*< EXCLUDED\.last_generated_at/
+  );
+  assert.match(
+    source,
+    /cpu_average = tmux_pane_minutes\.cpu_average \+ \([\s\S]*EXCLUDED\.cpu_average - tmux_pane_minutes\.cpu_average[\s\S]*tmux_pane_minutes\.sample_count \+ 1/
+  );
+  assert.doesNotMatch(
+    source,
+    /cpu_average \* tmux_pane_minutes\.sample_count/
   );
 });
 
