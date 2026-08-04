@@ -152,6 +152,35 @@ test("accepts canonical v3 fixtures and rejects canonical invalid fixtures", () 
   }
 });
 
+test("plugin configuration uses the v3 resource limits", () => {
+  const schema = JSON.parse(
+    readFileSync(
+      new URL("../plugins/tmux-status/config.schema.json", import.meta.url),
+      "utf8"
+    )
+  );
+  assert.equal(schema.properties.cpu_threshold.maximum, 1_000_000);
+  assert.equal(schema.properties.memory_threshold_mb.maximum, 1_000_000_000);
+
+  assert.deepEqual(
+    tmuxStatusPlugin.validateConfig?.({
+      cpu_threshold: 1_000_000,
+      memory_threshold_mb: 1_000_000_000,
+    }),
+    []
+  );
+  assert.deepEqual(
+    tmuxStatusPlugin.validateConfig?.({
+      cpu_threshold: 1_000_001,
+      memory_threshold_mb: 1_000_000_001,
+    }),
+    [
+      "cpu_threshold must be from 0 to 1000000",
+      "memory_threshold_mb must be from 0 to 1000000000",
+    ]
+  );
+});
+
 test("rejects guessed or internally inconsistent v3 conversation identities", () => {
   const unknown = JSON.parse(contractFixture("fixtures", "unknown"));
   unknown.panes[0].agent_conversations[0].conversation_id =

@@ -9,6 +9,7 @@ import type {
   TmuxRecoveryEntry,
   TmuxStatusPayload,
 } from "./types.js";
+import { MAX_CPU_PERCENT, MAX_MEMORY_MB } from "./limits.js";
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
@@ -81,8 +82,6 @@ function isRfc3339DateTime(value: string): boolean {
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const SERVER_INSTANCE_PATTERN = /^[0-9]{1,10}:[0-9]{1,16}$/;
 const MAX_PROCESS_PID = 2_147_483_647;
-const MAX_CPU_PERCENT = 1_000_000;
-const MAX_MEMORY_MB = 1_000_000_000;
 const CODEX_CONFIRMED_IDENTITY_SOURCES = new Set([
   "open_session_file",
   "cli_resume_argument",

@@ -4,6 +4,7 @@ import type {
 } from "@echolog/plugin-sdk";
 import manifestJson from "../echolog.plugin.json";
 import { TmuxStatusAdapter } from "./adapter.js";
+import { MAX_CPU_PERCENT, MAX_MEMORY_MB } from "./limits.js";
 import { createTmuxRoutes, type TmuxServices } from "./routes.js";
 import { TmuxObservationStore } from "./store.js";
 import type { TmuxAdapterConfig } from "./types.js";
@@ -87,9 +88,11 @@ export const tmuxStatusPlugin: PluginDefinition = {
         "collection_interval_seconds must be an integer from 5 to 3600"
       );
     }
-    if (value.cpuThreshold < 0) errors.push("cpu_threshold must be non-negative");
-    if (value.memoryThresholdMb < 0) {
-      errors.push("memory_threshold_mb must be non-negative");
+    if (value.cpuThreshold < 0 || value.cpuThreshold > MAX_CPU_PERCENT) {
+      errors.push(`cpu_threshold must be from 0 to ${MAX_CPU_PERCENT}`);
+    }
+    if (value.memoryThresholdMb < 0 || value.memoryThresholdMb > MAX_MEMORY_MB) {
+      errors.push(`memory_threshold_mb must be from 0 to ${MAX_MEMORY_MB}`);
     }
     return errors;
   },
