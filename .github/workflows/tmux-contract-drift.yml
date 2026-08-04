@@ -1,0 +1,51 @@
+name: Contract Drift
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "23 3 * * *"
+  pull_request:
+    paths:
+      - "contracts/tmux-status/v3/**"
+      - ".github/workflows/tmux-contract-drift.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  compare:
+    name: compare
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require private contract credential
+        env:
+          CONTRACT_TOKEN: ${{ secrets.TMUX_STATUS_CONTRACT_READ_TOKEN }}
+        run: |
+          if [ -z "$CONTRACT_TOKEN" ]; then
+            echo "TMUX_STATUS_CONTRACT_READ_TOKEN is missing; remote drift enforcement is not enabled." >&2
+            exit 1
+          fi
+
+      - name: Check out EchoLog
+        uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - name: Check out canonical private contract
+        uses: actions/checkout@v5
+        with:
+          repository: CubePlus1/tmux-status
+          ref: main
+          token: ${{ secrets.TMUX_STATUS_CONTRACT_READ_TOKEN }}
+          path: .upstream/tmux-status
+          sparse-checkout: contracts/v3
+          persist-credentials: false
+
+      - name: Compare controlled copy
+        run: |
+          diff -ru --exclude=README.md \
+            contracts/tmux-status/v3 \
+            .upstream/tmux-status/contracts/v3

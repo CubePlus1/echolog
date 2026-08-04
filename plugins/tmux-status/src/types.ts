@@ -22,6 +22,50 @@ export interface TmuxPaneStatus {
   window_id?: string;
   server_instance_id?: string;
   pane_instance_id?: string;
+  tmux_target?: string;
+  tmux_session_name?: string;
+  tmux_window_index?: number;
+  tmux_window_name?: string;
+  tmux_pane_index?: number;
+  pane_id?: string;
+  pane_pid?: number;
+  working_directory?: string;
+  agent_conversations?: TmuxAgentConversation[];
+}
+
+export type AgentTool = "codex" | "grok";
+export type ConversationIdKind = "codex_thread_id" | "grok_session_id";
+export type ConversationIdStatus = "confirmed" | "unknown";
+
+export interface TmuxAgentConversation {
+  tool: AgentTool;
+  conversation_id: string | null;
+  conversation_id_status: ConversationIdStatus;
+  conversation_id_kind: ConversationIdKind;
+  identity_source: string;
+  source_path: string | null;
+  working_directory: string | null;
+  process_instances: Record<string, string>;
+  stable_mapping_key: string | null;
+  resume_command: string | null;
+  evidence: string;
+}
+
+export interface TmuxRecoveryEntry {
+  tool: AgentTool;
+  conversation_id: string | null;
+  conversation_id_status: ConversationIdStatus;
+  conversation_id_kind: ConversationIdKind;
+  identity_source: string;
+  source_path: string | null;
+  stable_mapping_key: string | null;
+  tmux_target: string;
+  tmux_session_name: string;
+  pane_id: string;
+  pane_pid: number;
+  process_instances: Record<string, string>;
+  working_directory: string | null;
+  resume_command: string | null;
 }
 
 export interface TmuxStatusPayload {
@@ -32,6 +76,9 @@ export interface TmuxStatusPayload {
     name: string;
     version: string;
   };
+  report_type?: "status" | "snapshot" | "recovery";
+  pre_restart?: boolean;
+  host?: string;
   generated_at: string;
   thresholds: {
     cpu_percent: number;
@@ -39,6 +86,9 @@ export interface TmuxStatusPayload {
   };
   pane_count: number;
   anomaly_count: number;
+  confirmed_conversation_count?: number;
+  unknown_conversation_count?: number;
+  recovery?: TmuxRecoveryEntry[];
   panes: TmuxPaneStatus[];
 }
 

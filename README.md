@@ -6,13 +6,15 @@
 
 对 OpenClaw、Claude Code、Codex 等 agent，EchoLog 的设计目标是**开箱即被工具化**：CLI 就是工具面，`el --help` 就是工具说明书，`--json` 给出机器可读输出，错误一律非 0 退出码 + 结构化错误体。
 
+![EchoLog Web 控制台封面：回声志](docs/images/echolog-web-cover.jpg)
+
 ## 功能
 
 - **活动记录**：`start / stop / pause / resume / cancel`，类型 `learning | project | task`，标签、项目归属、结果总结；多任务并行
 - **父子任务**：一个大任务可挂多层小任务；服务端防止自指/成环，CLI 与 Web 可创建、查询并查看直接子任务进度
 - **笔记**：给任意记录追加 `note | blocker | next`
 - **补录与编辑**：`el add --at --for`、`el edit`
-- **内置插件**：screen-time 采样和追溯分类前台应用；tmux-status 通过外部 CLI 提供结构化 pane/资源观测
+- **内置插件**：screen-time 采样和追溯分类前台应用；tmux-status 通过外部 CLI 提供结构化 pane/资源观测，并以 v3 合约持久化已验证的 Agent conversation↔pane 恢复映射
 - **汇总与日报**：今日/指定日汇总、日报 Markdown 生成、可同步到指定目录
 - **提醒**（可选）：任务超时、空闲提醒、macOS 通知 + ntfy 推送到手机
 - **四个入口，一套 REST API**：免构建的 Web 控制台、`el` CLI、本地 stdio MCP、HTTP API（`docs/API.md`）
@@ -88,7 +90,7 @@ el tmux status --json     # tmux-status 原始快照（插件默认禁用）
 | `server` | 端口（默认 19827）、`apiKey`（本机豁免，非本机必带）、`serveWeb`（false = 纯 API 服务）、`corsOrigins`（跨源白名单，默认不允许跨源） |
 | `database` | PostgreSQL 连接（与 docker-compose 默认值对应） |
 | `plugins.screen-time` | 屏幕采样开关、频率与空闲阈值（默认启用） |
-| `plugins.tmux-status` | 外部 executable、超时、采样频率与异常阈值（默认禁用） |
+| `plugins.tmux-status` | 外部 executable、超时、采样频率、异常阈值，以及 v3 Agent conversation↔pane 恢复映射（默认禁用） |
 | `sync` | 日报 Markdown 同步目标目录 |
 | `notifications` | macOS 通知、ntfy 推送、超时/空闲/日报提醒规则 |
 
@@ -161,8 +163,9 @@ EchoLog 的近期方向不是做普通的工时计时器，而是成为本地优
 - **P1 · 人类 / Agent 工时与工作里程碑**：区分人类投入、Agent 运行、并行重叠和端到端历时；阶段完成时记录成果摘要、验证证据与工时快照，用于复盘和后续工作量估算。
   - GitHub：[P1 Issue #8](https://github.com/CubePlus1/echolog/issues/8)
   - Trellis：`.trellis/tasks/07-22-p1-actor-effort-milestones/`
-- **P1 · 内置插件架构**：Core 插件平台与 screen-time 拆分已实现；tmux-status 观测层依赖独立 JSON v2 合约。显式 link 与 Agent 工时仍依赖前述 actor/span Core 能力。
-  - GitHub：[P1 Issue #10](https://github.com/CubePlus1/echolog/issues/10)（[tmux-status JSON v2 #1](https://github.com/CubePlus1/tmux-status/issues/1)）
+- **P1 · 内置插件架构**：Core 插件平台与 screen-time 拆分已实现；tmux-status v3 已实现 canonical schema/fixtures、v1/v2/v3 兼容解析、幂等定时同步和已验证的 Agent conversation↔pane 恢复映射。跨仓库 drift 远程门禁仍待只读 token 启用；显式 link 与 Agent 工时继续依赖前述 actor/span Core 能力。
+  - GitHub：[P1 Issue #10](https://github.com/CubePlus1/echolog/issues/10)（[EchoLog v3 同步 #19](https://github.com/CubePlus1/echolog/issues/19) · [EchoLog PR #20](https://github.com/CubePlus1/echolog/pull/20) · [tmux-status v3 合约 #1](https://github.com/CubePlus1/tmux-status/issues/1) · [tmux-status PR #3](https://github.com/CubePlus1/tmux-status/pull/3)）
+  - Trellis：`.trellis/tasks/08-03-tmux-status-contract-v3-sync/`
   - Trellis：`.trellis/tasks/07-31-plugin-architecture/`
 - **P1 · Codex 集成**：按顺序交付 Skills-only Plugin、本地 stdio MCP 适配层、Plugin 打包与发布验收；每一步独立 Issue、PR 和 review。
   - GitHub：✅ [#13 Skills MVP](https://github.com/CubePlus1/echolog/issues/13) → ✅ [#14 MCP 适配](https://github.com/CubePlus1/echolog/issues/14) → ✅ [#15 打包发布](https://github.com/CubePlus1/echolog/issues/15)

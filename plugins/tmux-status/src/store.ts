@@ -1,5 +1,10 @@
+import { createHash } from "node:crypto";
 import postgres from "postgres";
-import type { TmuxPaneStatus, TmuxStatusPayload } from "./types.js";
+import type {
+  TmuxAgentConversation,
+  TmuxPaneStatus,
+  TmuxStatusPayload,
+} from "./types.js";
 
 export function sessionKey(pane: TmuxPaneStatus): string {
   return pane.server_instance_id && pane.session_id && pane.session_created
@@ -16,10 +21,58 @@ export function paneIdentity(pane: TmuxPaneStatus): string {
   ].join(":");
 }
 
+export function conversationObservationKey(
+  pane: TmuxPaneStatus,
+  conversation: TmuxAgentConversation
+): string {
+  let identity: unknown[];
+  if (
+    conversation.conversation_id_status === "confirmed" &&
+    conversation.stable_mapping_key
+  ) {
+    const normalizedConversationId = conversation.conversation_id!.toLowerCase();
+    identity = [
+      "confirmed",
+      pane.pane_instance_id ?? paneIdentity(pane),
+      conversation.working_directory,
+      conversation.tool,
+      normalizedConversationId,
+      `${conversation.tool}:${normalizedConversationId}`,
+    ];
+  } else {
+    identity = [
+      "unknown",
+      pane.pane_instance_id ?? paneIdentity(pane),
+      conversation.tool,
+      conversation.conversation_id_kind,
+      conversation.working_directory,
+      Object.entries(conversation.process_instances).sort(([left], [right]) =>
+        Number(left) - Number(right)
+      ),
+    ];
+  }
+  return createHash("sha256").update(JSON.stringify(identity)).digest("hex");
+}
+
+export function persistableConversations(
+  snapshot: TmuxStatusPayload,
+  pane: TmuxPaneStatus
+): TmuxAgentConversation[] {
+  return snapshot.schema_version === 3
+    ? pane.agent_conversations ?? []
+    : [];
+}
+
 function minuteBucket(generatedAt: Date): Date {
   const bucket = new Date(generatedAt);
   bucket.setUTCSeconds(0, 0);
   return bucket;
+}
+
+export function persistenceTimestamp(snapshot: TmuxStatusPayload): string {
+  return snapshot.schema_version === 3
+    ? snapshot.generated_at
+    : new Date(snapshot.generated_at).toISOString();
 }
 
 export class TmuxObservationStore {
@@ -34,8 +87,8 @@ export class TmuxObservationStore {
   }
 
   async observe(snapshot: TmuxStatusPayload): Promise<void> {
-    const generatedAt = new Date(snapshot.generated_at);
-    const bucket = minuteBucket(generatedAt);
+    const generatedAt = persistenceTimestamp(snapshot);
+    const bucket = minuteBucket(new Date(generatedAt));
     await this.sql.begin(async (transaction) => {
       for (const pane of snapshot.panes) {
         const key = sessionKey(pane);
@@ -74,9 +127,8 @@ export class TmuxObservationStore {
             last_generated_at = EXCLUDED.last_generated_at,
             tools = EXCLUDED.tools,
             sample_count = tmux_pane_minutes.sample_count + 1,
-            cpu_average = (
-              tmux_pane_minutes.cpu_average * tmux_pane_minutes.sample_count
-              + EXCLUDED.cpu_average
+            cpu_average = tmux_pane_minutes.cpu_average + (
+              EXCLUDED.cpu_average - tmux_pane_minutes.cpu_average
             ) / (tmux_pane_minutes.sample_count + 1),
             cpu_peak = GREATEST(
               tmux_pane_minutes.cpu_peak,
@@ -90,6 +142,88 @@ export class TmuxObservationStore {
               + EXCLUDED.anomaly_count
           WHERE tmux_pane_minutes.last_generated_at < EXCLUDED.last_generated_at
         `;
+        for (const conversation of persistableConversations(snapshot, pane)) {
+          const observationKey = conversationObservationKey(pane, conversation);
+          await transaction`
+            INSERT INTO tmux_agent_conversations (
+              observation_key, session_key, pane_identity, tmux_target,
+              pane_id, pane_pid, agent_process_pids, process_instances,
+              working_directory,
+              tool, conversation_id_kind, conversation_id,
+              conversation_id_status, identity_source, source_path,
+              stable_mapping_key, resume_command, first_observed_at,
+              last_observed_at, last_generated_at
+            ) VALUES (
+              ${observationKey}, ${key}, ${identity},
+              ${pane.tmux_target ?? pane.target}, ${pane.pane_id ?? pane.pane},
+              ${pane.pane_pid ?? pane.pid},
+              ${Object.keys(conversation.process_instances).map(Number)},
+              ${JSON.stringify(conversation.process_instances)}::jsonb,
+              ${conversation.working_directory}, ${conversation.tool},
+              ${conversation.conversation_id_kind}, ${conversation.conversation_id},
+              ${conversation.conversation_id_status}, ${conversation.identity_source},
+              ${conversation.source_path}, ${conversation.stable_mapping_key},
+              ${conversation.resume_command}, ${generatedAt}, ${generatedAt},
+              ${generatedAt}
+            )
+            ON CONFLICT (observation_key) DO UPDATE SET
+              session_key = CASE WHEN tmux_agent_conversations.last_generated_at
+                < EXCLUDED.last_generated_at THEN EXCLUDED.session_key
+                ELSE tmux_agent_conversations.session_key END,
+              pane_identity = CASE WHEN tmux_agent_conversations.last_generated_at
+                < EXCLUDED.last_generated_at THEN EXCLUDED.pane_identity
+                ELSE tmux_agent_conversations.pane_identity END,
+              tmux_target = CASE WHEN tmux_agent_conversations.last_generated_at
+                < EXCLUDED.last_generated_at THEN EXCLUDED.tmux_target
+                ELSE tmux_agent_conversations.tmux_target END,
+              pane_id = CASE WHEN tmux_agent_conversations.last_generated_at
+                < EXCLUDED.last_generated_at THEN EXCLUDED.pane_id
+                ELSE tmux_agent_conversations.pane_id END,
+              pane_pid = CASE WHEN tmux_agent_conversations.last_generated_at
+                < EXCLUDED.last_generated_at THEN EXCLUDED.pane_pid
+                ELSE tmux_agent_conversations.pane_pid END,
+              agent_process_pids = CASE
+                WHEN tmux_agent_conversations.last_generated_at
+                  < EXCLUDED.last_generated_at
+                THEN EXCLUDED.agent_process_pids
+                ELSE tmux_agent_conversations.agent_process_pids END,
+              process_instances = CASE
+                WHEN tmux_agent_conversations.last_generated_at
+                  < EXCLUDED.last_generated_at
+                THEN EXCLUDED.process_instances
+                ELSE tmux_agent_conversations.process_instances END,
+              working_directory = CASE
+                WHEN tmux_agent_conversations.last_generated_at
+                  < EXCLUDED.last_generated_at
+                THEN EXCLUDED.working_directory
+                ELSE tmux_agent_conversations.working_directory END,
+              identity_source = CASE
+                WHEN tmux_agent_conversations.last_generated_at
+                  < EXCLUDED.last_generated_at
+                THEN EXCLUDED.identity_source
+                ELSE tmux_agent_conversations.identity_source END,
+              source_path = CASE WHEN tmux_agent_conversations.last_generated_at
+                < EXCLUDED.last_generated_at THEN EXCLUDED.source_path
+                ELSE tmux_agent_conversations.source_path END,
+              resume_command = CASE
+                WHEN tmux_agent_conversations.last_generated_at
+                  < EXCLUDED.last_generated_at
+                THEN EXCLUDED.resume_command
+                ELSE tmux_agent_conversations.resume_command END,
+              first_observed_at = LEAST(
+                tmux_agent_conversations.first_observed_at,
+                EXCLUDED.first_observed_at
+              ),
+              last_observed_at = GREATEST(
+                tmux_agent_conversations.last_observed_at,
+                EXCLUDED.last_observed_at
+              ),
+              last_generated_at = GREATEST(
+                tmux_agent_conversations.last_generated_at,
+                EXCLUDED.last_generated_at
+              )
+          `;
+        }
       }
     });
   }

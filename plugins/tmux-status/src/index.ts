@@ -4,6 +4,7 @@ import type {
 } from "@echolog/plugin-sdk";
 import manifestJson from "../echolog.plugin.json";
 import { TmuxStatusAdapter } from "./adapter.js";
+import { MAX_CPU_PERCENT, MAX_MEMORY_MB } from "./limits.js";
 import { createTmuxRoutes, type TmuxServices } from "./routes.js";
 import { TmuxObservationStore } from "./store.js";
 import type { TmuxAdapterConfig } from "./types.js";
@@ -87,9 +88,11 @@ export const tmuxStatusPlugin: PluginDefinition = {
         "collection_interval_seconds must be an integer from 5 to 3600"
       );
     }
-    if (value.cpuThreshold < 0) errors.push("cpu_threshold must be non-negative");
-    if (value.memoryThresholdMb < 0) {
-      errors.push("memory_threshold_mb must be non-negative");
+    if (value.cpuThreshold < 0 || value.cpuThreshold > MAX_CPU_PERCENT) {
+      errors.push(`cpu_threshold must be from 0 to ${MAX_CPU_PERCENT}`);
+    }
+    if (value.memoryThresholdMb < 0 || value.memoryThresholdMb > MAX_MEMORY_MB) {
+      errors.push(`memory_threshold_mb must be from 0 to ${MAX_MEMORY_MB}`);
     }
     return errors;
   },
@@ -127,6 +130,63 @@ export const tmuxStatusPlugin: PluginDefinition = {
         );
         CREATE INDEX IF NOT EXISTS idx_tmux_pane_minutes_bucket
           ON tmux_pane_minutes(minute_bucket);
+      `,
+    },
+    {
+      name: "002_tmux_agent_conversations",
+      sql: `
+        CREATE TABLE IF NOT EXISTS tmux_agent_conversations (
+          observation_key TEXT PRIMARY KEY,
+          session_key TEXT NOT NULL REFERENCES tmux_sessions(session_key)
+            ON DELETE CASCADE,
+          pane_identity TEXT NOT NULL,
+          tmux_target TEXT NOT NULL,
+          pane_id TEXT NOT NULL,
+          pane_pid INTEGER NOT NULL,
+          agent_process_pids INTEGER[] NOT NULL DEFAULT '{}'::integer[],
+          working_directory TEXT NOT NULL,
+          tool TEXT NOT NULL,
+          conversation_id_kind TEXT NOT NULL,
+          conversation_id TEXT,
+          conversation_id_status TEXT NOT NULL,
+          identity_source TEXT NOT NULL,
+          source_path TEXT,
+          stable_mapping_key TEXT,
+          resume_command TEXT,
+          first_observed_at TIMESTAMPTZ NOT NULL,
+          last_observed_at TIMESTAMPTZ NOT NULL,
+          last_generated_at TIMESTAMPTZ NOT NULL,
+          CONSTRAINT tmux_agent_conversations_status_check CHECK (
+            (
+              conversation_id_status = 'confirmed'
+              AND conversation_id IS NOT NULL
+              AND stable_mapping_key IS NOT NULL
+              AND resume_command IS NOT NULL
+            ) OR (
+              conversation_id_status = 'unknown'
+              AND conversation_id IS NULL
+              AND stable_mapping_key IS NULL
+              AND resume_command IS NULL
+            )
+          )
+        );
+        CREATE INDEX IF NOT EXISTS idx_tmux_agent_conversations_last_observed
+          ON tmux_agent_conversations(last_observed_at);
+      `,
+    },
+    {
+      name: "003_tmux_process_instances",
+      sql: `
+        ALTER TABLE tmux_agent_conversations
+          ADD COLUMN IF NOT EXISTS process_instances JSONB NOT NULL
+          DEFAULT '{}'::jsonb;
+      `,
+    },
+    {
+      name: "004_tmux_nullable_agent_cwd",
+      sql: `
+        ALTER TABLE tmux_agent_conversations
+          ALTER COLUMN working_directory DROP NOT NULL;
       `,
     },
   ],
