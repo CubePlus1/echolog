@@ -143,6 +143,7 @@ test("accepts canonical v3 fixtures and rejects canonical invalid fixtures", () 
     "missing-v2-identity",
     "oversized-cpu-percent",
     "oversized-memory-mb",
+    "year-zero-generated-at",
   ]) {
     assert.throws(
       () => parseStatusPayload(contractFixture("fixtures-invalid", name)),
