@@ -126,7 +126,7 @@ test("accepts v2 Codex/Grok panes and a v1 no-server snapshot", () => {
   assert.deepEqual(parseStatusPayload(JSON.stringify(v1)), v1);
 });
 
-test("accepts canonical v3 fixtures and rejects v3 missing v2 identity", () => {
+test("accepts canonical v3 fixtures and rejects canonical invalid fixtures", () => {
   for (const name of ["confirmed", "unknown", "conflicting", "no-server"]) {
     const fixture = contractFixture("fixtures", name);
     const parsed = parseStatusPayload(fixture);
@@ -139,11 +139,17 @@ test("accepts canonical v3 fixtures and rejects v3 missing v2 identity", () => {
     }
   }
 
-  assert.throws(
-    () => parseStatusPayload(contractFixture("fixtures-invalid", "missing-v2-identity")),
-    (error) =>
-      error instanceof PluginError && error.code === "PLUGIN_OUTPUT_INVALID"
-  );
+  for (const name of [
+    "missing-v2-identity",
+    "oversized-cpu-percent",
+    "oversized-memory-mb",
+  ]) {
+    assert.throws(
+      () => parseStatusPayload(contractFixture("fixtures-invalid", name)),
+      (error) =>
+        error instanceof PluginError && error.code === "PLUGIN_OUTPUT_INVALID"
+    );
+  }
 });
 
 test("rejects guessed or internally inconsistent v3 conversation identities", () => {
@@ -445,6 +451,36 @@ test("enforces v3 resource constraints and additionalProperties false", () => {
   invalidThreshold.thresholds.cpu_percent = -1;
   assert.throws(() => parseStatusPayload(JSON.stringify(invalidThreshold)), PluginError);
 
+  const validMaximumThresholds = JSON.parse(
+    contractFixture("fixtures", "confirmed")
+  );
+  validMaximumThresholds.thresholds.cpu_percent = 1_000_000;
+  validMaximumThresholds.thresholds.memory_mb = 1_000_000_000;
+  assert.deepEqual(
+    parseStatusPayload(JSON.stringify(validMaximumThresholds)),
+    validMaximumThresholds
+  );
+
+  for (const mutate of [
+    (value: any) => { value.thresholds.cpu_percent = 1_000_001; },
+    (value: any) => { value.thresholds.memory_mb = 1_000_000_001; },
+    (value: any) => { value.panes[0].cpu_percent = 1_000_001; },
+    (value: any) => { value.panes[0].memory_mb = 1_000_000_001; },
+  ]) {
+    const oversizedResource = JSON.parse(
+      contractFixture("fixtures", "confirmed")
+    );
+    mutate(oversizedResource);
+    assert.throws(
+      () => parseStatusPayload(JSON.stringify(oversizedResource)),
+      PluginError
+    );
+  }
+
+  const arbitraryPrecisionCpu = contractFixture("fixtures", "confirmed")
+    .replace('"cpu_percent": 12.5', '"cpu_percent": 1e400');
+  assert.throws(() => parseStatusPayload(arbitraryPrecisionCpu), PluginError);
+
   for (const generatedAt of [
     "2026-08-03",
     "2026-08-03T12:00:00",
@@ -484,17 +520,6 @@ test("enforces v3 resource constraints and additionalProperties false", () => {
   assert.deepEqual(
     parseStatusPayload(JSON.stringify(microsecondTimestamp)),
     microsecondTimestamp
-  );
-
-  const hugeCpuSample = JSON.parse(
-    contractFixture("fixtures", "confirmed")
-  );
-  hugeCpuSample.panes[0].cpu_percent = 1e308;
-  hugeCpuSample.panes[0].anomalies = ["CPU"];
-  hugeCpuSample.anomaly_count = 1;
-  assert.deepEqual(
-    parseStatusPayload(JSON.stringify(hugeCpuSample)),
-    hugeCpuSample
   );
 
   for (const mutate of [

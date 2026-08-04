@@ -13,3 +13,5 @@ python3 validate_semantics.py fixtures/*.json
 ```
 
 The remote drift workflow needs `TMUX_STATUS_CONTRACT_READ_TOKEN`, restricted to `CubePlus1/tmux-status` with read-only Contents permission. Until that secret is configured and the workflow succeeds, remote drift enforcement remains intentionally non-required.
+
+Persisted resource values use the canonical bounds: aggregate CPU is at most `1,000,000%`, and memory is at most `1,000,000,000 MB`; reporting thresholds use the same limits.

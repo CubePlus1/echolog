@@ -81,6 +81,8 @@ function isRfc3339DateTime(value: string): boolean {
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const SERVER_INSTANCE_PATTERN = /^[0-9]{1,10}:[0-9]{1,16}$/;
 const MAX_PROCESS_PID = 2_147_483_647;
+const MAX_CPU_PERCENT = 1_000_000;
+const MAX_MEMORY_MB = 1_000_000_000;
 const CODEX_CONFIRMED_IDENTITY_SOURCES = new Set([
   "open_session_file",
   "cli_resume_argument",
@@ -333,7 +335,9 @@ function validatePane(value: unknown, version: number): value is TmuxPaneStatus 
       Number(value.pid) > MAX_PROCESS_PID ||
       !/^%[0-9]{1,10}$/.test(value.pane as string) ||
       Number(value.cpu_percent) < 0 ||
+      Number(value.cpu_percent) > MAX_CPU_PERCENT ||
       Number(value.memory_mb) < 0 ||
+      Number(value.memory_mb) > MAX_MEMORY_MB ||
       !Number.isInteger(value.process_count) || Number(value.process_count) < 0 ||
       typeof value.tmux_target !== "string" ||
       value.tmux_target.length === 0 ||
@@ -471,7 +475,9 @@ export function parseStatusPayload(stdout: string): TmuxStatusPayload {
       typeof parsed.generated_at !== "string" ||
       !isRfc3339DateTime(parsed.generated_at) ||
       Number(parsed.thresholds.cpu_percent) < 0 ||
+      Number(parsed.thresholds.cpu_percent) > MAX_CPU_PERCENT ||
       Number(parsed.thresholds.memory_mb) < 0 ||
+      Number(parsed.thresholds.memory_mb) > MAX_MEMORY_MB ||
       Number(parsed.pane_count) < 0 ||
       Number(parsed.anomaly_count) < 0
     ) {
