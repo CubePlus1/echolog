@@ -12,6 +12,7 @@
     "cli": "tsx src/cli/index.ts",
     "migrate": "tsx src/migrate.ts",
     "test": "tsx --test tests/**/*.test.ts",
+    "test:integration": "pnpm build && tsx --test tests/**/*.integration.ts",
     "typecheck": "tsc --noEmit",
     "docker:up": "docker compose up -d",
     "docker:down": "docker compose down"
