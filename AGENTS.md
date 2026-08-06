@@ -48,6 +48,13 @@ trellis mem search "<关键词>"
 
 写代码前必读对应层的规范：`.trellis/spec/backend/`（改 CLI 先看 `cli-agent-contract.md`，错误处理看 `error-handling.md`）；前端看 `.trellis/spec/frontend/`。任务上下文的阅读顺序：`implement.jsonl` 清单 → `prd.md` → `design.md` → `implement.md`。
 
+## 分支与 worktree 规范（强制）
+
+- **禁止在 `main` 分支直接开发、修改文件或创建 commit**；文档、配置、修复和紧急变更也不例外。
+- 开始任何实现前，先运行 `git branch --show-current` 确认所在分支。若结果为 `main` 或为空（detached HEAD），必须先创建并切换到 `codex/<task-slug>` 等独立任务分支；需要隔离并行工作时，为该分支创建独立 worktree。
+- 所有变更只能提交到任务分支，并通过 Pull Request 合入 `main`。不得以“改动很小”为由跳过分支和 PR。
+- 创建 commit 前再次检查当前分支；若位于 `main` 或 detached HEAD，立即停止提交，先把现有改动安全迁移到任务分支或 worktree。
+
 # EchoLog 运行手册（agent 必读）
 
 EchoLog 是本机的活动记录服务。作为 agent，你通过 **`el` CLI** 使用它（已在 PATH，`/opt/homebrew/bin/el`）；`el --help` 与各子命令 `--help` 就是完整的工具说明书。需要机器可读输出加 `--json`；成功退出码 0，任何错误非 0（错误信息在 stderr 或 JSON 错误体 `{"error", ...}`）。HTTP 契约见 `docs/API.md`。
