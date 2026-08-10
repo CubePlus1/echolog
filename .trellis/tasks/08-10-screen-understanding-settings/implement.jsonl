@@ -1,0 +1,4 @@
+{"file":".trellis/spec/backend/index.md","reason":"Backend specification index and documentation-language convention."}
+{"file":".trellis/spec/backend/directory-structure.md","reason":"Route and plugin ownership boundaries for the API contract."}
+{"file":".trellis/spec/backend/error-handling.md","reason":"HTTP 400/409 response conventions and structured error shapes."}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"Required typecheck, build, and verification expectations."}
