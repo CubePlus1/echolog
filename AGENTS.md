@@ -111,3 +111,19 @@ docker ps | grep echolog-db
 3. 一个会话只保留一个当前激活任务；一个父任务下可以挂独立可验收的子任务。完成的任务必须先通过验收，再关闭 Issue、归档 Trellis task，并更新 README。
 4. “清除”只清除活跃状态，不删除历史：使用 `task.py finish/archive` 和关闭 Issue，保留归档任务、Issue 和提交记录。
 5. 三处冲突时，以已验证实现和 Trellis task 为准，必须在同一变更中同步修正文档和 Issue。
+
+## Pull Request 与 Codex 审阅规范
+
+所有 Pull Request 在合并前都必须经过 Codex code review。仓库管理员必须在
+Codex Code review 设置中启用 `Automatic reviews`。如果自动审阅未触发，维护者
+必须在对应 PR 的评论中精确发送 `@codex review`。
+
+### Code Review Rules
+
+- 审阅以 PR 的最新 commit 为准；每次实质性更新都会使之前的审阅失效，必须
+  对最新 commit 重新请求并完成 Codex review。
+- P0/P1 问题必须先修复，再针对最新 commit 重新审阅；未完成修复和重审前不得
+  合并 PR。
+- `@codex` 不是 CODEOWNERS reviewer，也不能满足 CODEOWNERS 或其他 required
+  reviewer 门槛；如需这些门槛，必须由真实的被配置 reviewer 完成。
+- 不得添加 GitHub Actions 来模拟 bot mention，也不得伪造 CODEOWNERS 身份。
