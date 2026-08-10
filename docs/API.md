@@ -236,6 +236,115 @@ curl -X DELETE http://localhost:19827/api/screen/rules/<id>
 - `priority`：整数，高者胜；平局时带时段的规则胜过全天规则
 - 片段会按规则时段边界自动切开，各段独立归名；无匹配规则 → `未分`
 
+#### screen-understanding settings
+
+screen-understanding 的第一阶段只提供运行时设置，不采集截图、不存储图片，
+也不调用模型或 provider。设置 API 是 screen-time 插件的 canonical 路径；
+本组端点没有 `/api/screen/*` 兼容别名。
+
+```bash
+# 读取当前完整设置对象
+curl "http://localhost:19827/api/plugins/screen-time/understanding/settings"
+
+# 全量替换可变设置；expectedVersion 必须等于当前 version
+curl -X PUT http://localhost:19827/api/plugins/screen-time/understanding/settings \
+  -H "Content-Type: application/json" \
+  -d '{
+    "expectedVersion": 1,
+    "enabled": false,
+    "captureIntervalSeconds": 60,
+    "captureDisplay": "active",
+    "skipWhenIdle": true,
+    "providerProfileId": null,
+    "requestTimeoutMs": 30000,
+    "maxConcurrency": 1,
+    "maxAttempts": 3,
+    "dailyRequestBudget": 480,
+    "dailyCostBudgetMicros": 0,
+    "remoteConsentOrigin": null
+  }'
+```
+
+`GET /api/plugins/screen-time/understanding/settings` 返回 `200` 和完整对象：
+
+```json
+{
+  "id": "default",
+  "version": 1,
+  "enabled": false,
+  "captureIntervalSeconds": 60,
+  "captureDisplay": "active",
+  "skipWhenIdle": true,
+  "providerProfileId": null,
+  "requestTimeoutMs": 30000,
+  "maxConcurrency": 1,
+  "maxAttempts": 3,
+  "dailyRequestBudget": 480,
+  "dailyCostBudgetMicros": 0,
+  "remoteConsentOrigin": null,
+  "updatedAt": "2026-08-06T00:00:00.000Z"
+}
+```
+
+`PUT` 是全量更新：除 `expectedVersion` 外必须提供下表中的每个字段，不能
+携带未知字段。成功返回 `200` 和同样的完整对象；服务器原子地检查
+`expectedVersion`，成功后将 `version` 加一。
+
+| 字段 | 类型 / 范围 | 说明 |
+|---|---|---|
+| `expectedVersion` | integer `1`–`2147483647` | 乐观并发前置版本；不包含在返回对象中 |
+| `enabled` | boolean | 是否启用后续 screen-understanding 工作 |
+| `captureIntervalSeconds` | integer `60`–`3600` | 预留的理解采集间隔 |
+| `captureDisplay` | string，固定为 `active` | 当前唯一支持的显示器选择 |
+| `skipWhenIdle` | boolean | 是否跳过空闲时段 |
+| `providerProfileId` | `null` 或 1–100 个字符 | 可含 ASCII 字母、数字、`.`、`_`、`:`、`-`；首字符必须是字母或数字；首尾空白会被去除 |
+| `requestTimeoutMs` | integer `1000`–`120000` | 单次请求超时毫秒数 |
+| `maxConcurrency` | integer `1`–`8` | 最大并发数 |
+| `maxAttempts` | integer `1`–`10` | 最大尝试次数 |
+| `dailyRequestBudget` | integer `1`–`1440` | 每日请求预算 |
+| `dailyCostBudgetMicros` | integer `0`–`2000000000` | 每日成本预算，单位为 micro-units |
+| `remoteConsentOrigin` | `null`、HTTPS origin 或 HTTP loopback origin | 只能是 origin；不得含凭据、路径、query 或 fragment。HTTP 仅允许 `localhost`、`127.0.0.1`、`[::1]`；成功值按 URL origin 规范化 |
+
+`PUT` 成功时返回 `200`，例如：
+
+```json
+{
+  "id": "default",
+  "version": 2,
+  "enabled": true,
+  "captureIntervalSeconds": 120,
+  "captureDisplay": "active",
+  "skipWhenIdle": true,
+  "providerProfileId": "vision-primary",
+  "requestTimeoutMs": 30000,
+  "maxConcurrency": 2,
+  "maxAttempts": 3,
+  "dailyRequestBudget": 480,
+  "dailyCostBudgetMicros": 0,
+  "remoteConsentOrigin": "https://vision.example.com",
+  "updatedAt": "2026-08-06T00:01:00.000Z"
+}
+```
+
+校验失败返回 `400`，响应至少包含 `error`；例如缺少全量字段、携带未知
+字段、数值越界、`captureDisplay` 不是 `active`、非法 provider profile id，
+或使用不安全的 consent origin：
+
+```json
+{
+  "error": "captureIntervalSeconds must be an integer from 60 to 3600"
+}
+```
+
+如果 `expectedVersion` 已过期，服务器不写入请求值，返回 `409` 及当前版本：
+
+```json
+{
+  "error": "screen understanding settings version conflict",
+  "currentVersion": 2
+}
+```
+
 ### tmux-status
 
 tmux-status 插件默认禁用，只通过无 shell 的 `execFile` 适配外部
