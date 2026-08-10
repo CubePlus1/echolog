@@ -47,7 +47,7 @@ test("screen-time integration requires an explicit test database URL", () => {
 });
 
 test(
-  "screen understanding settings migrate, reload, race, and serve over HTTP",
+  "screen understanding settings seed on first PUT, reload, race, and serve over HTTP",
   { skip: !testDatabaseUrl, timeout: 30_000 },
   async () => {
     if (!testDatabaseUrl) return;
@@ -72,43 +72,6 @@ test(
       await migrationRunner("screen-time", migrations);
       await migrationRunner("screen-time", migrations);
 
-      firstStore = new ScreenStore(scopedDatabaseUrl);
-      secondStore = new ScreenStore(scopedDatabaseUrl);
-      const [firstDefault, secondDefault] = await Promise.all([
-        firstStore.getUnderstandingSettings(),
-        secondStore.getUnderstandingSettings(),
-      ]);
-      assert.equal(firstDefault.version, 1);
-      assert.equal(secondDefault.version, 1);
-
-      const firstService = new UnderstandingSettingsService(firstStore);
-      const secondService = new UnderstandingSettingsService(secondStore);
-      assert.equal((await secondService.get()).version, 1);
-      const updated = await firstService.update(1, {
-        ...DEFAULT_UNDERSTANDING_SETTINGS,
-        enabled: true,
-      });
-      assert.equal(updated.ok, true);
-      assert.equal((await secondService.get()).version, 2);
-
-      const [left, right] = await Promise.all([
-        firstService.update(2, {
-          ...DEFAULT_UNDERSTANDING_SETTINGS,
-          enabled: true,
-          providerProfileId: "profile-left",
-        }),
-        secondService.update(2, {
-          ...DEFAULT_UNDERSTANDING_SETTINGS,
-          enabled: true,
-          providerProfileId: "profile-right",
-        }),
-      ]);
-      assert.equal([left, right].filter((result) => result.ok).length, 1);
-      assert.equal([left, right].filter((result) => !result.ok).length, 1);
-
-      restartedStore = new ScreenStore(scopedDatabaseUrl);
-      assert.equal((await restartedStore.getUnderstandingSettings()).version, 3);
-
       host = new PluginHost({
         definitions: [screenTimePlugin],
         logger,
@@ -121,19 +84,70 @@ test(
 
       app = Fastify({ logger: false });
       await pluginRoutes(app, host);
+      const firstUpdateResponse = await app.inject({
+        method: "PUT",
+        url: "/api/plugins/screen-time/understanding/settings",
+        headers: { "content-type": "application/json" },
+        payload: {
+          expectedVersion: 1,
+          ...DEFAULT_UNDERSTANDING_SETTINGS,
+          enabled: true,
+        },
+      });
+      assert.equal(firstUpdateResponse.statusCode, 200);
+      assert.equal(firstUpdateResponse.json().version, 2);
+
+      firstStore = new ScreenStore(scopedDatabaseUrl);
+      secondStore = new ScreenStore(scopedDatabaseUrl);
+      const [firstDefault, secondDefault] = await Promise.all([
+        firstStore.getUnderstandingSettings(),
+        secondStore.getUnderstandingSettings(),
+      ]);
+      assert.equal(firstDefault.version, 2);
+      assert.equal(firstDefault.enabled, true);
+      assert.equal(secondDefault.version, 2);
+
+      const firstService = new UnderstandingSettingsService(firstStore);
+      const secondService = new UnderstandingSettingsService(secondStore);
+      assert.equal((await secondService.get()).version, 2);
+      const updated = await firstService.update(2, {
+        ...DEFAULT_UNDERSTANDING_SETTINGS,
+        enabled: true,
+      });
+      assert.equal(updated.ok, true);
+      assert.equal((await secondService.get()).version, 3);
+
+      const [left, right] = await Promise.all([
+        firstService.update(3, {
+          ...DEFAULT_UNDERSTANDING_SETTINGS,
+          enabled: true,
+          providerProfileId: "profile-left",
+        }),
+        secondService.update(3, {
+          ...DEFAULT_UNDERSTANDING_SETTINGS,
+          enabled: true,
+          providerProfileId: "profile-right",
+        }),
+      ]);
+      assert.equal([left, right].filter((result) => result.ok).length, 1);
+      assert.equal([left, right].filter((result) => !result.ok).length, 1);
+
+      restartedStore = new ScreenStore(scopedDatabaseUrl);
+      assert.equal((await restartedStore.getUnderstandingSettings()).version, 4);
+
       const getResponse = await app.inject({
         method: "GET",
         url: "/api/plugins/screen-time/understanding/settings",
       });
       assert.equal(getResponse.statusCode, 200);
-      assert.equal(getResponse.json().version, 3);
+      assert.equal(getResponse.json().version, 4);
 
       const updateResponse = await app.inject({
         method: "PUT",
         url: "/api/plugins/screen-time/understanding/settings",
         headers: { "content-type": "application/json" },
         payload: {
-          expectedVersion: 3,
+          expectedVersion: 4,
           ...DEFAULT_UNDERSTANDING_SETTINGS,
           enabled: true,
           providerProfileId: "vision-primary",
@@ -141,14 +155,14 @@ test(
         },
       });
       assert.equal(updateResponse.statusCode, 200);
-      assert.equal(updateResponse.json().version, 4);
+      assert.equal(updateResponse.json().version, 5);
 
       const invalidResponse = await app.inject({
         method: "PUT",
         url: "/api/plugins/screen-time/understanding/settings",
         headers: { "content-type": "application/json" },
         payload: {
-          expectedVersion: 4,
+          expectedVersion: 5,
           ...DEFAULT_UNDERSTANDING_SETTINGS,
           providerProfileId: "bad\u0000profile",
         },
@@ -159,10 +173,10 @@ test(
         method: "PUT",
         url: "/api/plugins/screen-time/understanding/settings",
         headers: { "content-type": "application/json" },
-        payload: { expectedVersion: 3, ...DEFAULT_UNDERSTANDING_SETTINGS },
+        payload: { expectedVersion: 4, ...DEFAULT_UNDERSTANDING_SETTINGS },
       });
       assert.equal(conflictResponse.statusCode, 409);
-      assert.equal(conflictResponse.json().currentVersion, 4);
+      assert.equal(conflictResponse.json().currentVersion, 5);
     } finally {
       await app?.close();
       await host?.stop();

@@ -22,6 +22,8 @@ implementation PR [#22](https://github.com/CubePlus1/echolog/pull/22).
 - Use an atomic version precondition. A matching `expectedVersion` increments
   the stored version and returns the complete updated object; a stale version
   returns HTTP 409 with `currentVersion` and does not overwrite the row.
+- Ensure the singleton default row exists before either read or conditional
+  update so the first valid PUT on a freshly migrated database succeeds.
 - Keep all behavior inside the screen-time plugin boundary and preserve the
   existing compatibility APIs.
 - Keep the scope limited to settings persistence and its API contract. Do not
@@ -44,6 +46,8 @@ implementation PR [#22](https://github.com/CubePlus1/echolog/pull/22).
       payload and documents all fields and ranges.
 - [ ] Valid PUT updates atomically and increments `version`; stale PUT returns
       409 with `currentVersion`.
+- [ ] On an empty freshly migrated settings table, the first full PUT with
+      `expectedVersion: 1` returns 200 and the persisted object at version 2.
 - [ ] `docs/API.md` documents both endpoints, the full payload, field ranges,
       successful response, 400 validation response, and 409 conflict response.
 - [ ] Applicable unit, typecheck, build, and integration verification passes

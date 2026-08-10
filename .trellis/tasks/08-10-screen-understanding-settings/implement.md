@@ -16,6 +16,9 @@
 6. Reply to and resolve only the two addressed review threads after the
    pushed commit is visible, then post `@codex review` and inspect the newest
    review result for blockers.
+7. Address the follow-up first-PUT P2 by ensuring the default row before the
+   CAS update, adding a fresh-database HTTP regression, rerunning validation,
+   and requesting review on the new commit.
 
 ## Validation commands
 

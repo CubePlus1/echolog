@@ -31,11 +31,14 @@ documented in `docs/API.md`.
 
 ## Concurrency and errors
 
-The store performs one conditional `UPDATE ... WHERE id = 'default' AND
-version = expectedVersion`, increments the version in SQL, and uses
-`RETURNING`. A zero-row result is converted into a 409 response after reading
-the current version. Validation returns 400 before any write. Successful GET
-and PUT responses return the complete database-shaped settings object.
+Before reads and conditional updates, the store performs the same idempotent
+default-row insert with `ON CONFLICT DO NOTHING`. The update then performs one
+conditional `UPDATE ... WHERE id = 'default' AND version = expectedVersion`,
+increments the version in SQL, and uses `RETURNING`. Concurrent first PUTs can
+both seed safely, but only one matching CAS update succeeds. A zero-row result
+is converted into a 409 response after reading the current version. Validation
+returns 400 before any write. Successful GET and PUT responses return the
+complete database-shaped settings object.
 
 ## Traceability
 

@@ -87,7 +87,7 @@ export class ScreenStore {
     return deleted ?? null;
   }
 
-  async getUnderstandingSettings(): Promise<ScreenUnderstandingSettings> {
+  private async ensureUnderstandingSettings(): Promise<void> {
     await this.db
       .insert(screenUnderstandingSettings)
       .values({
@@ -96,6 +96,10 @@ export class ScreenStore {
         updatedAt: new Date(),
       })
       .onConflictDoNothing();
+  }
+
+  async getUnderstandingSettings(): Promise<ScreenUnderstandingSettings> {
+    await this.ensureUnderstandingSettings();
     const [row] = await this.db
       .select()
       .from(screenUnderstandingSettings)
@@ -108,6 +112,7 @@ export class ScreenStore {
     expectedVersion: number,
     input: UnderstandingSettingsInput
   ): Promise<ScreenUnderstandingSettings | null> {
+    await this.ensureUnderstandingSettings();
     const [updated] = await this.db
       .update(screenUnderstandingSettings)
       .set({
