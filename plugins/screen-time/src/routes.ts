@@ -4,11 +4,16 @@ import type {
   PluginRoute,
 } from "@echolog/plugin-sdk";
 import type { ScreenService } from "./screen.js";
+import {
+  validateUnderstandingSettingsUpdate,
+  type UnderstandingSettingsService,
+} from "./understanding-settings.js";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const TIME_RE = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
 type ServiceProvider = () => ScreenService;
+type SettingsProvider = () => UnderstandingSettingsService;
 
 function response(statusCode: number, body: unknown): PluginHttpResponse {
   return { statusCode, body };
@@ -115,7 +120,7 @@ function validateRuleBody(body: unknown):
   };
 }
 
-function handlers(service: ServiceProvider) {
+function handlers(service: ServiceProvider, settings?: SettingsProvider) {
   return {
     today: async () => service().getDaily(localDateStr()),
     daily: async (request: PluginHttpRequest) => {
@@ -135,38 +140,89 @@ function handlers(service: ServiceProvider) {
       return deleted ??
         response(404, { error: `Rule ${request.params.id} not found` });
     },
+    getUnderstandingSettings: async () => {
+      if (!settings) throw new Error("understanding settings service is unavailable");
+      return settings().get();
+    },
+    updateUnderstandingSettings: async (request: PluginHttpRequest) => {
+      if (!settings) throw new Error("understanding settings service is unavailable");
+      const validated = validateUnderstandingSettingsUpdate(request.body);
+      if (!validated.ok) return response(400, { error: validated.error });
+      const { expectedVersion, ...input } = validated.value;
+      const result = await settings().update(expectedVersion, input);
+      return result.ok
+        ? result.settings
+        : response(409, {
+            error: "screen understanding settings version conflict",
+            currentVersion: result.currentVersion,
+          });
+    },
   };
 }
 
-export function createScreenRoutes(service: ServiceProvider): PluginRoute[] {
-  const routeHandlers = handlers(service);
+export function createScreenRoutes(
+  service: ServiceProvider,
+  settings?: SettingsProvider
+): PluginRoute[] {
+  const routeHandlers = handlers(service, settings);
   const definitions: Array<{
     method: PluginRoute["method"];
     suffix: string;
     handler: PluginRoute["handler"];
+    compatibilityAlias?: boolean;
   }> = [
-    { method: "GET", suffix: "/today", handler: routeHandlers.today },
-    { method: "GET", suffix: "/daily/:date", handler: routeHandlers.daily },
-    { method: "GET", suffix: "/rules", handler: routeHandlers.listRules },
-    { method: "POST", suffix: "/rules", handler: routeHandlers.createRule },
+    {
+      method: "GET",
+      suffix: "/today",
+      handler: routeHandlers.today,
+      compatibilityAlias: true,
+    },
+    {
+      method: "GET",
+      suffix: "/daily/:date",
+      handler: routeHandlers.daily,
+      compatibilityAlias: true,
+    },
+    {
+      method: "GET",
+      suffix: "/rules",
+      handler: routeHandlers.listRules,
+      compatibilityAlias: true,
+    },
+    {
+      method: "POST",
+      suffix: "/rules",
+      handler: routeHandlers.createRule,
+      compatibilityAlias: true,
+    },
     {
       method: "DELETE",
       suffix: "/rules/:id",
       handler: routeHandlers.deleteRule,
+      compatibilityAlias: true,
+    },
+    {
+      method: "GET",
+      suffix: "/understanding/settings",
+      handler: routeHandlers.getUnderstandingSettings,
+    },
+    {
+      method: "PUT",
+      suffix: "/understanding/settings",
+      handler: routeHandlers.updateUnderstandingSettings,
     },
   ];
 
-  return definitions.flatMap(({ method, suffix, handler }) => [
-    {
+  return definitions.flatMap(
+    ({ method, suffix, handler, compatibilityAlias }) => [{
       method,
       path: `/api/plugins/screen-time${suffix}`,
       handler,
-    },
-    {
-      method,
-      path: `/api/screen${suffix}`,
-      compatibilityAlias: true,
-      handler,
-    },
-  ]);
+    }, ...(compatibilityAlias ? [{
+        method,
+        path: `/api/screen${suffix}`,
+        compatibilityAlias: true,
+        handler,
+      } satisfies PluginRoute] : [])]
+  );
 }

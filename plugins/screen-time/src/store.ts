@@ -1,8 +1,18 @@
-import { and, asc, desc, eq, gt, lt } from "drizzle-orm";
+import { and, asc, desc, eq, gt, lt, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { nanoid } from "nanoid";
-import { appRules, appUsage, type AppRule } from "./schema.js";
+import {
+  appRules,
+  appUsage,
+  screenUnderstandingSettings,
+  type AppRule,
+  type ScreenUnderstandingSettings,
+} from "./schema.js";
+import {
+  DEFAULT_UNDERSTANDING_SETTINGS,
+  type UnderstandingSettingsInput,
+} from "./understanding-settings.js";
 
 export interface CreateRuleInput {
   appMatch: string;
@@ -75,5 +85,46 @@ export class ScreenStore {
       .where(eq(appRules.id, id))
       .returning();
     return deleted ?? null;
+  }
+
+  private async ensureUnderstandingSettings(): Promise<void> {
+    await this.db
+      .insert(screenUnderstandingSettings)
+      .values({
+        id: "default",
+        ...DEFAULT_UNDERSTANDING_SETTINGS,
+        updatedAt: new Date(),
+      })
+      .onConflictDoNothing();
+  }
+
+  async getUnderstandingSettings(): Promise<ScreenUnderstandingSettings> {
+    await this.ensureUnderstandingSettings();
+    const [row] = await this.db
+      .select()
+      .from(screenUnderstandingSettings)
+      .where(eq(screenUnderstandingSettings.id, "default"));
+    if (!row) throw new Error("screen understanding settings row is unavailable");
+    return row;
+  }
+
+  async updateUnderstandingSettings(
+    expectedVersion: number,
+    input: UnderstandingSettingsInput
+  ): Promise<ScreenUnderstandingSettings | null> {
+    await this.ensureUnderstandingSettings();
+    const [updated] = await this.db
+      .update(screenUnderstandingSettings)
+      .set({
+        ...input,
+        version: sql`${screenUnderstandingSettings.version} + 1`,
+        updatedAt: new Date(),
+      })
+      .where(and(
+        eq(screenUnderstandingSettings.id, "default"),
+        eq(screenUnderstandingSettings.version, expectedVersion)
+      ))
+      .returning();
+    return updated ?? null;
   }
 }

@@ -1,0 +1,2 @@
+{"file":".trellis/spec/backend/error-handling.md","reason":"Check that documented 400 and 409 shapes match project-wide error handling."}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"Check validation commands and staged-scope review gates."}

@@ -170,6 +170,10 @@ EchoLog 的近期方向不是做普通的工时计时器，而是成为本地优
 - **P1 · Codex 集成**：按顺序交付 Skills-only Plugin、本地 stdio MCP 适配层、Plugin 打包与发布验收；每一步独立 Issue、PR 和 review。
   - GitHub：✅ [#13 Skills MVP](https://github.com/CubePlus1/echolog/issues/13) → ✅ [#14 MCP 适配](https://github.com/CubePlus1/echolog/issues/14) → ✅ [#15 打包发布](https://github.com/CubePlus1/echolog/issues/15)
   - Trellis：`.trellis/tasks/08-03-codex-integration/`
+- **P1 · screen-understanding 设置基础（当前 PR）**：为 screen-time 提供可运行时读取/更新、持久化且带乐观版本控制的理解设置，先建立后续能力所需的配置与 API 边界。
+  - GitHub：[Issue #23](https://github.com/CubePlus1/echolog/issues/23) · [PR #22](https://github.com/CubePlus1/echolog/pull/22)
+  - Trellis：[PRD 与验收](.trellis/tasks/08-10-screen-understanding-settings/prd.md) · [设计](.trellis/tasks/08-10-screen-understanding-settings/design.md) · [实现计划](.trellis/tasks/08-10-screen-understanding-settings/implement.md)
+  - 当前范围仅含 settings 持久化与 `GET/PUT /api/plugins/screen-time/understanding/settings` 契约；截图采集、图片存储、模型调用、队列/重试和后续理解子任务不在本里程碑内。
 
 ### 三处任务同步规则
 

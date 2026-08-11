@@ -7,15 +7,24 @@ import { createScreenRoutes } from "./routes.js";
 import { ScreenService } from "./screen.js";
 import { ScreenStore } from "./store.js";
 import { ScreenTracker } from "./tracker.js";
+import { UnderstandingSettingsService } from "./understanding-settings.js";
 
 const manifest = manifestJson as PluginManifest;
 let store: ScreenStore | null = null;
 let tracker: ScreenTracker | null = null;
 let service: ScreenService | null = null;
+let understandingSettings: UnderstandingSettingsService | null = null;
 
 function requireService(): ScreenService {
   if (!service) throw new Error("screen-time service is not initialized");
   return service;
+}
+
+function requireUnderstandingSettings(): UnderstandingSettingsService {
+  if (!understandingSettings) {
+    throw new Error("screen understanding settings service is not initialized");
+  }
+  return understandingSettings;
 }
 
 function integerConfig(
@@ -31,7 +40,7 @@ function integerConfig(
 
 export const screenTimePlugin: PluginDefinition = {
   manifest,
-  routes: createScreenRoutes(requireService),
+  routes: createScreenRoutes(requireService, requireUnderstandingSettings),
   defaultEnabled: true,
   defaultConfig: {
     sample_seconds: 5,
@@ -79,9 +88,33 @@ export const screenTimePlugin: PluginDefinition = {
       CREATE INDEX IF NOT EXISTS idx_app_usage_start_at
         ON app_usage(start_at);
     `,
+  }, {
+    name: "002_screen_understanding_settings",
+    sql: `
+      CREATE TABLE IF NOT EXISTS screen_understanding_settings (
+        id TEXT PRIMARY KEY,
+        version INTEGER NOT NULL DEFAULT 1,
+        enabled BOOLEAN NOT NULL DEFAULT FALSE,
+        capture_interval_seconds INTEGER NOT NULL DEFAULT 60,
+        capture_display TEXT NOT NULL DEFAULT 'active',
+        skip_when_idle BOOLEAN NOT NULL DEFAULT TRUE,
+        provider_profile_id TEXT,
+        request_timeout_ms INTEGER NOT NULL DEFAULT 30000,
+        max_concurrency INTEGER NOT NULL DEFAULT 1,
+        max_attempts INTEGER NOT NULL DEFAULT 3,
+        daily_request_budget INTEGER NOT NULL DEFAULT 480,
+        daily_cost_budget_micros INTEGER NOT NULL DEFAULT 0,
+        remote_consent_origin TEXT,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        CONSTRAINT screen_understanding_settings_singleton CHECK (id = 'default'),
+        CONSTRAINT screen_understanding_settings_display_check
+          CHECK (capture_display = 'active')
+      );
+    `,
   }],
   register(context) {
     store = new ScreenStore(context.service<string>("database.url"));
+    understandingSettings = new UnderstandingSettingsService(store);
     tracker = new ScreenTracker(context, store, {
       sampleSeconds: integerConfig(context.config, "sample_seconds", 5),
       idleSeconds: integerConfig(context.config, "idle_seconds", 180),
@@ -122,6 +155,7 @@ export const screenTimePlugin: PluginDefinition = {
     await store?.close();
     tracker = null;
     service = null;
+    understandingSettings = null;
     store = null;
   },
   async doctor(context) {
