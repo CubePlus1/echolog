@@ -48,6 +48,13 @@ trellis mem search "<关键词>"
 
 写代码前必读对应层的规范：`.trellis/spec/backend/`（改 CLI 先看 `cli-agent-contract.md`，错误处理看 `error-handling.md`）；前端看 `.trellis/spec/frontend/`。任务上下文的阅读顺序：`implement.jsonl` 清单 → `prd.md` → `design.md` → `implement.md`。
 
+## 分支与 worktree 规范（强制）
+
+- **禁止在 `main` 分支直接开发、修改文件或创建 commit**；文档、配置、修复和紧急变更也不例外。
+- 开始任何实现前，先运行 `git branch --show-current` 确认所在分支。若结果为 `main` 或为空（detached HEAD），必须先创建并切换到 `codex/<task-slug>` 等独立任务分支；需要隔离并行工作时，为该分支创建独立 worktree。
+- 所有变更只能提交到任务分支，并通过 Pull Request 合入 `main`。不得以“改动很小”为由跳过分支和 PR。
+- 创建 commit 前再次检查当前分支；若位于 `main` 或 detached HEAD，立即停止提交，先把现有改动安全迁移到任务分支或 worktree。
+
 # EchoLog 运行手册（agent 必读）
 
 EchoLog 是本机的活动记录服务。作为 agent，你通过 **`el` CLI** 使用它（已在 PATH，`/opt/homebrew/bin/el`）；`el --help` 与各子命令 `--help` 就是完整的工具说明书。需要机器可读输出加 `--json`；成功退出码 0，任何错误非 0（错误信息在 stderr 或 JSON 错误体 `{"error", ...}`）。HTTP 契约见 `docs/API.md`。
@@ -104,3 +111,19 @@ docker ps | grep echolog-db
 3. 一个会话只保留一个当前激活任务；一个父任务下可以挂独立可验收的子任务。完成的任务必须先通过验收，再关闭 Issue、归档 Trellis task，并更新 README。
 4. “清除”只清除活跃状态，不删除历史：使用 `task.py finish/archive` 和关闭 Issue，保留归档任务、Issue 和提交记录。
 5. 三处冲突时，以已验证实现和 Trellis task 为准，必须在同一变更中同步修正文档和 Issue。
+
+## Pull Request 与 Codex 审阅规范
+
+所有 Pull Request 在合并前都必须经过 Codex code review。仓库管理员必须在
+Codex Code review 设置中启用 `Automatic reviews`。如果自动审阅未触发，维护者
+必须在对应 PR 的评论中精确发送 `@codex review`。
+
+### Code Review Rules
+
+- 审阅以 PR 的最新 commit 为准；每次实质性更新都会使之前的审阅失效，必须
+  对最新 commit 重新请求并完成 Codex review。
+- P0/P1 问题必须先修复，再针对最新 commit 重新审阅；未完成修复和重审前不得
+  合并 PR。
+- `@codex` 不是 CODEOWNERS reviewer，也不能满足 CODEOWNERS 或其他 required
+  reviewer 门槛；如需这些门槛，必须由真实的被配置 reviewer 完成。
+- 不得添加 GitHub Actions 来模拟 bot mention，也不得伪造 CODEOWNERS 身份。
