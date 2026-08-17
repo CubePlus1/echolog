@@ -136,7 +136,7 @@ import { currentPeriod, periodBounds, volumeKey } from "./volumes.js";
   }
 
   function currentCalendarKey(date = new Date()) {
-    return volumeKey(date.getFullYear(), date.getMonth() + 1, currentPeriod(date));
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
   }
 
   function applyRecords(records) {
