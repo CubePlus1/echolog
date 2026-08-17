@@ -543,7 +543,11 @@ export async function getRecords(filters?: {
     .select()
     .from(records)
     .where(conditions.length ? and(...conditions) : undefined)
-    .orderBy(filters?.order === "updated" ? desc(records.updatedAt) : desc(records.startAt))
+    .orderBy(
+      ...(filters?.order === "updated"
+        ? [desc(records.updatedAt), desc(records.id)]
+        : [desc(records.startAt)])
+    )
     .limit(filters?.limit ?? 50);
 }
 

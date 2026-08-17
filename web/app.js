@@ -126,7 +126,10 @@ import { currentPeriod, periodBounds, volumeKey } from "./volumes.js";
   function latestRecordFromSnapshot(records) {
     return records.reduce((latest, record) => {
       if (!latest) return record;
-      return new Date(record.updatedAt || record.startAt) > new Date(latest.updatedAt || latest.startAt)
+      const updatedAt = new Date(record.updatedAt || record.startAt).getTime();
+      const latestUpdatedAt = new Date(latest.updatedAt || latest.startAt).getTime();
+      return updatedAt > latestUpdatedAt
+        || (updatedAt === latestUpdatedAt && record.id > latest.id)
         ? record
         : latest;
     }, null);
