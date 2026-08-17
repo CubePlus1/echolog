@@ -207,6 +207,7 @@ export async function recordRoutes(app: FastifyInstance) {
       project?: string;
       type?: string;
       parentId?: string;
+      order?: string;
       limit?: string;
     };
 
@@ -222,6 +223,7 @@ export async function recordRoutes(app: FastifyInstance) {
             : query.parentId === "root"
               ? null
               : query.parentId,
+        order: query.order === "updated" ? "updated" : "start",
         limit: query.limit ? parseInt(query.limit) : undefined,
       })
     );

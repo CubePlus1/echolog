@@ -142,49 +142,22 @@ Codex MCP host ------> el mcp ------------^
 插件协议、信任边界、manifest、生命周期、迁移和错误码见
 [Bundled Plugin API v1](docs/PLUGIN_API.md)。
 
-## 产品路线与任务管理
+## Web 书卷
 
-EchoLog 的近期方向不是做普通的工时计时器，而是成为本地优先、面向 AI agent 的个人工作记忆与复盘系统：既记录做过什么，也帮助回看能力如何积累、下一步往哪里走。
+Web 控制台是免构建的原生 JavaScript 3D 书。当前自然月固定分为四册：1–7 日、8–14 日、15–21 日、22 日至月底；此前每个自然月是一册。打开控制台时默认进入包含今天的册，目录和下方时间轴都可切换书册。
 
-### 当前路线
+每册只挂载当前页附近的少量 sheet，历史书册按选择后加载到页面；键盘、滚轮、拖动、目录跳转、父子任务跳转、进行中任务操作和插件页面保持可用。实时循环只更新进行中任务、今日摘要和插件的 live 数据，历史记录在结构变化或写操作后刷新。
 
-- **P0 · 大任务支持子任务**：记录支持多层父子关系，父任务可查看直接子任务和完成进度；后端/API、CLI、Web 分为三个实施子任务。
-  - GitHub：[P0 Issue #1](https://github.com/CubePlus1/echolog/issues/1)（[#4 后端/API](https://github.com/CubePlus1/echolog/issues/4) · [#5 CLI](https://github.com/CubePlus1/echolog/issues/5) · [#6 Web](https://github.com/CubePlus1/echolog/issues/6)）
-  - Trellis：`.trellis/tasks/07-17-p0-record-subtasks/`
-- **P0 · 可视化左页命中 Bug**：修复 CSS 3D 翻页后，书本左页内部的目录、任务和父子导航按钮无法点击的问题；这是独立 P0，不从属于父子任务能力。
-  - GitHub：[P0 Bug #3](https://github.com/CubePlus1/echolog/issues/3)
-  - Trellis：`.trellis/tasks/07-17-p0-visual-left-button/`
-- **P0 · 关闭任务无需二次确认**：Web 端点击“罢”后直接作废任务，保留操作结果提示，不再弹出确认框。
-  - GitHub：[P0 Bug #7](https://github.com/CubePlus1/echolog/issues/7)
-  - Trellis：`.trellis/tasks/07-18-p0-close-no-confirm/`
-- **P1 · 个人成长路径可视化**：以时间、项目、标签、学习主题、结果、阻塞项和下一步为证据，生成可回溯的成长时间轴。
-  - GitHub：[P1 Issue #2](https://github.com/CubePlus1/echolog/issues/2)
-  - Trellis：`.trellis/tasks/07-17-p1-growth-path-visualization/`
-- **P1 · 人类 / Agent 工时与工作里程碑**：区分人类投入、Agent 运行、并行重叠和端到端历时；阶段完成时记录成果摘要、验证证据与工时快照，用于复盘和后续工作量估算。
-  - GitHub：[P1 Issue #8](https://github.com/CubePlus1/echolog/issues/8)
-  - Trellis：`.trellis/tasks/07-22-p1-actor-effort-milestones/`
-- **P1 · 内置插件架构**：Core 插件平台与 screen-time 拆分已实现；tmux-status v3 已实现 canonical schema/fixtures、v1/v2/v3 兼容解析、幂等定时同步和已验证的 Agent conversation↔pane 恢复映射。跨仓库 drift 远程门禁仍待只读 token 启用；显式 link 与 Agent 工时继续依赖前述 actor/span Core 能力。
-  - GitHub：[P1 Issue #10](https://github.com/CubePlus1/echolog/issues/10)（[EchoLog v3 同步 #19](https://github.com/CubePlus1/echolog/issues/19) · [EchoLog PR #20](https://github.com/CubePlus1/echolog/pull/20) · [tmux-status v3 合约 #1](https://github.com/CubePlus1/tmux-status/issues/1) · [tmux-status PR #3](https://github.com/CubePlus1/tmux-status/pull/3)）
-  - Trellis：`.trellis/tasks/08-03-tmux-status-contract-v3-sync/`
-  - Trellis：`.trellis/tasks/07-31-plugin-architecture/`
-- **P1 · Codex 集成**：按顺序交付 Skills-only Plugin、本地 stdio MCP 适配层、Plugin 打包与发布验收；每一步独立 Issue、PR 和 review。
-  - GitHub：✅ [#13 Skills MVP](https://github.com/CubePlus1/echolog/issues/13) → ✅ [#14 MCP 适配](https://github.com/CubePlus1/echolog/issues/14) → ✅ [#15 打包发布](https://github.com/CubePlus1/echolog/issues/15)
-  - Trellis：`.trellis/tasks/08-03-codex-integration/`
-- **P1 · screen-understanding 设置基础（当前 PR）**：为 screen-time 提供可运行时读取/更新、持久化且带乐观版本控制的理解设置，先建立后续能力所需的配置与 API 边界。
-  - GitHub：[Issue #23](https://github.com/CubePlus1/echolog/issues/23) · [PR #22](https://github.com/CubePlus1/echolog/pull/22)
-  - Trellis：[PRD 与验收](.trellis/tasks/08-10-screen-understanding-settings/prd.md) · [设计](.trellis/tasks/08-10-screen-understanding-settings/design.md) · [实现计划](.trellis/tasks/08-10-screen-understanding-settings/implement.md)
-  - 当前范围仅含 settings 持久化与 `GET/PUT /api/plugins/screen-time/understanding/settings` 契约；截图采集、图片存储、模型调用、队列/重试和后续理解子任务不在本里程碑内。
+本次书卷与翻页优化关联 [GitHub Issue #26](https://github.com/CubePlus1/echolog/issues/26)；实现上下文保存在 `.trellis/tasks/08-17-web-book-pagination-optimization/`。
 
-### 三处任务同步规则
+## 插件设计与功能
 
-README 维护产品方向和里程碑，Trellis 维护实施上下文和验收标准，GitHub Issue 维护公开追踪与关闭记录。后续开发必须遵守：
+EchoLog Core 通过 Bundled Plugin API v1 托管内置插件。每个插件由 manifest 标识，独立注册路由、定时任务、迁移、配置校验、健康检查和 Web 资源；插件初始化、迁移或采集失败会将对应插件置为 degraded，不阻断 Core 启动或主动记录。插件 Web 模块只能通过宿主提供的同源 HTTP API 读写数据，不能直连数据库。
 
-1. 开始前确认三处指向同一个任务；认领 GitHub Issue，并执行 `python3 .trellis/scripts/task.py start <slug>` 激活 Trellis task。
-2. 一个会话只保留一个当前激活的 Trellis task；独立交付物拆成父任务下的子任务，不把多个目标混在一个实现清单里。
-3. 完成后先验证验收标准，再关闭 GitHub Issue、归档 Trellis task，并更新 README 状态；历史 Issue 和归档任务保留，不直接删除。
-4. 三处内容冲突时，以已验证的实现和 Trellis task 为准，并在同一变更中同步修正 README 与 Issue。
+- **screen-time**：macOS 前台应用被动采样；按应用和规则聚合今日屏幕使用，Web 可查看分类、维护分类规则，并提供运行时 screen-understanding settings 的版本化 GET/PUT API。历史 `app_usage`、`app_rules` 数据保持兼容。
+- **tmux-status**：调用外部 `tmux-status` CLI 获取结构化 pane、资源和状态观测；支持 v1/v2/v3 兼容解析、资源边界校验、幂等同步和已验证的 Agent conversation↔pane 恢复映射。插件默认关闭；不把 CPU、selected pane、进程存活或 pane 前台状态直接当作有效工时，也不保存 prompt、回复正文或 pane 内容。
 
-以上五项互相独立；只有 P0“子任务能力”的后端、CLI、Web 实施项属于父任务 #1。
+插件清单、生命周期、路由、迁移、Web 贡献和错误处理详见 [Bundled Plugin API v1](docs/PLUGIN_API.md)。Codex 侧的 `$echolog:track-work`、`$echolog:review-work` 和本地 stdio MCP 是独立的集成层，说明见 [Codex Integration](docs/CODEX.md)。
 
 ## License
 

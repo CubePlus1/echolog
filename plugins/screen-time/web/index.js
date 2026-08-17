@@ -11,6 +11,9 @@ export async function activate({ api }) {
       ]);
       return { screen, rules };
     },
+    async loadLive() {
+      return { screen: await api("/plugins/screen-time/today") };
+    },
     renderFace(face, { data, esc, escA, fmtDur }) {
       if (face.type === "screen") {
         const screen = data.screen;

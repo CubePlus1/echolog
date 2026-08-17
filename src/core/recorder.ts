@@ -514,6 +514,7 @@ export async function getRecords(filters?: {
   project?: string;
   type?: string;
   parentId?: string | null;
+  order?: "start" | "updated";
   limit?: number;
 }): Promise<Record[]> {
   if (filters?.date) {
@@ -542,7 +543,11 @@ export async function getRecords(filters?: {
     .select()
     .from(records)
     .where(conditions.length ? and(...conditions) : undefined)
-    .orderBy(desc(records.startAt))
+    .orderBy(
+      ...(filters?.order === "updated"
+        ? [desc(records.updatedAt), desc(records.id)]
+        : [desc(records.startAt)])
+    )
     .limit(filters?.limit ?? 50);
 }
 
