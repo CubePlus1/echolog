@@ -87,7 +87,7 @@ curl "http://localhost:19827/api/records/<id>"
 curl "http://localhost:19827/api/records/active"
 ```
 
-查询参数：`date`（YYYY-MM-DD，设置后忽略其余过滤）、`since`（ISO 时间）、`project`、`type`、`parentId`（记录 id 或 `root`）、`limit`。
+查询参数：`date`（YYYY-MM-DD，设置后忽略其余过滤）、`since`（ISO 时间）、`project`、`type`、`parentId`（记录 id 或 `root`）、`order`（`start` 默认按开始时间；`updated` 按最近更新时间，用于轻量变更探针）、`limit`。
 
 ### 父任务与子任务
 

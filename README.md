@@ -148,6 +148,8 @@ Web 控制台是免构建的原生 JavaScript 3D 书。当前自然月固定分�
 
 每册只挂载当前页附近的少量 sheet，历史书册按选择后加载到页面；键盘、滚轮、拖动、目录跳转、父子任务跳转、进行中任务操作和插件页面保持可用。实时循环只更新进行中任务、今日摘要和插件的 live 数据，历史记录在结构变化或写操作后刷新。
 
+本次书卷与翻页优化关联 [GitHub Issue #26](https://github.com/CubePlus1/echolog/issues/26)；实现上下文保存在 `.trellis/tasks/08-17-web-book-pagination-optimization/`。
+
 ## 插件设计与功能
 
 EchoLog Core 通过 Bundled Plugin API v1 托管内置插件。每个插件由 manifest 标识，独立注册路由、定时任务、迁移、配置校验、健康检查和 Web 资源；插件初始化、迁移或采集失败会将对应插件置为 degraded，不阻断 Core 启动或主动记录。插件 Web 模块只能通过宿主提供的同源 HTTP API 读写数据，不能直连数据库。

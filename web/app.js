@@ -116,10 +116,11 @@ import { currentPeriod, periodBounds, volumeKey } from "./volumes.js";
     ok: false,     // 是否成功连上后端
   };
 
-  function applyRecords(records) {
+  function applyRecords(records, latestRecord = records[0]) {
     data.records = records;
-    const latest = records[0];
-    data.latestRecordKey = latest ? `${latest.id}:${latest.updatedAt || latest.status}` : "";
+    data.latestRecordKey = latestRecord
+      ? `${latestRecord.id}:${latestRecord.updatedAt || latestRecord.status}`
+      : "";
     data.history = records
       .filter((r) => r.status === "done" || r.status === "cancelled")
       .sort((a, b) => new Date(a.startAt) - new Date(b.startAt));
@@ -184,12 +185,13 @@ import { currentPeriod, periodBounds, volumeKey } from "./volumes.js";
   }
 
   async function loadAll() {
-    const [records, active, summary] = await Promise.all([
+    const [records, latestRecords, active, summary] = await Promise.all([
       api("/records?limit=1000"),
+      api("/records?limit=1&order=updated"),
       api("/records/active"),
       api("/summary/today"),
     ]);
-    applyRecords(records);
+    applyRecords(records, latestRecords[0]);
     data.active = active;
     data.summary = summary;
     data.fetchedAt = Date.now();
@@ -204,7 +206,7 @@ import { currentPeriod, periodBounds, volumeKey } from "./volumes.js";
 
   async function loadLive() {
     const [latestRecords, active, summary] = await Promise.all([
-      api("/records?limit=1"),
+      api("/records?limit=1&order=updated"),
       api("/records/active"),
       api("/summary/today"),
     ]);
@@ -362,7 +364,9 @@ import { currentPeriod, periodBounds, volumeKey } from "./volumes.js";
       title: volume.title,
       faceIndex: todayIndex,
       today: volume.isCurrent,
-      count: volume.count,
+      count: volume.isCurrent
+        ? (data.summary ? data.summary.recordCount : 0)
+        : volume.count,
     });
     faces.push({
       type: "era",
@@ -370,13 +374,17 @@ import { currentPeriod, periodBounds, volumeKey } from "./volumes.js";
       year: volume.period == null
         ? `${cnYear(volume.year)}年${cnMonth(volume.month)}`
         : `${cnYear(volume.year)}年${cnMonth(volume.month)}${volume.period === currentPeriod(now) && volume.isCurrentMonth ? " · 今日所在" : ""}`,
-      count: volume.count,
+      count: volume.isCurrent
+        ? (data.summary ? data.summary.recordCount : 0)
+        : volume.count,
       today: volume.isCurrent,
     });
 
     for (const r of volume.records) faces.push(entryFace(r, folio++));
 
+    let summaryIndex = -1;
     if (data.ok && volume.isCurrent) {
+      summaryIndex = faces.length;
       faces.push({ type: "summary" });
       faces.push(...pluginWebHost.faces());
       for (const r of orderHierarchically(data.active)) {
@@ -410,7 +418,7 @@ import { currentPeriod, periodBounds, volumeKey } from "./volumes.js";
     });
 
     if (faces.length % 2 !== 0) faces.push({ type: "blank" });
-    return { faces, eraFaceIndex, todayIndex, volumeKey: volume.key };
+    return { faces, eraFaceIndex, todayIndex, summaryIndex, volumeKey: volume.key };
   }
 
   /* ============ 渲染一面 ============ */
@@ -678,6 +686,7 @@ import { currentPeriod, periodBounds, volumeKey } from "./volumes.js";
     faces: [],
     eraFaceIndex: [],
     todayIndex: 0,
+    summaryIndex: -1,
     sheets: new Map(),
     sheetCount: 0,
     flipped: 0,
@@ -695,10 +704,11 @@ import { currentPeriod, periodBounds, volumeKey } from "./volumes.js";
   function buildBook(keepPosition) {
     const prevFlipped = state.flipped;
     const previousVolumeKey = state.selectedVolumeKey;
-    const { faces, eraFaceIndex, todayIndex, volumeKey: builtVolumeKey } = buildFaces();
+    const { faces, eraFaceIndex, todayIndex, summaryIndex, volumeKey: builtVolumeKey } = buildFaces();
     state.faces = faces;
     state.eraFaceIndex = eraFaceIndex;
     state.todayIndex = todayIndex;
+    state.summaryIndex = summaryIndex;
     state.selectedVolumeKey = builtVolumeKey;
     state.signature = liveSignature();
 
@@ -838,10 +848,10 @@ import { currentPeriod, periodBounds, volumeKey } from "./volumes.js";
     const current = currentVolume();
     if (current && selectedVolume()?.key !== current.key) {
       selectVolume(current.key);
-      window.setTimeout(() => flipTo(faceToFlip(state.todayIndex + (data.ok ? 1 : 0))), 0);
+      window.setTimeout(() => flipTo(faceToFlip(state.summaryIndex >= 0 ? state.summaryIndex : state.todayIndex)), 0);
       return;
     }
-    flipTo(faceToFlip(state.todayIndex + (data.ok ? 1 : 0)));
+    flipTo(faceToFlip(state.summaryIndex >= 0 ? state.summaryIndex : state.todayIndex));
   };
 
   function updateIndicator() {
@@ -945,6 +955,10 @@ import { currentPeriod, periodBounds, volumeKey } from "./volumes.js";
         flash("已作废 · 罢");
       } else if (act === "new-child") {
         formParentId = btn.dataset.parentId || "";
+        const current = currentVolume();
+        if (current && selectedVolume()?.key !== current.key) {
+          selectVolume(current.key);
+        }
         const parentSelect = $("nfParent");
         if (parentSelect) parentSelect.value = formParentId;
         const formIndex = state.faces.findIndex((face) => face.type === "form");
