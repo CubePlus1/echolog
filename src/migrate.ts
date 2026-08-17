@@ -84,6 +84,12 @@ const MIGRATIONS = [
       CREATE INDEX IF NOT EXISTS idx_records_parent_id ON records(parent_id);
     `,
   },
+  {
+    name: "004_record_updated_at_index",
+    sql: `
+      CREATE INDEX IF NOT EXISTS idx_records_updated_at ON records(updated_at);
+    `,
+  },
 ];
 
 async function migrate() {

@@ -110,17 +110,34 @@ import { currentPeriod, periodBounds, volumeKey } from "./volumes.js";
     active: [],    // running/paused（enriched）
     summary: null, // 今日总览
     latestRecordKey: "", // 轻量结构探针，避免每轮重新拉取整段历史
+    calendarKey: "", // 本地日期/分册边界，跨午夜时触发重建
     screen: null,  // 今日屏幕使用（/api/screen/today）
     rules: [],     // 分类规则
     fetchedAt: 0,  // active/summary 抓取时刻（本地毫秒）
     ok: false,     // 是否成功连上后端
   };
 
-  function applyRecords(records, latestRecord = records[0]) {
+  function recordKey(record) {
+    return record ? `${record.id}:${record.updatedAt || record.status}` : "";
+  }
+
+  function latestRecordFromSnapshot(records) {
+    return records.reduce((latest, record) => {
+      if (!latest) return record;
+      return new Date(record.updatedAt || record.startAt) > new Date(latest.updatedAt || latest.startAt)
+        ? record
+        : latest;
+    }, null);
+  }
+
+  function currentCalendarKey(date = new Date()) {
+    return volumeKey(date.getFullYear(), date.getMonth() + 1, currentPeriod(date));
+  }
+
+  function applyRecords(records) {
     data.records = records;
-    data.latestRecordKey = latestRecord
-      ? `${latestRecord.id}:${latestRecord.updatedAt || latestRecord.status}`
-      : "";
+    data.latestRecordKey = recordKey(latestRecordFromSnapshot(records));
+    data.calendarKey = currentCalendarKey();
     data.history = records
       .filter((r) => r.status === "done" || r.status === "cancelled")
       .sort((a, b) => new Date(a.startAt) - new Date(b.startAt));
@@ -185,13 +202,12 @@ import { currentPeriod, periodBounds, volumeKey } from "./volumes.js";
   }
 
   async function loadAll() {
-    const [records, latestRecords, active, summary] = await Promise.all([
+    const [records, active, summary] = await Promise.all([
       api("/records?limit=1000"),
-      api("/records?limit=1&order=updated"),
       api("/records/active"),
       api("/summary/today"),
     ]);
-    applyRecords(records, latestRecords[0]);
+    applyRecords(records);
     data.active = active;
     data.summary = summary;
     data.fetchedAt = Date.now();
@@ -211,7 +227,7 @@ import { currentPeriod, periodBounds, volumeKey } from "./volumes.js";
       api("/summary/today"),
     ]);
     const latest = latestRecords[0];
-    data.latestRecordKey = latest ? `${latest.id}:${latest.updatedAt || latest.status}` : "";
+    data.latestRecordKey = recordKey(latest);
     data.active = active;
     data.summary = summary;
     await pluginWebHost.loadData(data, { live: true });
@@ -224,6 +240,7 @@ import { currentPeriod, periodBounds, volumeKey } from "./volumes.js";
       data.active.map((r) => [r.id, r.status, r.title, r.project, r.tags, r.parentId]),
       data.summary ? data.summary.recordCount : 0,
       data.latestRecordKey,
+      currentCalendarKey(),
     ]);
   }
 
@@ -1144,6 +1161,7 @@ import { currentPeriod, periodBounds, volumeKey } from "./volumes.js";
       if (!data.ok) return;
       const previousRecordCount = data.summary ? data.summary.recordCount : null;
       const previousLatestRecordKey = data.latestRecordKey;
+      const previousCalendarKey = data.calendarKey;
       try {
         await loadLive();
       } catch {
@@ -1151,7 +1169,12 @@ import { currentPeriod, periodBounds, volumeKey } from "./volumes.js";
       }
       const historyChanged = previousRecordCount !== data.summary?.recordCount
         || previousLatestRecordKey !== data.latestRecordKey;
+      const calendarChanged = previousCalendarKey !== currentCalendarKey();
       if (historyChanged) state.historyRefreshPending = true;
+      if (calendarChanged) {
+        if (selectedVolume()?.isCurrent) state.selectedVolumeKey = "";
+        state.historyRefreshPending = true;
+      }
 
       if (state.historyRefreshPending) {
         if (isEditing()) return;

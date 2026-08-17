@@ -37,6 +37,7 @@ export const records = pgTable(
   (table) => [
     index("idx_records_status").on(table.status),
     index("idx_records_start_at").on(table.startAt),
+    index("idx_records_updated_at").on(table.updatedAt),
     index("idx_records_project").on(table.project),
     index("idx_records_parent_id").on(table.parentId),
     foreignKey({
