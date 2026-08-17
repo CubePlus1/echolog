@@ -37,11 +37,12 @@ export function createPluginWebHost(api) {
       );
     },
 
-    async loadData(target) {
+    async loadData(target, { live = false } = {}) {
       for (const [id, contribution] of modules) {
-        if (!contribution?.load) continue;
+        const loader = live ? contribution?.loadLive : contribution?.load;
+        if (!loader) continue;
         try {
-          Object.assign(target, await contribution.load());
+          Object.assign(target, await loader());
         } catch (error) {
           console.error(`Plugin Web data load failed: ${id}`, error);
         }

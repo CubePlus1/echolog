@@ -1,4 +1,5 @@
 import { createPluginWebHost } from "./plugin-host.js";
+import { currentPeriod, periodBounds, volumeKey } from "./volumes.js";
 
 /**
  * 回声志 · EchoLog 立体前端逻辑
@@ -105,8 +106,10 @@ import { createPluginWebHost } from "./plugin-host.js";
   const data = {
     records: [],   // 全部记录（父子关系与表单候选）
     history: [],   // done/cancelled 记录，升序
+    volumes: [],   // 书册索引；页内容只为当前选中的书构建
     active: [],    // running/paused（enriched）
     summary: null, // 今日总览
+    latestRecordKey: "", // 轻量结构探针，避免每轮重新拉取整段历史
     screen: null,  // 今日屏幕使用（/api/screen/today）
     rules: [],     // 分类规则
     fetchedAt: 0,  // active/summary 抓取时刻（本地毫秒）
@@ -115,9 +118,12 @@ import { createPluginWebHost } from "./plugin-host.js";
 
   function applyRecords(records) {
     data.records = records;
+    const latest = records[0];
+    data.latestRecordKey = latest ? `${latest.id}:${latest.updatedAt || latest.status}` : "";
     data.history = records
       .filter((r) => r.status === "done" || r.status === "cancelled")
       .sort((a, b) => new Date(a.startAt) - new Date(b.startAt));
+    data.volumes = historyVolumes();
   }
 
   const recordById = (id) => id ? data.records.find((r) => r.id === id) || null : null;
@@ -197,15 +203,16 @@ import { createPluginWebHost } from "./plugin-host.js";
   }
 
   async function loadLive() {
-    const [records, active, summary] = await Promise.all([
-      api("/records?limit=1000"),
+    const [latestRecords, active, summary] = await Promise.all([
+      api("/records?limit=1"),
       api("/records/active"),
       api("/summary/today"),
     ]);
-    applyRecords(records);
+    const latest = latestRecords[0];
+    data.latestRecordKey = latest ? `${latest.id}:${latest.updatedAt || latest.status}` : "";
     data.active = active;
     data.summary = summary;
-    await pluginWebHost.loadData(data);
+    await pluginWebHost.loadData(data, { live: true });
     data.fetchedAt = Date.now();
   }
 
@@ -213,25 +220,77 @@ import { createPluginWebHost } from "./plugin-host.js";
   function liveSignature() {
     return JSON.stringify([
       data.active.map((r) => [r.id, r.status, r.title, r.project, r.tags, r.parentId]),
-      data.records.map((r) => [r.id, r.status, r.title, r.parentId, r.updatedAt]),
       data.summary ? data.summary.recordCount : 0,
+      data.latestRecordKey,
     ]);
   }
 
   /* ============ 数据 → 页面序列 ============ */
 
+  function volumeLabel(year, month, period = null) {
+    if (period == null) return `${cnYear(year)}年${cnMonth(month)}`;
+    return `${cnMonth(month)} · 第${cnNum(period)}册`;
+  }
+
+  function volumeTitle(year, month, period = null) {
+    if (period == null) return `${cnYear(year)}年${cnMonth(month)} · 一月一册`;
+    const bounds = periodBounds(year, month, period);
+    const end = new Date(bounds.end.getTime() - 1);
+    return `${volumeLabel(year, month, period)}（${bounds.start.getMonth() + 1}月${bounds.start.getDate()}日–${end.getMonth() + 1}月${end.getDate()}日）`;
+  }
+
+  function createVolume({ year, month, period = null, records = [] }, now) {
+    const isCurrentMonth = year === now.getFullYear() && month === now.getMonth() + 1;
+    const isCurrent = isCurrentMonth && period === currentPeriod(now);
+    const bounds = period == null
+      ? { start: new Date(year, month - 1, 1), end: new Date(year, month, 1) }
+      : periodBounds(year, month, period);
+    return {
+      key: volumeKey(year, month, period),
+      year,
+      month,
+      period,
+      records: records.sort((a, b) => new Date(a.startAt) - new Date(b.startAt)),
+      count: records.length,
+      start: bounds.start,
+      end: bounds.end,
+      isCurrentMonth,
+      isCurrent,
+      label: volumeLabel(year, month, period),
+      title: volumeTitle(year, month, period),
+    };
+  }
+
   function historyVolumes() {
-    const byMonth = new Map(); // "YYYY-MM" -> records
-    for (const r of data.history) {
-      const d = new Date(r.startAt);
-      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-      if (!byMonth.has(key)) byMonth.set(key, []);
-      byMonth.get(key).push(r);
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentMonth = now.getMonth() + 1;
+    const currentBuckets = [1, 2, 3, 4].map((period) =>
+      createVolume({ year: currentYear, month: currentMonth, period, records: [] }, now)
+    );
+    const older = new Map();
+
+    for (const record of data.history) {
+      const date = new Date(record.startAt);
+      const year = date.getFullYear();
+      const month = date.getMonth() + 1;
+      if (year === currentYear && month === currentMonth) {
+        currentBuckets[currentPeriod(date) - 1].records.push(record);
+      } else {
+        const key = volumeKey(year, month);
+        if (!older.has(key)) older.set(key, { year, month, records: [] });
+        older.get(key).records.push(record);
+      }
     }
-    return [...byMonth.entries()].map(([key, records]) => {
-      const [y, m] = key.split("-").map(Number);
-      return { y, m, records };
+
+    const current = currentBuckets.map((volume) => {
+      volume.count = volume.records.length;
+      return volume;
     });
+    const historical = [...older.values()]
+      .sort((a, b) => b.year - a.year || b.month - a.month)
+      .map((volume) => createVolume(volume, now));
+    return [...current, ...historical];
   }
 
   function entryFace(r, folio) {
@@ -258,6 +317,23 @@ import { createPluginWebHost } from "./plugin-host.js";
 
   function buildFaces() {
     const faces = [];
+    const now = new Date();
+    const fallbackVolume = {
+      key: volumeKey(now.getFullYear(), now.getMonth() + 1, currentPeriod(now)),
+      year: now.getFullYear(),
+      month: now.getMonth() + 1,
+      period: currentPeriod(now),
+      records: [],
+      count: 0,
+      isCurrent: true,
+      label: `${cnMonth(now.getMonth() + 1)} · 第${cnNum(currentPeriod(now))}册`,
+      title: "今日所在册",
+    };
+    const volume = data.volumes.find((item) => item.key === state.selectedVolumeKey)
+      || data.volumes.find((item) => item.isCurrent)
+      || data.volumes[0]
+      || fallbackVolume;
+
     faces.push({
       type: "plate",
       title: "回声志",
@@ -269,36 +345,38 @@ import { createPluginWebHost } from "./plugin-host.js";
     const tocFace = { type: "toc", active: [], volumes: [] };
     faces.push(tocFace);
 
-    const eraFaceIndex = []; // 时间轴节点
+    const eraFaceIndex = [];
     let folio = 1;
 
     if (!data.ok) {
       faces.push({ type: "note", text: "烽燧不通，未能连上 EchoLog 后端。\n请确认 el daemon 已启动，再刷新此页。" });
-    } else if (data.history.length === 0) {
-      faces.push({ type: "note", text: "书尚无一记。\n翻至书末「今日」，落下第一笔。" });
+    } else if (volume.records.length === 0 && !volume.isCurrent) {
+      faces.push({ type: "note", text: "此册尚无一记。\n翻回书架，另启一册。" });
     }
 
-    let volNo = 1;
-    for (const vol of historyVolumes()) {
-      const era = `卷${cnNum(volNo)} · ${cnMonth(vol.m)}`;
-      eraFaceIndex.push({ label: cnMonth(vol.m), era, title: `${era}（${cnYear(vol.y)}年）`, faceIndex: faces.length, count: vol.records.length });
-      faces.push({ type: "era", era, year: `${cnYear(vol.y)}年`, count: vol.records.length });
-      for (const r of vol.records) faces.push(entryFace(r, folio++));
-      volNo++;
-    }
-
-    // ---- 今日 · 此刻 ----
-    const now = new Date();
     const todayIndex = faces.length;
-    eraFaceIndex.push({ label: "今日", era: "今日 · 此刻", title: "今日 · 此刻", faceIndex: todayIndex, today: true, count: data.summary ? data.summary.recordCount : 0 });
+    eraFaceIndex.push({
+      key: volume.key,
+      label: volume.label,
+      era: volume.label,
+      title: volume.title,
+      faceIndex: todayIndex,
+      today: volume.isCurrent,
+      count: volume.count,
+    });
     faces.push({
       type: "era",
-      era: "今日 · 此刻",
-      year: `${cnYear(now.getFullYear())}年${cnMonth(now.getMonth() + 1)}${cnNum(now.getDate())}日`,
-      count: data.summary ? data.summary.recordCount : 0,
-      today: true,
+      era: volume.label,
+      year: volume.period == null
+        ? `${cnYear(volume.year)}年${cnMonth(volume.month)}`
+        : `${cnYear(volume.year)}年${cnMonth(volume.month)}${volume.period === currentPeriod(now) && volume.isCurrentMonth ? " · 今日所在" : ""}`,
+      count: volume.count,
+      today: volume.isCurrent,
     });
-    if (data.ok) {
+
+    for (const r of volume.records) faces.push(entryFace(r, folio++));
+
+    if (data.ok && volume.isCurrent) {
       faces.push({ type: "summary" });
       faces.push(...pluginWebHost.faces());
       for (const r of orderHierarchically(data.active)) {
@@ -315,7 +393,14 @@ import { createPluginWebHost } from "./plugin-host.js";
       }
       faces.push({ type: "form" });
     }
-    tocFace.volumes = eraFaceIndex;
+    tocFace.volumes = data.volumes.map((item) => ({
+      key: item.key,
+      label: item.label,
+      era: item.isCurrentMonth ? item.label : item.label,
+      title: item.title,
+      count: item.count,
+      today: item.isCurrent,
+    }));
 
     faces.push({
       type: "plate",
@@ -325,7 +410,7 @@ import { createPluginWebHost } from "./plugin-host.js";
     });
 
     if (faces.length % 2 !== 0) faces.push({ type: "blank" });
-    return { faces, eraFaceIndex, todayIndex };
+    return { faces, eraFaceIndex, todayIndex, volumeKey: volume.key };
   }
 
   /* ============ 渲染一面 ============ */
@@ -426,7 +511,7 @@ import { createPluginWebHost } from "./plugin-host.js";
           <span class="toc-time" data-timer data-fmt="clock" data-live-id="${escA(a.id)}" data-base="${a.base}" data-fetched="${data.fetchedAt}" data-paused="${a.status === "running" ? 0 : 1}">${esc(fmtTimer(a.base))}</span>
         </button>`).join("");
       const vols = face.volumes.map((v) =>
-        `<button class="toc-row" type="button" data-goto="${v.faceIndex}">
+        `<button class="toc-row${v.key === state.selectedVolumeKey ? " toc-selected" : ""}" type="button" data-volume="${escA(v.key)}">
           <span class="toc-name${v.today ? " toc-today" : ""}">${esc(v.era)}</span>
           <span class="toc-dots"></span>
           <span class="toc-count">${v.count} 记</span>
@@ -593,39 +678,38 @@ import { createPluginWebHost } from "./plugin-host.js";
     faces: [],
     eraFaceIndex: [],
     todayIndex: 0,
-    sheets: [],
+    sheets: new Map(),
+    sheetCount: 0,
     flipped: 0,
     signature: "",
+    selectedVolumeKey: "",
+    historyRefreshPending: false,
     opened: false,
   };
+
+  const SHEET_WINDOW_BEFORE = 2;
+  const SHEET_WINDOW_AFTER = 3;
 
   const faceToFlip = (faceIndex) => Math.floor(faceIndex / 2) + (faceIndex % 2);
 
   function buildBook(keepPosition) {
     const prevFlipped = state.flipped;
-    const { faces, eraFaceIndex, todayIndex } = buildFaces();
+    const previousVolumeKey = state.selectedVolumeKey;
+    const { faces, eraFaceIndex, todayIndex, volumeKey: builtVolumeKey } = buildFaces();
     state.faces = faces;
     state.eraFaceIndex = eraFaceIndex;
     state.todayIndex = todayIndex;
+    state.selectedVolumeKey = builtVolumeKey;
     state.signature = liveSignature();
 
     const pagesEl = $("pages");
     pagesEl.classList.add("no-anim");
     pagesEl.innerHTML = "";
-    state.sheets = [];
+    state.sheets = new Map();
 
-    const sheetCount = faces.length / 2;
-    state.flipped = keepPosition ? Math.min(prevFlipped, sheetCount) : 0;
-
-    for (let i = 0; i < sheetCount; i++) {
-      const sheet = document.createElement("div");
-      sheet.className = "sheet";
-      sheet.innerHTML =
-        `<div class="leaf front">${renderFace(faces[i * 2])}</div>` +
-        `<div class="leaf back">${renderFace(faces[i * 2 + 1])}</div>`;
-      pagesEl.appendChild(sheet);
-      state.sheets.push(sheet);
-    }
+    state.sheetCount = faces.length / 2;
+    const sameVolume = previousVolumeKey === builtVolumeKey;
+    state.flipped = keepPosition && sameVolume ? Math.min(prevFlipped, state.sheetCount) : 0;
 
     // Chrome 对 preserve-3d 中翻转背面的按钮命中不稳定。左页保留真实内容，
     // 另用一个平面、透明的同构层接收按钮点击，再转发给真实可见按钮。
@@ -635,6 +719,7 @@ import { createPluginWebHost } from "./plugin-host.js";
     leftHitProxy.setAttribute("aria-hidden", "true");
     pagesEl.appendChild(leftHitProxy);
 
+    ensureSheetWindow(state.flipped);
     layoutSheets();
     buildTimeline();
     updateIndicator();
@@ -644,8 +729,38 @@ import { createPluginWebHost } from "./plugin-host.js";
     requestAnimationFrame(() => requestAnimationFrame(() => pagesEl.classList.remove("no-anim")));
   }
 
+  function createSheet(index) {
+    if (index < 0 || index >= state.sheetCount || state.sheets.has(index)) return;
+    const sheet = document.createElement("div");
+    sheet.className = "sheet";
+    sheet.dataset.sheetIndex = String(index);
+    sheet.innerHTML =
+      `<div class="leaf front">${renderFace(state.faces[index * 2])}</div>` +
+      `<div class="leaf back">${renderFace(state.faces[index * 2 + 1])}</div>`;
+    const proxy = $("leftPageHitProxy");
+    $("pages").insertBefore(sheet, proxy);
+    state.sheets.set(index, sheet);
+  }
+
+  function ensureSheetWindow(center) {
+    const start = Math.max(0, center - SHEET_WINDOW_BEFORE);
+    const end = Math.min(state.sheetCount - 1, center + SHEET_WINDOW_AFTER);
+    for (let index = start; index <= end; index++) createSheet(index);
+  }
+
+  function trimSheetWindow(center) {
+    const start = Math.max(0, center - SHEET_WINDOW_BEFORE);
+    const end = Math.min(state.sheetCount - 1, center + SHEET_WINDOW_AFTER);
+    for (const [index, sheet] of state.sheets) {
+      if (index >= start && index <= end) continue;
+      sheet.remove();
+      state.sheets.delete(index);
+    }
+    layoutSheets();
+  }
+
   function visibleLeftLeaf() {
-    return state.flipped > 0 ? state.sheets[state.flipped - 1]?.children[1] : null;
+    return state.flipped > 0 ? state.sheets.get(state.flipped - 1)?.children[1] : null;
   }
 
   function syncLeftHitProxy() {
@@ -674,15 +789,14 @@ import { createPluginWebHost } from "./plugin-host.js";
 
   // 维持正确堆叠：preserve-3d 下由真实 Z 值决定，每张 Z 必须唯一
   function layoutSheets() {
-    const n = state.sheets.length;
-    state.sheets.forEach((sheet, i) => {
-      const frontActive = i === state.flipped;
-      const backActive = i === state.flipped - 1;
-      sheet.classList.toggle("flipped", i < state.flipped);
+    for (const [index, sheet] of state.sheets) {
+      const frontActive = index === state.flipped && index < state.sheetCount;
+      const backActive = index === state.flipped - 1;
+      sheet.classList.toggle("flipped", index < state.flipped);
       sheet.classList.toggle("page-right-active", frontActive);
       sheet.classList.toggle("page-left-active", backActive);
-      sheet.style.zIndex = i < state.flipped ? String(i + 1) : String(n - i);
-      const depth = i < state.flipped ? (state.flipped - i) : (i - state.flipped);
+      sheet.style.zIndex = index < state.flipped ? String(index + 1) : String(state.sheetCount - index);
+      const depth = index < state.flipped ? (state.flipped - index) : (index - state.flipped);
       const dz = -depth * 0.55;
       const front = sheet.children[0];
       const back = sheet.children[1];
@@ -692,37 +806,52 @@ import { createPluginWebHost } from "./plugin-host.js";
       back.inert = !backActive;
       front.setAttribute("aria-hidden", String(!frontActive));
       back.setAttribute("aria-hidden", String(!backActive));
-    });
+    }
     syncLeftHitProxy();
   }
 
   function flipTo(target) {
-    const n = state.sheets.length;
+    const n = state.sheetCount;
     const clamped = Math.max(0, Math.min(n, target));
     if (clamped === state.flipped) return;
+    ensureSheetWindow(clamped);
     state.flipped = clamped;
     layoutSheets();
     updateIndicator();
+    window.setTimeout(() => trimSheetWindow(state.flipped), 1100);
   }
 
   const next = () => flipTo(state.flipped + 1);
   const prev = () => flipTo(state.flipped - 1);
-  const gotoToday = () => flipTo(faceToFlip(state.todayIndex));
+  const currentVolume = () => data.volumes.find((volume) => volume.isCurrent) || null;
+  const selectedVolume = () => data.volumes.find((volume) => volume.key === state.selectedVolumeKey) || null;
+  const gotoToday = () => {
+    const current = currentVolume();
+    if (current && selectedVolume()?.key !== current.key) {
+      selectVolume(current.key);
+      return;
+    }
+    flipTo(faceToFlip(state.todayIndex));
+  };
   // 直达今日的「总览 + 进行中」对开页
-  const gotoLive = () => flipTo(faceToFlip(state.todayIndex + (data.ok ? 1 : 0)));
+  const gotoLive = () => {
+    const current = currentVolume();
+    if (current && selectedVolume()?.key !== current.key) {
+      selectVolume(current.key);
+      window.setTimeout(() => flipTo(faceToFlip(state.todayIndex + (data.ok ? 1 : 0))), 0);
+      return;
+    }
+    flipTo(faceToFlip(state.todayIndex + (data.ok ? 1 : 0)));
+  };
 
   function updateIndicator() {
-    const n = state.sheets.length;
-    $("pageIndicator").textContent = `${state.flipped} / ${n} 张`;
+    const n = state.sheetCount;
+    const volume = selectedVolume();
+    $("pageIndicator").textContent = `${volume ? volume.label : "回声志"} · ${state.flipped} / ${n} 张`;
     $("prevBtn").disabled = state.flipped === 0;
     $("nextBtn").disabled = state.flipped === n;
-    const currentFace = state.flipped * 2;
-    let activeEra = -1;
-    state.eraFaceIndex.forEach((item, idx) => {
-      if (item.faceIndex <= currentFace) activeEra = idx;
-    });
-    document.querySelectorAll(".tl-node").forEach((node, idx) => {
-      node.classList.toggle("active", idx === activeEra);
+    document.querySelectorAll(".tl-node").forEach((node) => {
+      node.classList.toggle("active", node.dataset.volumeKey === state.selectedVolumeKey);
     });
   }
 
@@ -731,16 +860,25 @@ import { createPluginWebHost } from "./plugin-host.js";
   function buildTimeline() {
     const tl = $("timeline");
     tl.innerHTML = "";
-    state.eraFaceIndex.forEach((item) => {
+    data.volumes.forEach((volume) => {
       const btn = document.createElement("button");
-      btn.className = "tl-node" + (item.today ? " tl-today" : "");
+      btn.className = "tl-node" + (volume.isCurrent ? " tl-today" : "");
       btn.type = "button";
       btn.setAttribute("role", "tab");
-      btn.textContent = item.label;
-      btn.title = item.title;
-      btn.addEventListener("click", () => flipTo(faceToFlip(item.faceIndex)));
+      btn.dataset.volumeKey = volume.key;
+      btn.setAttribute("aria-selected", String(volume.key === state.selectedVolumeKey));
+      btn.textContent = volume.label;
+      btn.title = `${volume.title} · ${volume.count} 记`;
+      btn.addEventListener("click", () => selectVolume(volume.key));
       tl.appendChild(btn);
     });
+  }
+
+  function selectVolume(key) {
+    if (!data.volumes.some((volume) => volume.key === key)) return;
+    if (state.selectedVolumeKey === key && state.faces.length) return;
+    state.selectedVolumeKey = key;
+    buildBook(false);
   }
 
   /* ============ 提示条 ============ */
@@ -863,12 +1001,34 @@ import { createPluginWebHost } from "./plugin-host.js";
       const recordGoto = e.target.closest("[data-goto-record]");
       if (recordGoto) {
         const id = recordGoto.dataset.gotoRecord;
-        const idx = state.faces.findIndex((face) =>
+        let idx = state.faces.findIndex((face) =>
           (face.type === "entry" && face.id === id) ||
           (face.type === "active" && face.record.id === id)
         );
-        if (idx >= 0) flipTo(faceToFlip(idx));
-        else flash("此记录不在当前卷中");
+        if (idx >= 0) {
+          flipTo(faceToFlip(idx));
+          return;
+        }
+        const targetVolume = data.volumes.find((volume) =>
+          volume.records.some((record) => record.id === id)
+        ) || (data.active.some((record) => record.id === id) ? currentVolume() : null);
+        if (!targetVolume) {
+          flash("此记录不在当前卷中");
+          return;
+        }
+        selectVolume(targetVolume.key);
+        window.setTimeout(() => {
+          idx = state.faces.findIndex((face) =>
+            (face.type === "entry" && face.id === id) ||
+            (face.type === "active" && face.record.id === id)
+          );
+          if (idx >= 0) flipTo(faceToFlip(idx));
+        }, 0);
+        return;
+      }
+      const volumeGoto = e.target.closest("[data-volume]");
+      if (volumeGoto) {
+        selectVolume(volumeGoto.dataset.volume);
         return;
       }
       const goto = e.target.closest("[data-goto]");
@@ -968,19 +1128,32 @@ import { createPluginWebHost } from "./plugin-host.js";
     setInterval(tickTimers, 1000);
     setInterval(async () => {
       if (!data.ok) return;
+      const previousRecordCount = data.summary ? data.summary.recordCount : null;
+      const previousLatestRecordKey = data.latestRecordKey;
       try {
         await loadLive();
       } catch {
         return; // 后端暂时不可达，静默
       }
-      if (liveSignature() !== state.signature) {
-        // 有任务开始/结束（可能来自 CLI/MCP），整本重排；正在输入时跳过本轮
+      const historyChanged = previousRecordCount !== data.summary?.recordCount
+        || previousLatestRecordKey !== data.latestRecordKey;
+      if (historyChanged) state.historyRefreshPending = true;
+
+      if (state.historyRefreshPending) {
         if (isEditing()) return;
         try { await loadAll(); } catch { return; }
+        state.historyRefreshPending = false;
         buildBook(true);
-      } else {
-        patchLiveDom();
+        return;
       }
+
+      if (liveSignature() !== state.signature) {
+        // 活动任务状态变化只重建当前书；历史书无需触碰 DOM。
+        if (isEditing()) return;
+        if (selectedVolume()?.isCurrent) buildBook(true);
+        else state.signature = liveSignature();
+      }
+      patchLiveDom();
     }, 5000);
   }
 
