@@ -110,6 +110,7 @@ import { currentPeriod, periodBounds, volumeKey } from "./volumes.js";
     active: [],    // running/paused（enriched）
     summary: null, // 今日总览
     latestRecordKey: "", // 轻量结构探针，避免每轮重新拉取整段历史
+    latestRecordInSnapshot: true,
     calendarKey: "", // 本地日期/分册边界，跨午夜时触发重建
     screen: null,  // 今日屏幕使用（/api/screen/today）
     rules: [],     // 分类规则
@@ -137,6 +138,7 @@ import { currentPeriod, periodBounds, volumeKey } from "./volumes.js";
   function applyRecords(records) {
     data.records = records;
     data.latestRecordKey = recordKey(latestRecordFromSnapshot(records));
+    data.latestRecordInSnapshot = true;
     data.calendarKey = currentCalendarKey();
     data.history = records
       .filter((r) => r.status === "done" || r.status === "cancelled")
@@ -228,6 +230,7 @@ import { currentPeriod, periodBounds, volumeKey } from "./volumes.js";
     ]);
     const latest = latestRecords[0];
     data.latestRecordKey = recordKey(latest);
+    data.latestRecordInSnapshot = latest ? data.records.some((record) => record.id === latest.id) : true;
     data.active = active;
     data.summary = summary;
     await pluginWebHost.loadData(data, { live: true });
@@ -239,7 +242,6 @@ import { currentPeriod, periodBounds, volumeKey } from "./volumes.js";
     return JSON.stringify([
       data.active.map((r) => [r.id, r.status, r.title, r.project, r.tags, r.parentId]),
       data.summary ? data.summary.recordCount : 0,
-      data.latestRecordKey,
       currentCalendarKey(),
     ]);
   }
@@ -1167,8 +1169,9 @@ import { currentPeriod, periodBounds, volumeKey } from "./volumes.js";
       } catch {
         return; // 后端暂时不可达，静默
       }
+      const latestChanged = previousLatestRecordKey !== data.latestRecordKey;
       const historyChanged = previousRecordCount !== data.summary?.recordCount
-        || previousLatestRecordKey !== data.latestRecordKey;
+        || (latestChanged && data.latestRecordInSnapshot);
       const calendarChanged = previousCalendarKey !== currentCalendarKey();
       if (historyChanged) state.historyRefreshPending = true;
       if (calendarChanged) {

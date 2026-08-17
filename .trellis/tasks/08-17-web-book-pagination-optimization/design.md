@@ -4,7 +4,7 @@
 
 Keep the API contract unchanged for callers, but derive a client-side volume index from the initial history response. The index contains four fixed current-month periods plus one entry per prior month. Each volume has a stable key, local date bounds, label, count, and the records belonging to it. The current period is the only volume that receives the live summary, active-task pages, form, and bundled-plugin pages.
 
-The initial load may fetch the existing bounded history payload so hierarchy and parent links remain available. Subsequent live polls fetch `/records?limit=1&order=updated` as a lightweight latest-record probe, `/records/active`, and `/summary/today`; a full history refresh is triggered when the probe or today's record count changes, or after an explicit write action.
+The initial load may fetch the existing bounded history payload so hierarchy and parent links remain available. Subsequent live polls fetch `/records?limit=1&order=updated` as a lightweight latest-record probe, `/records/active`, and `/summary/today`; a full history refresh is triggered when the probe or today's record count changes for a record inside the bounded snapshot, or after an explicit write action. Updates to records outside the bounded snapshot advance the probe token without rebuilding the visible history.
 
 ## Book and DOM window
 
