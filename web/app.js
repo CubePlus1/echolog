@@ -110,6 +110,7 @@ import { currentPeriod, periodBounds, volumeKey } from "./volumes.js";
     active: [],    // running/paused（enriched）
     summary: null, // 今日总览
     latestRecordKey: "", // 轻量结构探针，避免每轮重新拉取整段历史
+    latestRecordId: "",
     latestRecordInSnapshot: true,
     calendarKey: "", // 本地日期/分册边界，跨午夜时触发重建
     screen: null,  // 今日屏幕使用（/api/screen/today）
@@ -137,7 +138,9 @@ import { currentPeriod, periodBounds, volumeKey } from "./volumes.js";
 
   function applyRecords(records) {
     data.records = records;
-    data.latestRecordKey = recordKey(latestRecordFromSnapshot(records));
+    const latestRecord = latestRecordFromSnapshot(records);
+    data.latestRecordKey = recordKey(latestRecord);
+    data.latestRecordId = latestRecord?.id || "";
     data.latestRecordInSnapshot = true;
     data.calendarKey = currentCalendarKey();
     data.history = records
@@ -230,6 +233,7 @@ import { currentPeriod, periodBounds, volumeKey } from "./volumes.js";
     ]);
     const latest = latestRecords[0];
     data.latestRecordKey = recordKey(latest);
+    data.latestRecordId = latest?.id || "";
     data.latestRecordInSnapshot = latest ? data.records.some((record) => record.id === latest.id) : true;
     data.active = active;
     data.summary = summary;
@@ -1171,7 +1175,7 @@ import { currentPeriod, periodBounds, volumeKey } from "./volumes.js";
       }
       const latestChanged = previousLatestRecordKey !== data.latestRecordKey;
       const historyChanged = previousRecordCount !== data.summary?.recordCount
-        || (latestChanged && data.latestRecordInSnapshot);
+        || (latestChanged && (data.latestRecordInSnapshot || Boolean(data.latestRecordId)));
       const calendarChanged = previousCalendarKey !== currentCalendarKey();
       if (historyChanged) state.historyRefreshPending = true;
       if (calendarChanged) {
@@ -1181,7 +1185,18 @@ import { currentPeriod, periodBounds, volumeKey } from "./volumes.js";
 
       if (state.historyRefreshPending) {
         if (isEditing()) return;
+        const probeKey = data.latestRecordKey;
+        const probeId = data.latestRecordId;
+        const probeOutsideSnapshot = !data.latestRecordInSnapshot;
         try { await loadAll(); } catch { return; }
+        if (probeOutsideSnapshot && probeId && !data.records.some((record) => record.id === probeId)) {
+          // The bounded snapshot cannot include this older row. Keep the
+          // probe token so the same external update does not cause a full
+          // history rebuild on every subsequent live tick.
+          data.latestRecordKey = probeKey;
+          data.latestRecordId = probeId;
+          data.latestRecordInSnapshot = false;
+        }
         state.historyRefreshPending = false;
         buildBook(true);
         return;
