@@ -192,6 +192,22 @@ test("stdio MCP exposes typed tools and preserves EchoLog HTTP results", { timeo
         state: "degraded",
       });
     }
+    if (request.method === "GET" && url.pathname === "/api/plugins/screen-time/understanding/history") {
+      return sendJson(response, 200, [{
+        id: "observation-1",
+        capturedAt: "2026-08-03T08:03:00.000Z",
+        completedAt: "2026-08-03T08:03:04.000Z",
+        providerProfileId: "vision-primary",
+        model: "vision-model",
+        summary: "正在阅读文档",
+        activity: "阅读屏幕内容",
+        confidence: 0.95,
+        sensitive: false,
+        apps: ["浏览器"],
+        latencyMs: 4_000,
+        costMicros: null,
+      }]);
+    }
     return sendJson(response, 404, { error: "Not found" });
   });
 
@@ -231,7 +247,7 @@ test("stdio MCP exposes typed tools and preserves EchoLog HTTP results", { timeo
     }
 
     const byName = new Map(listed.tools.map((tool) => [tool.name, tool]));
-    for (const name of ["get_status", "list_records", "get_subtasks", "generate_report", "get_screen_time"]) {
+    for (const name of ["get_status", "list_records", "get_subtasks", "generate_report", "get_screen_time", "get_screen_understanding"]) {
       assert.equal(byName.get(name)?.annotations?.readOnlyHint, true);
       assert.equal(byName.get(name)?.annotations?.idempotentHint, true);
     }
@@ -326,6 +342,15 @@ test("stdio MCP exposes typed tools and preserves EchoLog HTTP results", { timeo
       state: "degraded",
       status: 503,
     });
+
+    const understanding = await client.callTool({
+      name: "get_screen_understanding",
+      arguments: { limit: 5 },
+    }) as CallToolResult;
+    assert.deepEqual((structured(understanding).observations as any[])[0]?.summary, "正在阅读文档");
+    assert.ok(requests.some((request) =>
+      request.method === "GET" && request.path === "/api/plugins/screen-time/understanding/history?limit=5"
+    ));
 
     const startRequest = requests.find((request) =>
       request.method === "POST" && request.path === "/api/records"

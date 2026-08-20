@@ -879,6 +879,30 @@ const screenUnderstanding = screen
 
 withJson(
   screenUnderstanding
+    .command("settings")
+    .description("查看 AI 屏幕识别的启用状态、周期和 Provider 配置。")
+    .addHelpText(
+      "after",
+      `
+示例:
+  $ el screen understanding settings
+  $ el screen understanding settings --json
+`
+    )
+).action(
+  action(async (thisCommand) => {
+    const result = await api("/api/plugins/screen-time/understanding/settings");
+    printSuccess(thisCommand, result, () => {
+      const settings = result as any;
+      console.log(`屏幕识别: ${settings.enabled ? "已启用" : "未启用"}`);
+      console.log(`  周期: ${settings.captureIntervalSeconds} 秒`);
+      console.log(`  Provider: ${settings.providerProfileId || "未选择"}`);
+    });
+  })
+);
+
+withJson(
+  screenUnderstanding
     .command("run")
     .description("立即采集活动显示器并调用 vision provider；仅允许本机 daemon。")
     .addHelpText(
@@ -894,6 +918,8 @@ withJson(
     const result = await post("/api/plugins/screen-time/understanding/run", {});
     printSuccess(thisCommand, result, () => {
       console.log(`✓ 屏幕识别完成: ${(result as any).summary}`);
+      console.log(`  活动: ${(result as any).activity}`);
+      console.log(`  应用: ${(result as any).apps?.join("、") || "未识别"}`);
     });
   })
 );
@@ -946,6 +972,8 @@ withJson(
     printSuccess(thisCommand, result, () => {
       for (const item of result as any[]) {
         console.log(`  ${item.completedAt} ${item.summary}`);
+        console.log(`    活动: ${item.activity}`);
+        console.log(`    应用: ${item.apps?.join("、") || "未识别"}`);
       }
     });
   })

@@ -17,6 +17,13 @@ export function wrapRecords(value: unknown): StructuredResult {
   return { records: value };
 }
 
+export function wrapScreenUnderstanding(value: unknown): StructuredResult {
+  if (!Array.isArray(value)) {
+    throw new Error("EchoLog API returned a non-array screen understanding response");
+  }
+  return { observations: value };
+}
+
 function errorContent(error: unknown): StructuredResult {
   if (error instanceof ApiError) {
     const body = typeof error.body === "object" && error.body !== null && !Array.isArray(error.body)

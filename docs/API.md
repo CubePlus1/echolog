@@ -244,6 +244,9 @@ screen-understanding 提供运行时设置、Provider 元数据与 Keychain 密�
 请求期间存在，不进入数据库或历史接口。本组端点都是 screen-time 插件 canonical
 路径，没有 `/api/screen/*` 兼容别名。
 
+识别结果的 `summary`、`activity` 和 `apps` 字段值要求使用简体中文。调度器每五秒
+检查一次动态设置，因此配置为 120 秒时不会因为粗粒度轮询被推迟为约 180 秒。
+
 ```bash
 # 读取当前完整设置对象
 curl "http://localhost:19827/api/plugins/screen-time/understanding/settings"
@@ -499,11 +502,11 @@ curl -X DELETE http://localhost:19827/api/plugins/screen-time/understanding/hist
   "completedAt": "2026-08-20T10:00:04.000Z",
   "providerProfileId": "vision-primary",
   "model": "vision-model",
-  "summary": "正在编辑 EchoLog 的 TypeScript 代码",
+  "summary": "正在编辑 EchoLog 的代码",
   "activity": "编写屏幕识别功能",
   "confidence": 0.92,
   "sensitive": false,
-  "apps": ["Codex"],
+  "apps": ["代码编辑器"],
   "latencyMs": 3200,
   "costMicros": null
 }

@@ -1,0 +1,6 @@
+interface:
+  display_name: "Read Screen Understanding"
+  short_description: "Read recent AI screen recognition results"
+  default_prompt: "Use $echolog:screen-understanding to tell me what the most recent screenshots showed."
+policy:
+  allow_implicit_invocation: true

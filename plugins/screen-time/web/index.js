@@ -130,6 +130,7 @@ export async function activate({ api }) {
             <div class="form-error" id="suError"></div>
             <div class="rule-form-foot">
               <span class="form-hint" style="margin:0">当前版本 ${esc(settings.version)}</span>
+              <a href="/screen-understanding.html" target="_blank" rel="noreferrer">打开独立管理页</a>
               <button type="button" data-act="test-understanding-capture">测试截图</button>
               <button type="button" data-act="run-understanding">立即识别</button>
               <button class="seal-btn" type="button" data-act="save-understanding-settings"><span class="s-face">存</span><span class="s-label">保存</span></button>
