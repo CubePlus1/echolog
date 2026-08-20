@@ -14,7 +14,7 @@
 - **父子任务**：一个大任务可挂多层小任务；服务端防止自指/成环，CLI 与 Web 可创建、查询并查看直接子任务进度
 - **笔记**：给任意记录追加 `note | blocker | next`
 - **补录与编辑**：`el add --at --for`、`el edit`
-- **内置插件**：screen-time 采样和追溯分类前台应用；tmux-status 通过外部 CLI 提供结构化 pane/资源观测，并以 v3 合约持久化已验证的 Agent conversation↔pane 恢复映射
+- **内置插件**：screen-time 采样和追溯分类前台应用，并提供 Provider/Keychain 管理与显式测试截图；tmux-status 通过外部 CLI 提供结构化 pane/资源观测，并以 v3 合约持久化已验证的 Agent conversation↔pane 恢复映射
 - **汇总与日报**：今日/指定日汇总、日报 Markdown 生成、可同步到指定目录
 - **提醒**（可选）：任务超时、空闲提醒、macOS 通知 + ntfy 推送到手机
 - **四个入口，一套 REST API**：免构建的 Web 控制台、`el` CLI、本地 stdio MCP、HTTP API（`docs/API.md`）
@@ -89,7 +89,7 @@ el tmux status --json     # tmux-status 原始快照（插件默认禁用）
 |---|---|
 | `server` | 端口（默认 19827）、`apiKey`（本机豁免，非本机必带）、`serveWeb`（false = 纯 API 服务）、`corsOrigins`（跨源白名单，默认不允许跨源） |
 | `database` | PostgreSQL 连接（与 docker-compose 默认值对应） |
-| `plugins.screen-time` | 屏幕采样开关、频率与空闲阈值（默认启用） |
+| `plugins.screen-time` | 屏幕采样开关、频率、空闲阈值与可选 `macos_helper_path`（默认启用） |
 | `plugins.tmux-status` | 外部 executable、超时、采样频率、异常阈值，以及 v3 Agent conversation↔pane 恢复映射（默认禁用） |
 | `sync` | 日报 Markdown 同步目标目录 |
 | `notifications` | macOS 通知、ntfy 推送、超时/空闲/日报提醒规则 |
@@ -119,6 +119,11 @@ el tmux status --json     # tmux-status 原始快照（插件默认禁用）
 launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.echolog.daemon.plist
 # 更新代码后：pnpm build && launchctl kickstart -k gui/$(id -u)/com.echolog.daemon
 ```
+
+screen-understanding helper 不属于 portable build。本机 smoke 组装使用
+`ECHOLOG_MACOS_ADHOC_SMOKE=1 pnpm build:macos-capture`；正式签名使用
+`ECHOLOG_MACOS_SIGNING_IDENTITY=... pnpm build:macos-release`。启用识图后，截图只在
+单次请求内存中存在；数据库只保存结构化理解结果，不保存图片或 API key。
 
 ## 架构
 
@@ -170,6 +175,10 @@ EchoLog 的近期方向不是做普通的工时计时器，而是成为本地优
 - **P1 · Codex 集成**：按顺序交付 Skills-only Plugin、本地 stdio MCP 适配层、Plugin 打包与发布验收；每一步独立 Issue、PR 和 review。
   - GitHub：✅ [#13 Skills MVP](https://github.com/CubePlus1/echolog/issues/13) → ✅ [#14 MCP 适配](https://github.com/CubePlus1/echolog/issues/14) → ✅ [#15 打包发布](https://github.com/CubePlus1/echolog/issues/15)
   - Trellis：`.trellis/tasks/08-03-codex-integration/`
+- **P1 · screen-understanding**：设置基础、Provider/Keychain 管理、macOS 原生截图助手和真实 vision provider 调用已接通；默认关闭，需在本机显式配置并启用。
+  - 设置与截图基础：✅ [Issue #23](https://github.com/CubePlus1/echolog/issues/23) · ✅ [PR #22](https://github.com/CubePlus1/echolog/pull/22)
+  - 运行时实现与验收：[Trellis 任务](.trellis/tasks/08-20-screen-understanding-runtime/)
+  - 周期识别仍遵循 settings 的 `enabled`、空闲跳过和每日预算；原始截图不落盘。
 
 ### 三处任务同步规则
 

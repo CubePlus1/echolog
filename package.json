@@ -9,9 +9,12 @@
   "scripts": {
     "dev": "tsx src/server/app.ts",
     "build": "pnpm --filter @echolog/plugin-sdk build && pnpm --filter @echolog/plugin-screen-time build && pnpm --filter @echolog/plugin-tmux-status build && tsup",
+    "build:macos-capture": "bash scripts/build-macos-capture.sh",
+    "build:macos-release": "pnpm build && pnpm build:macos-capture",
     "cli": "tsx src/cli/index.ts",
     "migrate": "tsx src/migrate.ts",
     "test": "tsx --test tests/**/*.test.ts",
+    "test:integration": "pnpm build && tsx --test tests/**/*.integration.ts",
     "typecheck": "tsc --noEmit",
     "docker:up": "docker compose up -d",
     "docker:down": "docker compose down"

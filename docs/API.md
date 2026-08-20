@@ -236,6 +236,290 @@ curl -X DELETE http://localhost:19827/api/screen/rules/<id>
 - `priority`：整数，高者胜；平局时带时段的规则胜过全天规则
 - 片段会按规则时段边界自动切开，各段独立归名；无匹配规则 → `未分`
 
+#### screen-understanding settings
+
+screen-understanding 提供运行时设置、Provider 元数据与 Keychain 密钥管理、一次性
+截图测试和真正的 opt-in vision 识别。启用后由 screen-time 插件按设置周期采集活动
+显示器，调用 OpenAI-compatible provider，并保存结构化理解结果；原始截图只在单次
+请求期间存在，不进入数据库或历史接口。本组端点都是 screen-time 插件 canonical
+路径，没有 `/api/screen/*` 兼容别名。
+
+```bash
+# 读取当前完整设置对象
+curl "http://localhost:19827/api/plugins/screen-time/understanding/settings"
+
+# 全量替换可变设置；expectedVersion 必须等于当前 version
+curl -X PUT http://localhost:19827/api/plugins/screen-time/understanding/settings \
+  -H "Content-Type: application/json" \
+  -d '{
+    "expectedVersion": 1,
+    "enabled": false,
+    "captureIntervalSeconds": 60,
+    "captureDisplay": "active",
+    "skipWhenIdle": true,
+    "providerProfileId": null,
+    "requestTimeoutMs": 30000,
+    "maxConcurrency": 1,
+    "maxAttempts": 3,
+    "dailyRequestBudget": 480,
+    "dailyCostBudgetMicros": 0,
+    "remoteConsentOrigin": null
+  }'
+```
+
+`GET /api/plugins/screen-time/understanding/settings` 返回 `200` 和完整对象：
+
+```json
+{
+  "id": "default",
+  "version": 1,
+  "enabled": false,
+  "captureIntervalSeconds": 60,
+  "captureDisplay": "active",
+  "skipWhenIdle": true,
+  "providerProfileId": null,
+  "requestTimeoutMs": 30000,
+  "maxConcurrency": 1,
+  "maxAttempts": 3,
+  "dailyRequestBudget": 480,
+  "dailyCostBudgetMicros": 0,
+  "remoteConsentOrigin": null,
+  "updatedAt": "2026-08-06T00:00:00.000Z"
+}
+```
+
+`PUT` 是全量更新：除 `expectedVersion` 外必须提供下表中的每个字段，不能
+携带未知字段。成功返回 `200` 和同样的完整对象；服务器原子地检查
+`expectedVersion`，成功后将 `version` 加一。
+
+| 字段 | 类型 / 范围 | 说明 |
+|---|---|---|
+| `expectedVersion` | integer `1`–`2147483647` | 乐观并发前置版本；不包含在返回对象中 |
+| `enabled` | boolean | 是否启用周期 screen-understanding 工作；关闭时不会自动截图或调用模型 |
+| `captureIntervalSeconds` | integer `60`–`3600` | 周期识别间隔 |
+| `captureDisplay` | string，固定为 `active` | 当前唯一支持的显示器选择 |
+| `skipWhenIdle` | boolean | 是否跳过空闲时段 |
+| `providerProfileId` | `null` 或 1–100 个字符 | 可含 ASCII 字母、数字、`.`、`_`、`:`、`-`；首字符必须是字母或数字；首尾空白会被去除 |
+| `requestTimeoutMs` | integer `1000`–`120000` | 单次请求超时毫秒数 |
+| `maxConcurrency` | integer `1`–`8` | 最大并发数 |
+| `maxAttempts` | integer `1`–`10` | 最大尝试次数 |
+| `dailyRequestBudget` | integer `1`–`1440` | 每日请求预算 |
+| `dailyCostBudgetMicros` | integer `0`–`2000000000` | 每日成本预算，单位为 micro-units |
+| `remoteConsentOrigin` | `null`、HTTPS origin 或 HTTP loopback origin | 只能是 origin；不得含凭据、路径、query 或 fragment。HTTP 仅允许 `localhost`、`127.0.0.1`、`[::1]`；成功值按 URL origin 规范化 |
+
+`PUT` 成功时返回 `200`，例如：
+
+```json
+{
+  "id": "default",
+  "version": 2,
+  "enabled": true,
+  "captureIntervalSeconds": 120,
+  "captureDisplay": "active",
+  "skipWhenIdle": true,
+  "providerProfileId": "vision-primary",
+  "requestTimeoutMs": 30000,
+  "maxConcurrency": 2,
+  "maxAttempts": 3,
+  "dailyRequestBudget": 480,
+  "dailyCostBudgetMicros": 0,
+  "remoteConsentOrigin": "https://vision.example.com",
+  "updatedAt": "2026-08-06T00:01:00.000Z"
+}
+```
+
+校验失败返回 `400`，响应至少包含 `error`；例如缺少全量字段、携带未知
+字段、数值越界、`captureDisplay` 不是 `active`、非法 provider profile id，
+或使用不安全的 consent origin：
+
+```json
+{
+  "error": "captureIntervalSeconds must be an integer from 60 to 3600"
+}
+```
+
+如果 `expectedVersion` 已过期，服务器不写入请求值，返回 `409` 及当前版本：
+
+```json
+{
+  "error": "screen understanding settings version conflict",
+  "currentVersion": 2
+}
+```
+
+#### screen-understanding providers 与 Keychain
+
+Provider metadata 存在 PostgreSQL；API Key 只存在当前 macOS 用户的 Keychain，
+API 永不返回原文或掩码片段。支持的 provider kind 当前固定为
+`openai-compatible`。
+
+```bash
+curl http://localhost:19827/api/plugins/screen-time/understanding/providers
+
+curl -X POST http://localhost:19827/api/plugins/screen-time/understanding/providers \
+  -H 'Content-Type: application/json' \
+  -d '{"id":"vision-primary","displayName":"Primary vision","providerKind":"openai-compatible","baseUrl":"https://api.openai.com/v1","model":"vision-model"}'
+
+curl -X PUT http://localhost:19827/api/plugins/screen-time/understanding/providers/vision-primary \
+  -H 'Content-Type: application/json' \
+  -d '{"expectedVersion":1,"displayName":"Primary vision","providerKind":"openai-compatible","baseUrl":"https://api.openai.com/v1","model":"vision-model"}'
+
+curl -X DELETE http://localhost:19827/api/plugins/screen-time/understanding/providers/vision-primary \
+  -H 'Content-Type: application/json' \
+  -d '{"expectedVersion":2}'
+
+# 本机录入/替换 Keychain 密钥
+curl -X PUT http://localhost:19827/api/plugins/screen-time/understanding/providers/vision-primary/key \
+  -H 'Content-Type: application/json' \
+  -d '{"apiKey":"REPLACE_LOCALLY"}'
+
+curl -X DELETE http://localhost:19827/api/plugins/screen-time/understanding/providers/vision-primary/key
+```
+
+`GET /providers` 返回 `{ "providers": [...] }`。单个 profile 形状为：
+
+```json
+{
+  "id": "vision-primary",
+  "version": 1,
+  "displayName": "Primary vision",
+  "providerKind": "openai-compatible",
+  "baseUrl": "https://api.openai.com/v1",
+  "model": "vision-model",
+  "hasApiKey": true,
+  "createdAt": "2026-08-11T00:00:00.000Z",
+  "updatedAt": "2026-08-11T00:00:00.000Z"
+}
+```
+
+字段约束：
+
+- `id`：1–100 字符，匹配 `[A-Za-z0-9][A-Za-z0-9._:-]*`，创建后不可改；最多 20 个 profile。
+- `displayName`：trim 后 1–80 字符。
+- `providerKind`：当前必须为 `openai-compatible`。
+- `baseUrl`：HTTPS，或 loopback 主机上的 HTTP；不得含凭据、query 或 fragment，尾部 `/` 会归一化。
+- `model`：trim 后 1–200 字符，不得含控制字符。
+- `expectedVersion`：1–2147483647 的整数；PUT/DELETE 均使用乐观并发。
+- `apiKey`：UTF-8 1–4096 bytes，不得有首尾空白、换行或 NUL。
+
+Keychain 状态正常时 `hasApiKey` 为 boolean；helper/Keychain 暂时不可用时为
+`null`，metadata 仍可读取和编辑，Web 显示“密钥状态不可用”。
+
+新建成功为 `201`；更新成功为 `200` 且 version 加一；删除 metadata 成功为
+`204`。非法字段/URL/key 返回 `400`；不存在返回 `404`；版本过期、profile
+仍被 settings 选择、启用时删除 key，或启用设置却没有可用 key，返回 `409`。
+Keychain helper 不可用/失败/超时分别返回脱敏的 `503`/`502`/`504`。
+Key 的 PUT/DELETE 仅接受 loopback 请求，远端请求返回 `403 PLUGIN_LOCAL_ONLY`。
+
+Key PUT/DELETE 成功响应分别为：
+
+```json
+{ "id": "vision-primary", "hasApiKey": true }
+```
+
+```json
+{ "id": "vision-primary", "hasApiKey": false }
+```
+
+典型结构化错误（响应绝不包含 key 原文）：
+
+```json
+{ "error": "provider profile vision-primary not found", "code": "PROVIDER_PROFILE_NOT_FOUND" }
+```
+
+```json
+{ "error": "provider profile vision-primary version conflict", "code": "PROVIDER_PROFILE_CONFLICT", "currentVersion": 3 }
+```
+
+其他稳定冲突 code 包括 `PROVIDER_PROFILE_IN_USE`、`PROVIDER_PROFILE_LIMIT`、
+`PROVIDER_KEY_REQUIRED`；平台/helper code 包括 `KEYCHAIN_UNAVAILABLE`、
+`KEYCHAIN_OPERATION_FAILED` 和 `PLUGIN_TIMEOUT`。
+
+#### 显式测试截图
+
+`POST /api/plugins/screen-time/understanding/capture/test` 仅接受 loopback 请求和
+空 JSON 对象。调用方不能指定输出路径。daemon 在 mode `0700` 的私有临时目录
+以 exclusive create 预建 mode `0600` 的结果 JSON 与 stderr log，并生成 PNG
+固定路径，再通过
+`/usr/bin/open -W -n -o <result> --stderr <log> <EchoLogScreenCapture.app> --args ...`
+交给 macOS
+LaunchServices 启动固定 bundle identity。daemon 不解析 `open` 的 stdout/stderr
+（`open` 成功时也可能输出 benign diagnostic），只读取并验证私有目录内 mode
+`0600` 的 helper 结果文件、精确 PNG 路径、regular PNG、像素与 8 MiB 大小上限，
+读取预览后在 `finally` 删除整个临时目录。
+原生 one-shot helper 另有 12 秒进程级 watchdog，早于 daemon 的 15 秒超时，
+避免 ScreenCaptureKit 卡住后遗留后台 helper 或绕过 single-flight 门禁。
+
+```bash
+curl -X POST http://localhost:19827/api/plugins/screen-time/understanding/capture/test \
+  -H 'Content-Type: application/json' -d '{}'
+```
+
+成功返回 `200`；`preview.base64` 只供当前 Web 页面内存预览，不是截图历史：
+
+```json
+{
+  "format": "png",
+  "displayId": 1,
+  "widthPixels": 2560,
+  "heightPixels": 1440,
+  "bytes": 868605,
+  "capturedAt": "2026-08-11T12:34:56.789Z",
+  "preview": { "mediaType": "image/png", "base64": "iVBORw0KGgo..." }
+}
+```
+
+缺少屏幕录制权限返回 `409 CAPTURE_PERMISSION_REQUIRED`；无 capture source 或
+不支持的 OS 返回 `503`；helper 执行、输出、截图和超时失败返回对应的脱敏
+`502`/`504`。已有测试正在运行时返回 `409 CAPTURE_BUSY`。这些失败不会禁用
+原有 foreground tracking，也不会触发权限请求。
+
+#### AI 屏幕识别
+
+`POST /api/plugins/screen-time/understanding/run` 是 loopback-only 的显式识别入口，
+只接受空 JSON 对象。它要求 settings 中 `enabled=true`、选中了有 Keychain 密钥的
+Provider；服务会采集活动显示器、调用 `${baseUrl}/chat/completions`，并只接受包含
+`summary`、`activity`、`confidence`、`sensitive`、`apps` 的 JSON 结果。失败不会返回
+远端响应正文或 API key。
+
+```bash
+curl -X POST http://localhost:19827/api/plugins/screen-time/understanding/run \
+  -H 'Content-Type: application/json' -d '{}'
+curl http://localhost:19827/api/plugins/screen-time/understanding/latest
+curl 'http://localhost:19827/api/plugins/screen-time/understanding/history?limit=20'
+```
+
+成功响应形状为：
+
+```json
+{
+  "id": "abc123",
+  "capturedAt": "2026-08-20T10:00:00.000Z",
+  "completedAt": "2026-08-20T10:00:04.000Z",
+  "providerProfileId": "vision-primary",
+  "model": "vision-model",
+  "summary": "正在编辑 EchoLog 的 TypeScript 代码",
+  "activity": "编写屏幕识别功能",
+  "confidence": 0.92,
+  "sensitive": false,
+  "apps": ["Codex"],
+  "latencyMs": 3200,
+  "costMicros": null
+}
+```
+
+成功结果只保存上述结构化字段，不保存 PNG、完整 prompt、模型原始响应或密钥。
+周期任务每分钟检查一次 settings，并按 `captureIntervalSeconds`、`skipWhenIdle`、
+`dailyRequestBudget` 和可选的 `dailyCostBudgetMicros` 约束执行。一次进程内同时只
+允许一个识别任务；临时网络错误按 `maxAttempts` 有界重试。
+
+识别关闭返回 `409 UNDERSTANDING_DISABLED`；未配置 Provider 返回
+`409 UNDERSTANDING_PROVIDER_REQUIRED`；请求/成本预算耗尽返回 `429`；模型认证、
+超时、限流、不可达和非法响应分别返回脱敏的 `PROVIDER_AUTH`、
+`PROVIDER_TIMEOUT`、`PROVIDER_RATE_LIMITED`、`PROVIDER_UNAVAILABLE` 或
+`UNDERSTANDING_RESPONSE_INVALID`。原始截图测试和识别入口均不提供
+`/api/screen/*` 兼容别名。
+
 ### tmux-status
 
 tmux-status 插件默认禁用，只通过无 shell 的 `execFile` 适配外部

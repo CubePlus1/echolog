@@ -4,11 +4,37 @@ import type {
   PluginRoute,
 } from "@echolog/plugin-sdk";
 import type { ScreenService } from "./screen.js";
+import {
+  CaptureError,
+  type MacScreenCaptureService,
+} from "./macos-screen-capture.js";
+import {
+  UnderstandingError,
+  type ScreenUnderstandingService,
+} from "./understanding.js";
+import {
+  PROVIDER_PROFILE_ID_RE,
+  ProviderError,
+  validateProviderCreate,
+  validateProviderDelete,
+  validateProviderKey,
+  validateProviderUpdate,
+  type ProviderProfileService,
+} from "./provider-profiles.js";
+import {
+  validateUnderstandingSettingsUpdate,
+  type UnderstandingSettingsService,
+} from "./understanding-settings.js";
+import { VisionProviderError } from "./vision-provider.js";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const TIME_RE = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
 type ServiceProvider = () => ScreenService;
+type SettingsProvider = () => UnderstandingSettingsService;
+type ProfilesProvider = () => ProviderProfileService;
+type CaptureProvider = () => MacScreenCaptureService;
+type UnderstandingProvider = () => ScreenUnderstandingService;
 
 function response(statusCode: number, body: unknown): PluginHttpResponse {
   return { statusCode, body };
@@ -115,7 +141,46 @@ function validateRuleBody(body: unknown):
   };
 }
 
-function handlers(service: ServiceProvider) {
+function providerError(error: unknown): PluginHttpResponse {
+  if (!(error instanceof ProviderError)) throw error;
+  return response(error.statusCode, {
+    error: error.message,
+    code: error.code,
+    ...(error.currentVersion === undefined
+      ? {}
+      : { currentVersion: error.currentVersion }),
+  });
+}
+
+function captureError(error: unknown): PluginHttpResponse {
+  if (!(error instanceof CaptureError)) throw error;
+  return response(error.statusCode, {
+    error: error.message,
+    code: error.code,
+  });
+}
+
+function understandingError(error: unknown): PluginHttpResponse {
+  if (error instanceof UnderstandingError || error instanceof VisionProviderError) {
+    return response(error.statusCode, {
+      error: error.message,
+      code: error.code,
+    });
+  }
+  return providerError(error);
+}
+
+function validProfileId(id: string): boolean {
+  return PROVIDER_PROFILE_ID_RE.test(id);
+}
+
+function handlers(
+  service: ServiceProvider,
+  settings?: SettingsProvider,
+  profiles?: ProfilesProvider,
+  capture?: CaptureProvider,
+  understanding?: UnderstandingProvider
+) {
   return {
     today: async () => service().getDaily(localDateStr()),
     daily: async (request: PluginHttpRequest) => {
@@ -135,38 +200,297 @@ function handlers(service: ServiceProvider) {
       return deleted ??
         response(404, { error: `Rule ${request.params.id} not found` });
     },
+    getUnderstandingSettings: async () => {
+      if (!settings) throw new Error("understanding settings service is unavailable");
+      return settings().get();
+    },
+    updateUnderstandingSettings: async (
+      request: PluginHttpRequest,
+      signal: AbortSignal
+    ) => {
+      if (!settings) throw new Error("understanding settings service is unavailable");
+      const validated = validateUnderstandingSettingsUpdate(request.body);
+      if (!validated.ok) return response(400, { error: validated.error });
+      const { expectedVersion, ...input } = validated.value;
+      try {
+        const result = await settings().update(expectedVersion, input, signal);
+        return result.ok
+          ? result.settings
+          : response(409, {
+              error: "screen understanding settings version conflict",
+              currentVersion: result.currentVersion,
+            });
+      } catch (error) {
+        return providerError(error);
+      }
+    },
+    listProviders: async (_request: PluginHttpRequest, signal: AbortSignal) => {
+      if (!profiles) throw new Error("provider profile service is unavailable");
+      try {
+        return { providers: await profiles().list(signal) };
+      } catch (error) {
+        return providerError(error);
+      }
+    },
+    createProvider: async (request: PluginHttpRequest) => {
+      if (!profiles) throw new Error("provider profile service is unavailable");
+      const validated = validateProviderCreate(request.body);
+      if (!validated.ok) return response(400, { error: validated.error });
+      try {
+        return response(201, await profiles().create(validated.value));
+      } catch (error) {
+        return providerError(error);
+      }
+    },
+    updateProvider: async (
+      request: PluginHttpRequest,
+      signal: AbortSignal
+    ) => {
+      if (!profiles) throw new Error("provider profile service is unavailable");
+      if (!validProfileId(request.params.id)) {
+        return response(400, { error: "provider id is invalid" });
+      }
+      const validated = validateProviderUpdate(request.body);
+      if (!validated.ok) return response(400, { error: validated.error });
+      const { expectedVersion, ...input } = validated.value;
+      try {
+        return await profiles().update(
+          request.params.id,
+          expectedVersion,
+          input,
+          signal
+        );
+      } catch (error) {
+        return providerError(error);
+      }
+    },
+    deleteProvider: async (
+      request: PluginHttpRequest,
+      signal: AbortSignal
+    ) => {
+      if (!profiles) throw new Error("provider profile service is unavailable");
+      if (!validProfileId(request.params.id)) {
+        return response(400, { error: "provider id is invalid" });
+      }
+      const validated = validateProviderDelete(request.body);
+      if (!validated.ok) return response(400, { error: validated.error });
+      try {
+        await profiles().deleteProfile(
+          request.params.id,
+          validated.value.expectedVersion,
+          signal
+        );
+        return response(204, null);
+      } catch (error) {
+        return providerError(error);
+      }
+    },
+    setProviderKey: async (
+      request: PluginHttpRequest,
+      signal: AbortSignal
+    ) => {
+      if (!profiles) throw new Error("provider profile service is unavailable");
+      if (!validProfileId(request.params.id)) {
+        return response(400, { error: "provider id is invalid" });
+      }
+      const validated = validateProviderKey(request.body);
+      if (!validated.ok) return response(400, { error: validated.error });
+      try {
+        return await profiles().setKey(
+          request.params.id,
+          validated.value.apiKey,
+          signal
+        );
+      } catch (error) {
+        return providerError(error);
+      }
+    },
+    deleteProviderKey: async (
+      request: PluginHttpRequest,
+      signal: AbortSignal
+    ) => {
+      if (!profiles) throw new Error("provider profile service is unavailable");
+      if (!validProfileId(request.params.id)) {
+        return response(400, { error: "provider id is invalid" });
+      }
+      try {
+        return await profiles().deleteKey(request.params.id, signal);
+      } catch (error) {
+        return providerError(error);
+      }
+    },
+    testCapture: async (
+      request: PluginHttpRequest,
+      signal: AbortSignal
+    ) => {
+      if (!capture) throw new Error("screen capture service is unavailable");
+      if (
+        !request.body ||
+        typeof request.body !== "object" ||
+        Array.isArray(request.body) ||
+        Object.keys(request.body as Record<string, unknown>).length !== 0
+      ) {
+        return response(400, { error: "capture test body must be an empty object" });
+      }
+      try {
+        return await capture().captureTest(signal);
+      } catch (error) {
+        return captureError(error);
+      }
+    },
+    runUnderstanding: async (
+      request: PluginHttpRequest,
+      signal: AbortSignal
+    ) => {
+      if (!understanding) throw new Error("screen understanding service is unavailable");
+      if (
+        !request.body ||
+        typeof request.body !== "object" ||
+        Array.isArray(request.body) ||
+        Object.keys(request.body as Record<string, unknown>).length !== 0
+      ) {
+        return response(400, { error: "understanding run body must be an empty object" });
+      }
+      try {
+        return await understanding().run(signal);
+      } catch (error) {
+        return understandingError(error);
+      }
+    },
+    latestUnderstanding: async () => {
+      if (!understanding) throw new Error("screen understanding service is unavailable");
+      return understanding().latest();
+    },
+    understandingHistory: async (request: PluginHttpRequest) => {
+      if (!understanding) throw new Error("screen understanding service is unavailable");
+      const query = request.query;
+      const raw = query && typeof query === "object"
+        ? (query as Record<string, unknown>).limit
+        : undefined;
+      const limit = raw == null ? 20 : Number(raw);
+      if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
+        return response(400, { error: "limit must be an integer from 1 to 100" });
+      }
+      return understanding().history(limit);
+    },
   };
 }
 
-export function createScreenRoutes(service: ServiceProvider): PluginRoute[] {
-  const routeHandlers = handlers(service);
+export function createScreenRoutes(
+  service: ServiceProvider,
+  settings?: SettingsProvider,
+  profiles?: ProfilesProvider,
+  capture?: CaptureProvider,
+  understanding?: UnderstandingProvider
+): PluginRoute[] {
+  const routeHandlers = handlers(service, settings, profiles, capture, understanding);
   const definitions: Array<{
     method: PluginRoute["method"];
     suffix: string;
     handler: PluginRoute["handler"];
+    compatibilityAlias?: boolean;
+    localOnly?: boolean;
   }> = [
-    { method: "GET", suffix: "/today", handler: routeHandlers.today },
-    { method: "GET", suffix: "/daily/:date", handler: routeHandlers.daily },
-    { method: "GET", suffix: "/rules", handler: routeHandlers.listRules },
-    { method: "POST", suffix: "/rules", handler: routeHandlers.createRule },
+    {
+      method: "GET",
+      suffix: "/today",
+      handler: routeHandlers.today,
+      compatibilityAlias: true,
+    },
+    {
+      method: "GET",
+      suffix: "/daily/:date",
+      handler: routeHandlers.daily,
+      compatibilityAlias: true,
+    },
+    {
+      method: "GET",
+      suffix: "/rules",
+      handler: routeHandlers.listRules,
+      compatibilityAlias: true,
+    },
+    {
+      method: "POST",
+      suffix: "/rules",
+      handler: routeHandlers.createRule,
+      compatibilityAlias: true,
+    },
     {
       method: "DELETE",
       suffix: "/rules/:id",
       handler: routeHandlers.deleteRule,
+      compatibilityAlias: true,
     },
+    {
+      method: "GET",
+      suffix: "/understanding/settings",
+      handler: routeHandlers.getUnderstandingSettings,
+    },
+    {
+      method: "PUT",
+      suffix: "/understanding/settings",
+      handler: routeHandlers.updateUnderstandingSettings,
+    },
+    ...(profiles ? [{
+      method: "GET" as const,
+      suffix: "/understanding/providers",
+      handler: routeHandlers.listProviders,
+    }, {
+      method: "POST" as const,
+      suffix: "/understanding/providers",
+      handler: routeHandlers.createProvider,
+    }, {
+      method: "PUT" as const,
+      suffix: "/understanding/providers/:id",
+      handler: routeHandlers.updateProvider,
+    }, {
+      method: "DELETE" as const,
+      suffix: "/understanding/providers/:id",
+      handler: routeHandlers.deleteProvider,
+    }, {
+      method: "PUT" as const,
+      suffix: "/understanding/providers/:id/key",
+      handler: routeHandlers.setProviderKey,
+      localOnly: true,
+    }, {
+      method: "DELETE" as const,
+      suffix: "/understanding/providers/:id/key",
+      handler: routeHandlers.deleteProviderKey,
+      localOnly: true,
+    }] : []),
+    ...(capture ? [{
+      method: "POST" as const,
+      suffix: "/understanding/capture/test",
+      handler: routeHandlers.testCapture,
+      localOnly: true,
+    }] : []),
+    ...(understanding ? [{
+      method: "POST" as const,
+      suffix: "/understanding/run",
+      handler: routeHandlers.runUnderstanding,
+      localOnly: true,
+    }, {
+      method: "GET" as const,
+      suffix: "/understanding/latest",
+      handler: routeHandlers.latestUnderstanding,
+    }, {
+      method: "GET" as const,
+      suffix: "/understanding/history",
+      handler: routeHandlers.understandingHistory,
+    }] : []),
   ];
 
-  return definitions.flatMap(({ method, suffix, handler }) => [
-    {
+  return definitions.flatMap(
+    ({ method, suffix, handler, compatibilityAlias, localOnly }) => [{
       method,
       path: `/api/plugins/screen-time${suffix}`,
+      ...(localOnly ? { localOnly: true } : {}),
       handler,
-    },
-    {
-      method,
-      path: `/api/screen${suffix}`,
-      compatibilityAlias: true,
-      handler,
-    },
-  ]);
+    }, ...(compatibilityAlias ? [{
+        method,
+        path: `/api/screen${suffix}`,
+        compatibilityAlias: true,
+        handler,
+      } satisfies PluginRoute] : [])]
+  );
 }

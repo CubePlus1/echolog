@@ -105,6 +105,10 @@ Job timeouts do not assume cooperative cancellation. The Host aborts the
 signal and also rejects the scheduler's awaited race, so an operation that
 ignores `AbortSignal` cannot leave the job permanently marked as running.
 
+`PluginCommandRequest.stdin` is an optional bounded UTF-8 payload (host ceiling
+64 KiB). It is written directly to child stdin and MUST NOT be copied into
+argv, environment variables, logs, or errors. Execution remains no-shell.
+
 ## Routes and errors
 
 Canonical plugin routes use:
@@ -116,6 +120,8 @@ Canonical plugin routes use:
 A reviewed compatibility alias such as `/api/screen/*` MUST set
 `compatibilityAlias: true`. The gateway checks plugin state before invoking the
 handler, so disabled and degraded routes remain discoverable but return `503`.
+Routes marked `localOnly` accept only loopback clients; rejection occurs before
+the handler and returns `403 PLUGIN_LOCAL_ONLY`.
 
 Error bodies preserve EchoLog's top-level string `error`:
 
@@ -139,6 +145,19 @@ Stable error codes:
 | `PLUGIN_EXEC_FAILED` | 502 |
 | `PLUGIN_TIMEOUT` | 504 |
 | `PLUGIN_OUTPUT_INVALID` | 502 |
+
+## Bundled macOS helpers
+
+Native helper compilation is an explicit platform/release step and MUST NOT
+make portable `pnpm build` require macOS. A plugin resolves its packaged app
+inner executable relative to its compiled module, with only a validated
+absolute deployment override. Bundled helpers are not listed in
+`requires.executables`, which is reserved for external PATH dependencies.
+
+screen-time packages
+`native/macos-capture/build/EchoLogScreenCapture.app/Contents/MacOS/echolog-screen-capture`.
+Permission inspection never prompts, and a missing Screen Recording permission
+diagnostic does not degrade passive foreground tracking.
 
 `GET /api/health` reports Core health. Plugin failures appear in
 `GET /api/plugins` and `GET /api/plugins/doctor`. A failed doctor request uses

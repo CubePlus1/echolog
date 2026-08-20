@@ -14,11 +14,13 @@
   "files": [
     "dist",
     "web",
+    "native/macos-capture/build/EchoLogScreenCapture.app",
     "echolog.plugin.json",
     "config.schema.json"
   ],
   "scripts": {
     "build": "tsup",
+    "build:macos-capture": "bash native/macos-capture/build-app.sh",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
