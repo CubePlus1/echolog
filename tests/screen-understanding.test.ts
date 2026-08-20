@@ -9,6 +9,7 @@ import {
 import {
   buildVisionRequestPayload,
   OpenAICompatibleVisionClient,
+  SCREEN_UNDERSTANDING_SYSTEM_PROMPT,
   VisionProviderError,
 } from "../plugins/screen-time/src/vision-provider.js";
 import { MacKeychainClient } from "../plugins/screen-time/src/macos-keychain-client.js";
@@ -33,6 +34,16 @@ test("vision payload carries an in-memory data URL and never the API key", () =>
   assert.match(serialized, /data:image\/png;base64/);
   assert.equal(serialized.includes("secret-key"), false);
   assert.equal((payload as { model: string }).model, "vision-model");
+});
+
+test("vision payload requires Simplified Chinese display values", () => {
+  const payload = buildVisionRequestPayload(profile, Buffer.from("png-bytes"));
+  const messages = payload.messages as Array<{ role: string; content: unknown }>;
+  assert.equal(messages[0]?.content, SCREEN_UNDERSTANDING_SYSTEM_PROMPT);
+  assert.match(SCREEN_UNDERSTANDING_SYSTEM_PROMPT, /简体中文/);
+  assert.match(SCREEN_UNDERSTANDING_SYSTEM_PROMPT, /不要输出英文/);
+  const userContent = messages[1]?.content as Array<{ type: string; text?: string }>;
+  assert.match(userContent[0]?.text ?? "", /不要使用英文/);
 });
 
 test("Keychain client reads a secret only through the helper response", async () => {

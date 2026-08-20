@@ -4,12 +4,14 @@ const MAX_RESPONSE_BYTES = 1_048_576;
 const MAX_CONTENT_CHARS = 32_000;
 
 export const SCREEN_UNDERSTANDING_SYSTEM_PROMPT = [
-  "You are EchoLog's private screen-understanding assistant.",
-  "Analyze the supplied screenshot only to summarize the user's current activity.",
-  "Do not transcribe passwords, access tokens, private message bodies, or other secrets.",
-  "If sensitive content is visible, set sensitive to true and describe it generically.",
-  "Return only one JSON object with exactly these keys:",
-  "summary (string, <=500 chars), activity (string, <=200 chars), confidence (number 0..1), sensitive (boolean), apps (array of <=12 short strings).",
+  "你是 EchoLog 的私有屏幕理解助手。",
+  "只分析提供的截图，并概括用户当前正在做什么。",
+  "不要抄录密码、访问令牌、私信正文或其他秘密信息。",
+  "如果截图中有敏感内容，将 sensitive 设为 true，并用概括性的中文描述。",
+  "必须使用简体中文输出所有字段值；不要输出英文句子、英文解释或英文应用名。",
+  "如果应用名称没有合适的中文名称，使用中文通用类别，例如“邮箱”“浏览器”“代码编辑器”或“即时通讯”。",
+  "只返回一个 JSON 对象，并且只能包含以下固定键名：",
+  "summary（字符串，最多 500 个字符）、activity（字符串，最多 200 个字符）、confidence（0 到 1 的数字）、sensitive（布尔值）、apps（最多 12 个简短中文字符串的数组）。",
 ].join(" ");
 
 export type VisionProviderErrorCode =
@@ -68,7 +70,7 @@ export function buildVisionRequestPayload(
         content: [
           {
             type: "text",
-            text: "Describe what the user is doing now. Keep the response concise and return the requested JSON object.",
+            text: "请用简体中文简洁描述用户现在正在做什么，并返回要求的 JSON 对象。不要使用英文。",
           },
           {
             type: "image_url",

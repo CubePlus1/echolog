@@ -44,6 +44,7 @@ daemon exclusively pre-creates mode `0600` stdout/stderr files inside one mode
 OpenAI-compatible vision endpoint, and deletes the directory in `finally`.
 Keychain operations execute the inner helper directly; API keys never enter the
 database, argv, logs, or API responses. Successful runs persist only structured
-summary/activity/apps/confidence metadata. The one-shot capture process has its
-own 12-second hard watchdog, shorter than the daemon's 15-second request timeout.
+summary/activity/apps/confidence metadata, with displayed field values required
+to be in Simplified Chinese. The one-shot capture process has its own 12-second
+hard watchdog, shorter than the daemon's 15-second request timeout.
 Never invoke `request-permission` from the daemon.
