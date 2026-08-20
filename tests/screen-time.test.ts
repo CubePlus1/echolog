@@ -23,6 +23,7 @@ import {
 import { PluginHost } from "../src/core/plugins/host.js";
 import { runPluginCommand } from "../src/core/plugins/command-runner.js";
 import { pluginRoutes } from "../src/server/routes/plugins.js";
+import { SCREEN_UNDERSTANDING_SCHEDULER_POLL_MS } from "../plugins/screen-time/src/index.js";
 
 function rule(overrides: Partial<AppRule> = {}): AppRule {
   return {
@@ -66,6 +67,11 @@ test("screen classification preserves priority and time-window behavior", () => 
       { label: "生活", seconds: 1_800 },
     ]
   );
+});
+
+test("screen understanding scheduler polls more finely than its configured interval", () => {
+  assert.equal(SCREEN_UNDERSTANDING_SCHEDULER_POLL_MS, 5_000);
+  assert.ok(SCREEN_UNDERSTANDING_SCHEDULER_POLL_MS < 60_000);
 });
 
 test("compatibility routes remain registered and validate input", async () => {

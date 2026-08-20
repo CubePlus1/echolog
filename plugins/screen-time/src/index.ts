@@ -26,6 +26,10 @@ let providerProfiles: ProviderProfileService | null = null;
 let screenCapture: MacScreenCaptureService | null = null;
 let screenUnderstanding: ScreenUnderstandingService | null = null;
 
+// Poll frequently enough that a dynamic 120-second setting is not rounded up
+// to the next minute-sized scheduler tick.
+export const SCREEN_UNDERSTANDING_SCHEDULER_POLL_MS = 5_000;
+
 function requireService(): ScreenService {
   if (!service) throw new Error("screen-time service is not initialized");
   return service;
@@ -247,7 +251,7 @@ export const screenTimePlugin: PluginDefinition = {
     });
     context.registerJob({
       id: "screen-understanding",
-      intervalMs: 60_000,
+      intervalMs: SCREEN_UNDERSTANDING_SCHEDULER_POLL_MS,
       timeoutMs: 130_000,
       run: (signal) => screenUnderstanding!.runScheduled(signal).then(() => undefined),
     });
