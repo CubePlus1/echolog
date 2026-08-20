@@ -335,7 +335,11 @@ body {
 }
 
 .left-page-hit-proxy * { pointer-events: none !important; }
-.left-page-hit-proxy button { pointer-events: auto !important; }
+.left-page-hit-proxy button,
+.left-page-hit-proxy input,
+.left-page-hit-proxy textarea,
+.left-page-hit-proxy select,
+.left-page-hit-proxy label { pointer-events: auto !important; }
 
 .leaf.back {
   transform: rotateY(180deg);
