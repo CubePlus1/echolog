@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>识图管理 · EchoLog</title>
+  <link rel="stylesheet" href="/screen-understanding.css" />
+  <script type="module" src="/screen-understanding.js"></script>
+</head>
+<body>
+  <div class="shell">
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="返回回声志">
+        <span class="brand-mark">志</span>
+        <span>
+          <strong>回声志</strong>
+          <small>EchoLog / Screen Understanding</small>
+        </span>
+      </a>
+      <div class="topbar-meta">
+        <span id="serviceBadge" class="status-pill is-loading">检查服务…</span>
+        <a href="/">返回书页</a>
+      </div>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div class="eyebrow">SCREEN UNDERSTANDING · LOCAL CONTROL</div>
+        <h1>识图中枢</h1>
+        <p>在这里管理模型连接、屏幕识别周期和结果历史。原始截图只在单次识别请求期间存在，不进入历史。</p>
+        <div class="hero-actions">
+          <button id="runNowHero" class="button button-primary" type="button">立即识别 <span>↗</span></button>
+          <span id="heroHint" class="muted">准备读取配置…</span>
+        </div>
+      </section>
+
+      <div class="dashboard-grid">
+        <aside class="sidebar stack">
+          <section class="panel provider-panel">
+            <div class="panel-heading">
+              <div>
+                <div class="eyebrow">01 / PROVIDER</div>
+                <h2>模型连接</h2>
+              </div>
+              <span id="keyBadge" class="mini-status">未选择</span>
+            </div>
+
+            <label class="field-label" for="providerSelect">当前配置</label>
+            <select id="providerSelect" class="field-control"></select>
+            <div id="providerEmpty" class="empty-inline" hidden>还没有模型配置，请在下面新建。</div>
+
+            <div id="providerDetails" class="provider-details" hidden>
+              <div class="field-grid">
+                <label class="field-label">显示名称<input id="providerName" class="field-control" type="text" /></label>
+                <label class="field-label">模型<input id="providerModel" class="field-control" type="text" /></label>
+              </div>
+              <label class="field-label">Base URL<input id="providerBaseUrl" class="field-control" type="url" /></label>
+              <div class="row-actions">
+                <button id="saveProvider" class="button button-quiet" type="button">保存配置</button>
+                <span id="providerVersion" class="muted"></span>
+              </div>
+              <div class="key-entry">
+                <label class="field-label" for="apiKeyInput">API Key <span class="field-note">只写入 macOS Keychain</span></label>
+                <div class="key-row">
+                  <input id="apiKeyInput" class="field-control" type="password" autocomplete="new-password" placeholder="输入 API Key" />
+                  <button id="saveKey" class="button button-accent" type="button">保存密钥</button>
+                </div>
+                <div id="keyMessage" class="form-message" role="status"></div>
+              </div>
+            </div>
+
+            <details class="create-details">
+              <summary>新建模型配置</summary>
+              <div class="details-body">
+                <div class="field-grid">
+                  <label class="field-label">配置 ID<input id="newProviderId" class="field-control" type="text" placeholder="vision-primary" /></label>
+                  <label class="field-label">显示名称<input id="newProviderName" class="field-control" type="text" placeholder="Primary vision" /></label>
+                </div>
+                <label class="field-label">Base URL<input id="newProviderBaseUrl" class="field-control" type="url" placeholder="https://provider.example/v1" /></label>
+                <label class="field-label">模型名<input id="newProviderModel" class="field-control" type="text" placeholder="vision-model" /></label>
+                <button id="createProvider" class="button button-quiet button-full" type="button">创建配置</button>
+              </div>
+            </details>
+          </section>
+
+          <section class="panel settings-panel">
+            <div class="panel-heading">
+              <div>
+                <div class="eyebrow">02 / SCHEDULE</div>
+                <h2>识别设置</h2>
+              </div>
+              <span id="settingsVersion" class="muted">v—</span>
+            </div>
+            <label class="toggle-row"><input id="settingsEnabled" type="checkbox" /><span class="toggle-ui"></span><span>启用周期识别</span></label>
+            <label class="toggle-row"><input id="settingsSkipIdle" type="checkbox" /><span class="toggle-ui"></span><span>空闲时跳过</span></label>
+            <div class="field-grid settings-grid">
+              <label class="field-label">识别间隔（秒）<input id="settingsInterval" class="field-control" type="number" min="60" max="3600" step="60" /></label>
+              <label class="field-label">每日请求上限<input id="settingsBudget" class="field-control" type="number" min="1" max="1440" /></label>
+            </div>
+            <button id="saveSettings" class="button button-primary button-full" type="button">保存识别设置</button>
+            <div id="settingsMessage" class="form-message" role="status"></div>
+          </section>
+
+          <section class="privacy-note">
+            <span class="privacy-icon">◌</span>
+            <div><strong>本机优先</strong><p>截图临时存于内存/私有临时目录，识别后清理；API Key 不会写入数据库。</p></div>
+          </section>
+        </aside>
+
+        <section class="content-stack stack">
+          <section class="panel latest-panel">
+            <div class="panel-heading latest-heading">
+              <div>
+                <div class="eyebrow">03 / LATEST OBSERVATION</div>
+                <h2>最近识别</h2>
+              </div>
+              <span id="latestTime" class="muted">—</span>
+            </div>
+            <div id="latestEmpty" class="latest-empty">
+              <span class="empty-glyph">◎</span>
+              <div><strong>还没有识别结果</strong><p>配置好模型并保存设置后，点击“立即识别”。</p></div>
+            </div>
+            <article id="latestResult" class="result-card" hidden>
+              <div class="result-main">
+                <div id="latestSummary" class="result-summary"></div>
+                <div id="latestActivity" class="result-activity"></div>
+              </div>
+              <div class="result-meta">
+                <span id="latestConfidence" class="metric-chip"></span>
+                <span id="latestSensitive" class="metric-chip" hidden>含敏感内容</span>
+                <span id="latestModel" class="metric-chip"></span>
+              </div>
+              <div id="latestApps" class="app-list"></div>
+            </article>
+          </section>
+
+          <section class="panel history-panel">
+            <div class="panel-heading">
+              <div>
+                <div class="eyebrow">04 / HISTORY</div>
+                <h2>识别历史</h2>
+              </div>
+              <button id="refreshHistory" class="icon-button" type="button" title="刷新历史" aria-label="刷新历史">↻</button>
+            </div>
+            <div id="historyList" class="history-list"></div>
+            <div id="historyEmpty" class="empty-inline">暂无历史记录。</div>
+          </section>
+        </section>
+      </div>
+    </main>
+
+    <footer class="footer"><span>EchoLog local-first control surface</span><span id="updatedAt">—</span></footer>
+  </div>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+</body>
+</html>
