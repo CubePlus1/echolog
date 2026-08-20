@@ -487,6 +487,7 @@ curl -X POST http://localhost:19827/api/plugins/screen-time/understanding/run \
   -H 'Content-Type: application/json' -d '{}'
 curl http://localhost:19827/api/plugins/screen-time/understanding/latest
 curl 'http://localhost:19827/api/plugins/screen-time/understanding/history?limit=20'
+curl -X DELETE http://localhost:19827/api/plugins/screen-time/understanding/history/<observation-id>
 ```
 
 成功响应形状为：
@@ -509,6 +510,8 @@ curl 'http://localhost:19827/api/plugins/screen-time/understanding/history?limit
 ```
 
 成功结果只保存上述结构化字段，不保存 PNG、完整 prompt、模型原始响应或密钥。
+历史删除接口只接受 loopback 请求，删除指定 observation 后返回 `204`；不存在的
+observation 返回 `404`。它不会删除 request budget ledger。
 周期任务每分钟检查一次 settings，并按 `captureIntervalSeconds`、`skipWhenIdle`、
 `dailyRequestBudget` 和可选的 `dailyCostBudgetMicros` 约束执行。一次进程内同时只
 允许一个识别任务；临时网络错误按 `maxAttempts` 有界重试。

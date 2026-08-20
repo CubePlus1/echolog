@@ -261,6 +261,14 @@ export class ScreenStore {
       .limit(limit);
   }
 
+  async deleteUnderstandingObservation(id: string): Promise<boolean> {
+    const [deleted] = await this.db
+      .delete(screenUnderstandingObservations)
+      .where(eq(screenUnderstandingObservations.id, id))
+      .returning({ id: screenUnderstandingObservations.id });
+    return Boolean(deleted);
+  }
+
   private async ensureUnderstandingSettings(): Promise<void> {
     await this.db
       .insert(screenUnderstandingSettings)

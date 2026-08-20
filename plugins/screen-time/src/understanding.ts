@@ -82,6 +82,7 @@ export interface UnderstandingStore {
   }): Promise<ScreenUnderstandingObservation>;
   latestUnderstandingObservation(): Promise<ScreenUnderstandingObservation | null>;
   listUnderstandingObservations(limit: number): Promise<ScreenUnderstandingObservation[]>;
+  deleteUnderstandingObservation(id: string): Promise<boolean>;
 }
 
 export interface UnderstandingProviderResolver {
@@ -431,5 +432,9 @@ export class ScreenUnderstandingService {
     const bounded = Math.max(1, Math.min(MAX_HISTORY_LIMIT, Math.trunc(limit)));
     const rows = await this.store.listUnderstandingObservations(bounded);
     return rows.map(serializeObservation);
+  }
+
+  async delete(id: string): Promise<boolean> {
+    return this.store.deleteUnderstandingObservation(id);
   }
 }

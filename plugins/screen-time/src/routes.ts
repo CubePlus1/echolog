@@ -373,6 +373,16 @@ function handlers(
       }
       return understanding().history(limit);
     },
+    deleteUnderstanding: async (request: PluginHttpRequest) => {
+      if (!understanding) throw new Error("screen understanding service is unavailable");
+      if (!/^[A-Za-z0-9_-]{8,32}$/.test(request.params.id)) {
+        return response(400, { error: "observation id is invalid" });
+      }
+      const deleted = await understanding().delete(request.params.id);
+      return deleted
+        ? response(204, null)
+        : response(404, { error: `screen understanding observation ${request.params.id} not found` });
+    },
   };
 }
 
@@ -477,6 +487,11 @@ export function createScreenRoutes(
       method: "GET" as const,
       suffix: "/understanding/history",
       handler: routeHandlers.understandingHistory,
+    }, {
+      method: "DELETE" as const,
+      suffix: "/understanding/history/:id",
+      handler: routeHandlers.deleteUnderstanding,
+      localOnly: true,
     }] : []),
   ];
 

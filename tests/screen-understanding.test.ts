@@ -129,6 +129,12 @@ function makeStore() {
     },
     async latestUnderstandingObservation() { return observations.at(-1) ?? null; },
     async listUnderstandingObservations(limit: number) { return observations.slice(-limit).reverse(); },
+    async deleteUnderstandingObservation(id: string) {
+      const index = observations.findIndex((item) => item.id === id);
+      if (index < 0) return false;
+      observations.splice(index, 1);
+      return true;
+    },
   };
 }
 
@@ -186,6 +192,7 @@ test("understanding routes expose local run and safe history endpoints", async (
     async run() { return { id: "obs", summary: "ok" }; },
     async latest() { return null; },
     async history() { return []; },
+    async delete() { return true; },
   };
   const routes = createScreenRoutes(
     (() => ({})) as any,
@@ -196,7 +203,10 @@ test("understanding routes expose local run and safe history endpoints", async (
   );
   const run = routes.find((route) => route.path.endsWith("/understanding/run"));
   const latest = routes.find((route) => route.path.endsWith("/understanding/latest"));
+  const remove = routes.find((route) => route.path.endsWith("/understanding/history/:id"));
   assert.equal(run?.localOnly, true);
+  assert.equal(remove?.localOnly, true);
   assert.deepEqual(await run?.handler({ params: {}, query: {}, body: {} , headers: {} }, new AbortController().signal), { id: "obs", summary: "ok" });
   assert.deepEqual(await latest?.handler({ params: {}, query: {}, body: null, headers: {} }, new AbortController().signal), null);
+  assert.deepEqual(await remove?.handler({ params: { id: "TW8clzb3OXmB" }, query: {}, body: null, headers: {} }, new AbortController().signal), { statusCode: 204, body: null });
 });
