@@ -50,6 +50,10 @@ executable="$app/Contents/MacOS/echolog-screen-capture"
 /bin/mkdir -p "$app/Contents/MacOS"
 /usr/bin/install -m 0755 "$bin_dir/echolog-screen-capture" "$executable"
 /usr/bin/strip -S "$executable"
+if LC_ALL=C /usr/bin/grep -a -Eq '/Users/|/private/var/folders/' "$executable"; then
+  echo "release executable contains machine-local build paths after strip" >&2
+  exit 1
+fi
 /usr/bin/install -m 0644 "$script_dir/Resources/Info.plist" "$app/Contents/Info.plist"
 
 if [[ $adhoc_smoke -eq 1 ]]; then

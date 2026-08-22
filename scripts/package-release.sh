@@ -124,7 +124,7 @@ STATUS_JSON="$status_json" node -e 'const value = JSON.parse(process.env.STATUS_
 
 # Keep the ready-to-run bundle portable: production runtime dependencies stay,
 # while pnpm's machine-local install metadata and dev-only toolchain are removed.
-pnpm install --prod --frozen-lockfile
+CI=1 pnpm install --prod --frozen-lockfile --offline --ignore-scripts
 /bin/rm -f node_modules/.modules.yaml node_modules/.pnpm-workspace-state-v1.json
 find "$bundle_root" -type d -name '.bin' -prune -exec /bin/rm -rf {} +
 
@@ -148,7 +148,9 @@ const manifest = {
     sourceIncluded: true,
     compiledArtifactsIncluded: true,
     lockedDependenciesIncluded: true,
+    productionDependenciesIncluded: true,
     dependencyScope: "production",
+    migrationEntryPoint: "dist/migrate.js",
     configurationIncluded: "config.yaml.example",
   },
   screenCaptureApp: {
@@ -167,7 +169,7 @@ const manifest = {
     "pnpm build",
     "pnpm test",
     "pnpm typecheck",
-    "pnpm install --prod --frozen-lockfile",
+    "pnpm install --prod --frozen-lockfile --offline --ignore-scripts",
     `swift test: ${process.env.SWIFT_TEST_RESULT}`,
     "codesign --verify --deep --strict",
     "helper status --json contract",
