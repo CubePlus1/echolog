@@ -1,3 +1,6 @@
+> [!IMPORTANT]
+> **AI Agent 请直接读取 [README_AGENT.md](README_AGENT.md)**，不要从人类版说明中猜测安装、JSON 输出或错误处理契约。参与仓库开发时再读取 [AGENTS.md](AGENTS.md)。
+
 # EchoLog
 
 本地优先（local-first）的个人活动记录与复盘引擎——**给人用，也给 AI agent 用**。
@@ -19,9 +22,26 @@
 - **提醒**（可选）：任务超时、空闲提醒、macOS 通知 + ntfy 推送到手机
 - **四个入口，一套 REST API**：免构建的 Web 控制台、`el` CLI、本地 stdio MCP、HTTP API（`docs/API.md`）
 
-## 快速开始
+## 下载即用（v0.2.0 macOS arm64）
 
-要求：Node.js ≥ 22、pnpm、Docker（跑 PostgreSQL）。
+Release 中的 `echolog-v0.2.0-macos-arm64-adhoc.tar.gz` 同时包含源码、已编译的 Node/TypeScript 产物、锁定依赖和 `EchoLogScreenCapture.app`。它面向 Apple Silicon、macOS 14+；仍需本机已有 Node.js 22、pnpm 和 Docker。
+
+```bash
+tar -xzf echolog-v0.2.0-macos-arm64-adhoc.tar.gz
+cd echolog-v0.2.0-macos-arm64
+cp config.yaml.example config.yaml
+docker compose up -d
+pnpm migrate
+node dist/server/app.js
+```
+
+打开 `http://localhost:19827`。首次启用 AI 屏幕识别时，在 Web 的 screen-understanding 管理页配置 Provider 和本机 Keychain 密钥，再由交互式用户为包内 `EchoLogScreenCapture.app` 授予“屏幕与系统音频录制”权限。
+
+> 当前 v0.2.0 App 资产使用 ad-hoc 签名并通过 `codesign --verify --deep --strict` 校验，但未经过 Apple Developer ID 签名或 notarization。首次打开时 macOS 可能要求在“隐私与安全性”中手动允许。归档、独立 App ZIP、构建清单和 `SHA256SUMS` 一并附在 Release 中。
+
+## 从源码开始
+
+要求：Node.js ≥ 22、pnpm、Docker（跑 PostgreSQL）；编译权限 App 还需要 macOS 14+ 和 Xcode Command Line Tools。
 
 ```bash
 git clone https://github.com/CubePlus1/echolog.git && cd echolog
@@ -124,6 +144,8 @@ screen-understanding helper 不属于 portable build。本机 smoke 组装使用
 `ECHOLOG_MACOS_ADHOC_SMOKE=1 pnpm build:macos-capture`；正式签名使用
 `ECHOLOG_MACOS_SIGNING_IDENTITY=... pnpm build:macos-release`。启用识图后，截图只在
 单次请求内存中存在；数据库只保存结构化理解结果，不保存图片或 API key。
+
+维护者可用 `pnpm package:macos` 在隔离的 Git `HEAD` 快照中重建 v0.2.0 arm64 ad-hoc 发布资产；输出位于 `release/v0.2.0/`。脚本会安装锁定依赖、执行 Node 构建与测试、验证 App 身份，并生成 manifest 与 SHA-256；完整 Xcode 提供 XCTest 时还会执行 Swift tests，仅安装 Command Line Tools 时会在 manifest 中明确记录跳过原因。
 
 ## 架构
 

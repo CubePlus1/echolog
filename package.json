@@ -1,6 +1,6 @@
 {
   "name": "echolog",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Local-first developer activity recorder and review engine",
   "type": "module",
   "bin": {
@@ -11,6 +11,7 @@
     "build": "pnpm --filter @echolog/plugin-sdk build && pnpm --filter @echolog/plugin-screen-time build && pnpm --filter @echolog/plugin-tmux-status build && tsup",
     "build:macos-capture": "bash scripts/build-macos-capture.sh",
     "build:macos-release": "pnpm build && pnpm build:macos-capture",
+    "package:macos": "bash scripts/package-release.sh --version 0.2.0 --adhoc",
     "cli": "tsx src/cli/index.ts",
     "migrate": "tsx src/migrate.ts",
     "test": "tsx --test tests/**/*.test.ts",
