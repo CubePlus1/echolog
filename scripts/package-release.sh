@@ -57,6 +57,8 @@ for command_name in git node pnpm shasum tar; do
   command -v "$command_name" >/dev/null || { echo "missing required command: $command_name" >&2; exit 2; }
 done
 
+pnpm_store_path="$(pnpm store path)"
+
 git -C "$repo_root" cat-file -e "${source_ref}^{commit}"
 source_commit="$(git -C "$repo_root" rev-parse "${source_ref}^{commit}")"
 source_version="$(git -C "$repo_root" show "${source_ref}:package.json" | node -e 'let value=""; process.stdin.on("data", chunk => value += chunk); process.stdin.on("end", () => console.log(JSON.parse(value).version));')"
@@ -185,7 +187,18 @@ NODE
 /bin/rm -rf "$bundle_root/plugins/screen-time/native/macos-capture/.build"
 find "$bundle_root" -name '.DS_Store' -delete
 
-path_scan_output="$(LC_ALL=C /usr/bin/grep -aR -l -E '/Users/[^/[:space:]]+/|/private/var/folders/' "$bundle_root" || true)"
+temp_root_physical="$(cd "$temp_root" && pwd -P)"
+scan_prefixes=("$repo_root/" "$temp_root/" "$temp_root_physical/" "$pnpm_store_path/")
+if [[ -n "${HOME:-}" ]]; then
+  scan_prefixes+=("$HOME/")
+fi
+path_scan_output=""
+for scan_prefix in "${scan_prefixes[@]}"; do
+  matches="$(LC_ALL=C /usr/bin/grep -aR -l -F "$scan_prefix" "$bundle_root" || true)"
+  if [[ -n "$matches" ]]; then
+    path_scan_output+="${path_scan_output:+$'\n'}$matches"
+  fi
+done
 if [[ -n "$path_scan_output" ]]; then
   echo "release bundle contains machine-local absolute paths:" >&2
   echo "$path_scan_output" >&2
