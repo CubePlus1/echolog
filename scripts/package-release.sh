@@ -12,7 +12,7 @@ usage() {
 usage: scripts/package-release.sh --version VERSION (--adhoc | --signing-identity ID) [--source-ref REF] [--output DIR]
 
 Builds a macOS arm64 ready-to-run archive from an isolated Git snapshot.
-The archive includes source, compiled Node artifacts, locked dependencies,
+The archive includes source, compiled Node artifacts, locked production dependencies,
 and EchoLogScreenCapture.app. Ad-hoc output is not notarized.
 EOF
   exit 2
@@ -122,6 +122,16 @@ minimum_os="$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$app_p
 status_json="$("$app_executable" status --json)"
 STATUS_JSON="$status_json" node -e 'const value = JSON.parse(process.env.STATUS_JSON); if (value.ok !== true || value.command !== "status" || value.bundleIdentifier !== "com.cubeplus1.echolog.screen-capture" || !["granted", "request-needed"].includes(value.permission)) process.exit(1);'
 
+# Keep the ready-to-run bundle portable: production runtime dependencies stay,
+# while pnpm's machine-local install metadata and dev-only toolchain are removed.
+pnpm install --prod --frozen-lockfile
+/bin/rm -f node_modules/.modules.yaml node_modules/.pnpm-workspace-state-v1.json
+find "$bundle_root" -type d -name '.bin' -prune -exec /bin/rm -rf {} +
+
+node dist/cli/index.js --help >/dev/null
+node --check dist/migrate.js
+node --check dist/server/app.js
+
 generated_at="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
 server_sha="$(shasum -a 256 dist/server/app.js | awk '{print $1}')"
 cli_sha="$(shasum -a 256 dist/cli/index.js | awk '{print $1}')"
@@ -138,6 +148,7 @@ const manifest = {
     sourceIncluded: true,
     compiledArtifactsIncluded: true,
     lockedDependenciesIncluded: true,
+    dependencyScope: "production",
     configurationIncluded: "config.yaml.example",
   },
   screenCaptureApp: {
@@ -156,9 +167,11 @@ const manifest = {
     "pnpm build",
     "pnpm test",
     "pnpm typecheck",
+    "pnpm install --prod --frozen-lockfile",
     `swift test: ${process.env.SWIFT_TEST_RESULT}`,
     "codesign --verify --deep --strict",
     "helper status --json contract",
+    "portable absolute-path scan",
   ],
   warning: process.env.SIGNATURE_KIND === "adhoc"
     ? "Ad-hoc signed and not notarized; first launch may require manual approval in macOS Privacy & Security."
@@ -169,6 +182,25 @@ NODE
 
 /bin/rm -rf "$bundle_root/plugins/screen-time/native/macos-capture/.build"
 find "$bundle_root" -name '.DS_Store' -delete
+
+path_scan_output="$(LC_ALL=C /usr/bin/grep -aR -l -E '/Users/[^/[:space:]]+/|/private/var/folders/' "$bundle_root" || true)"
+if [[ -n "$path_scan_output" ]]; then
+  echo "release bundle contains machine-local absolute paths:" >&2
+  echo "$path_scan_output" >&2
+  exit 1
+fi
+
+absolute_links="$(find "$bundle_root" -type l -exec /bin/sh -c '
+  for link_path do
+    link_target="$(readlink "$link_path")"
+    case "$link_target" in /*) printf "%s -> %s\n" "$link_path" "$link_target";; esac
+  done
+' sh {} +)"
+if [[ -n "$absolute_links" ]]; then
+  echo "release bundle contains absolute symlinks:" >&2
+  echo "$absolute_links" >&2
+  exit 1
+fi
 
 main_archive="$output_dir/${bundle_name}-${archive_suffix}.tar.gz"
 app_archive="$output_dir/EchoLogScreenCapture-v${version}-macos-arm64-${archive_suffix}.zip"

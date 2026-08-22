@@ -49,6 +49,7 @@ executable="$app/Contents/MacOS/echolog-screen-capture"
 /bin/rm -rf "$app"
 /bin/mkdir -p "$app/Contents/MacOS"
 /usr/bin/install -m 0755 "$bin_dir/echolog-screen-capture" "$executable"
+/usr/bin/strip -S "$executable"
 /usr/bin/install -m 0644 "$script_dir/Resources/Info.plist" "$app/Contents/Info.plist"
 
 if [[ $adhoc_smoke -eq 1 ]]; then

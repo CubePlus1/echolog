@@ -19,7 +19,7 @@ tar -xzf echolog-v0.2.0-macos-arm64-adhoc.tar.gz
 cd echolog-v0.2.0-macos-arm64
 cp config.yaml.example config.yaml
 docker compose up -d
-pnpm migrate
+node dist/migrate.js
 node dist/server/app.js
 ```
 
