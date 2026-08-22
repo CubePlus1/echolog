@@ -1,6 +1,7 @@
 import type {
   ScreenUnderstandingSettings,
 } from "./schema.js";
+import { ProviderError } from "./provider-profiles.js";
 
 export interface UnderstandingSettingsInput {
   enabled: boolean;
@@ -164,14 +165,53 @@ export type UnderstandingSettingsUpdateResult =
   | { ok: true; settings: ScreenUnderstandingSettings }
   | { ok: false; currentVersion: number };
 
+export interface UnderstandingProviderGuard {
+  withSelectable<T>(
+    id: string,
+    requireKey: boolean,
+    operation: () => Promise<T>,
+    signal?: AbortSignal
+  ): Promise<T>;
+}
+
 export class UnderstandingSettingsService {
-  constructor(private readonly store: UnderstandingSettingsStore) {}
+  constructor(
+    private readonly store: UnderstandingSettingsStore,
+    private readonly providers?: UnderstandingProviderGuard
+  ) {}
 
   async get(): Promise<ScreenUnderstandingSettings> {
     return this.store.getUnderstandingSettings();
   }
 
   async update(
+    expectedVersion: number,
+    input: UnderstandingSettingsInput,
+    signal?: AbortSignal
+  ): Promise<UnderstandingSettingsUpdateResult> {
+    const current = await this.store.getUnderstandingSettings();
+    if (current.version !== expectedVersion) {
+      return { ok: false, currentVersion: current.version };
+    }
+    if (input.enabled && input.providerProfileId === null && this.providers) {
+      throw new ProviderError(
+        "PROVIDER_KEY_REQUIRED",
+        "an enabled screen understanding configuration requires a provider profile",
+        409
+      );
+    }
+    if (input.providerProfileId !== null && this.providers) {
+      return this.providers.withSelectable(
+        input.providerProfileId,
+        input.enabled,
+        () => this.updateStore(expectedVersion, input),
+        signal
+      );
+    }
+    return this.updateStore(expectedVersion, input);
+  }
+
+  private async updateStore(
     expectedVersion: number,
     input: UnderstandingSettingsInput
   ): Promise<UnderstandingSettingsUpdateResult> {

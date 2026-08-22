@@ -873,6 +873,112 @@ const screen = program
 
 const screenRules = screen.command("rules").description("管理屏幕使用分类规则。");
 
+const screenUnderstanding = screen
+  .command("understanding")
+  .description("管理 AI 屏幕识别；识别需要本机已配置 Provider、Keychain 密钥并启用 settings。");
+
+withJson(
+  screenUnderstanding
+    .command("settings")
+    .description("查看 AI 屏幕识别的启用状态、周期和 Provider 配置。")
+    .addHelpText(
+      "after",
+      `
+示例:
+  $ el screen understanding settings
+  $ el screen understanding settings --json
+`
+    )
+).action(
+  action(async (thisCommand) => {
+    const result = await api("/api/plugins/screen-time/understanding/settings");
+    printSuccess(thisCommand, result, () => {
+      const settings = result as any;
+      console.log(`屏幕识别: ${settings.enabled ? "已启用" : "未启用"}`);
+      console.log(`  周期: ${settings.captureIntervalSeconds} 秒`);
+      console.log(`  Provider: ${settings.providerProfileId || "未选择"}`);
+    });
+  })
+);
+
+withJson(
+  screenUnderstanding
+    .command("run")
+    .description("立即采集活动显示器并调用 vision provider；仅允许本机 daemon。")
+    .addHelpText(
+      "after",
+      `
+示例:
+  $ el screen understanding run
+  $ el screen understanding run --json
+`
+    )
+).action(
+  action(async (thisCommand) => {
+    const result = await post("/api/plugins/screen-time/understanding/run", {});
+    printSuccess(thisCommand, result, () => {
+      console.log(`✓ 屏幕识别完成: ${(result as any).summary}`);
+      console.log(`  活动: ${(result as any).activity}`);
+      console.log(`  应用: ${(result as any).apps?.join("、") || "未识别"}`);
+    });
+  })
+);
+
+withJson(
+  screenUnderstanding
+    .command("latest")
+    .description("查看最近一次结构化屏幕识别结果。")
+    .addHelpText(
+      "after",
+      `
+示例:
+  $ el screen understanding latest --json
+`
+    )
+).action(
+  action(async (thisCommand) => {
+    const result = await api("/api/plugins/screen-time/understanding/latest");
+    printSuccess(thisCommand, result, () => {
+      if (!result) {
+        console.log("尚无屏幕识别结果");
+        return;
+      }
+      console.log(`最近识别: ${(result as any).summary}`);
+      console.log(`  活动: ${(result as any).activity}`);
+      console.log(`  应用: ${(result as any).apps?.join("、") || "未识别"}`);
+    });
+  })
+);
+
+withJson(
+  screenUnderstanding
+    .command("history")
+    .description("查看屏幕识别历史；limit 为 1–100 的整数，默认 20。")
+    .option("--limit <n>", "返回数量，范围 1–100", "20")
+    .addHelpText(
+      "after",
+      `
+示例:
+  $ el screen understanding history --limit 20 --json
+`
+    )
+).action(
+  action(async (thisCommand, opts: { limit: string }) => {
+    const limit = Number.parseInt(opts.limit, 10);
+    if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
+      throw new CliUsageError("--limit 必须是 1 到 100 的整数");
+    }
+    const result = await api(`/api/plugins/screen-time/understanding/history?limit=${limit}`);
+    printSuccess(thisCommand, result, () => {
+      for (const item of result as any[]) {
+        console.log(`  ${item.completedAt} ${item.summary}`);
+        console.log(`    活动: ${item.activity}`);
+        console.log(`    应用: ${item.apps?.join("、") || "未识别"}`);
+      }
+    });
+  })
+);
+
 withJson(
   screenRules
     .command("list")
