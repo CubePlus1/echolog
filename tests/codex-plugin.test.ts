@@ -199,3 +199,17 @@ test("review-work uses only documented read-oriented JSON commands", async () =>
     !/^el (start|stop|pause|resume|note|cancel|edit|add|sync)\b/.test(command)
   ));
 });
+
+test("screen-understanding Skill uses the read-only MCP and CLI surfaces", async () => {
+  const skill = await readSkill("screen-understanding");
+
+  assert.equal(skill.metadata.name, "screen-understanding");
+  assert.equal(skill.openai.policy?.allow_implicit_invocation, true);
+  assert.match(skill.openai.interface?.default_prompt ?? "", /\$echolog:screen-understanding/);
+  assert.match(skill.body, /get_screen_understanding/);
+  assert.match(skill.body, /el screen understanding latest --json/);
+  assert.match(skill.body, /never.*(?:API keys|raw screenshots)/i);
+  const examples = commandExamples(skill.body);
+  assert.ok(examples.length >= 2);
+  assert.ok(examples.every((command) => /--json/.test(command)));
+});

@@ -9,6 +9,12 @@ export default defineConfig([
     clean: true,
   },
   {
+    entry: ["src/migrate.ts"],
+    outDir: "dist",
+    format: "esm",
+    sourcemap: true,
+  },
+  {
     entry: ["src/cli/index.ts"],
     outDir: "dist/cli",
     format: "esm",

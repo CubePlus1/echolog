@@ -1,3 +1,6 @@
+> [!IMPORTANT]
+> **AI Agent 请直接读取 [README_AGENT.md](README_AGENT.md)**，不要从人类版说明中猜测安装、JSON 输出或错误处理契约。参与仓库开发时再读取 [AGENTS.md](AGENTS.md)。
+
 # EchoLog
 
 本地优先（local-first）的个人活动记录与复盘引擎——**给人用，也给 AI agent 用**。
@@ -19,9 +22,26 @@
 - **提醒**（可选）：任务超时、空闲提醒、macOS 通知 + ntfy 推送到手机
 - **四个入口，一套 REST API**：免构建的 Web 控制台、`el` CLI、本地 stdio MCP、HTTP API（`docs/API.md`）
 
-## 快速开始
+## 下载即用（v0.2.0 macOS arm64）
 
-要求：Node.js ≥ 22、pnpm、Docker（跑 PostgreSQL）。
+Release 中的 `echolog-v0.2.0-macos-arm64-adhoc.tar.gz` 同时包含源码、已编译的 Node/TypeScript 产物、锁定依赖和 `EchoLogScreenCapture.app`。它面向 Apple Silicon、macOS 14+；仍需本机已有 Node.js 22、pnpm 和 Docker。
+
+```bash
+tar -xzf echolog-v0.2.0-macos-arm64-adhoc.tar.gz
+cd echolog-v0.2.0-macos-arm64
+cp config.yaml.example config.yaml
+docker compose up -d
+node dist/migrate.js
+node dist/server/app.js
+```
+
+打开 `http://localhost:19827`。首次启用 AI 屏幕识别时，在 Web 的 screen-understanding 管理页配置 Provider 和本机 Keychain 密钥，再由交互式用户为包内 `EchoLogScreenCapture.app` 授予“屏幕与系统音频录制”权限。
+
+> 当前 v0.2.0 App 资产使用 ad-hoc 签名并通过 `codesign --verify --deep --strict` 校验，但未经过 Apple Developer ID 签名或 notarization。首次打开时 macOS 可能要求在“隐私与安全性”中手动允许。归档、独立 App ZIP、构建清单和 `SHA256SUMS` 一并附在 Release 中。
+
+## 从源码开始
+
+要求：Node.js ≥ 22、pnpm、Docker（跑 PostgreSQL）；编译权限 App 还需要 macOS 14+ 和 Xcode Command Line Tools。
 
 ```bash
 git clone https://github.com/CubePlus1/echolog.git && cd echolog
@@ -77,7 +97,7 @@ el tmux status --json     # tmux-status 原始快照（插件默认禁用）
 
 ### Codex 集成
 
-仓库提供一个可安装的 Codex Plugin 包：`integrations/codex/echolog`。它组合显式写入的 `$echolog:track-work`、只读复盘的 `$echolog:review-work` 和自动注册的本地 `el mcp`（8 个类型化工具）；standalone Skill 则使用无前缀名称，也保留手动 MCP 注册方式。Skills 与 MCP 都只经 HTTP API 访问 daemon，不直连数据库，也不复制服务端的唯一活跃记录和父子关系判断。
+仓库提供一个可安装的 Codex Plugin 包：`integrations/codex/echolog`。它组合显式写入的 `$echolog:track-work`、只读复盘的 `$echolog:review-work`、只读 AI 屏幕识别的 `$echolog:screen-understanding` 和自动注册的本地 `el mcp`（9 个类型化工具）；standalone Skill 则使用无前缀名称，也保留手动 MCP 注册方式。Skills 与 MCP 都只经 HTTP API 访问 daemon，不直连数据库，也不复制服务端的唯一活跃记录和父子关系判断。
 
 该 Codex Plugin 与 EchoLog Core 的 Bundled Plugin API v1 是不同层次：前者运行在 Codex 侧，后者运行在 EchoLog 服务内。personal marketplace 安装/更新、支持范围、前置条件与隐私边界见 [Codex Integration](docs/CODEX.md)。
 
@@ -120,6 +140,13 @@ launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.echolog.daemon.plist
 # 更新代码后：pnpm build && launchctl kickstart -k gui/$(id -u)/com.echolog.daemon
 ```
 
+screen-understanding helper 不属于 portable build。本机 smoke 组装使用
+`ECHOLOG_MACOS_ADHOC_SMOKE=1 pnpm build:macos-capture`；正式签名使用
+`ECHOLOG_MACOS_SIGNING_IDENTITY=... pnpm build:macos-release`。启用识图后，截图只在
+单次请求内存中存在；数据库只保存结构化理解结果，不保存图片或 API key。
+
+维护者可用 `pnpm package:macos` 在隔离的 Git `HEAD` 快照中重建 v0.2.0 arm64 ad-hoc 发布资产；输出位于 `release/v0.2.0/`。脚本会安装锁定依赖、执行 Node 构建与测试、验证 App 身份，并生成 manifest 与 SHA-256；完整 Xcode 提供 XCTest 时还会执行 Swift tests，仅安装 Command Line Tools 时会在 manifest 中明确记录跳过原因。
+
 ## 架构
 
 ```text
@@ -149,6 +176,8 @@ Web 控制台是免构建的原生 JavaScript 3D 书。当前自然月固定分�
 每册只挂载当前页附近的少量 sheet，历史书册按选择后加载到页面；键盘、滚轮、拖动、目录跳转、父子任务跳转、进行中任务操作和插件页面保持可用。实时循环只更新进行中任务、今日摘要和插件的 live 数据，历史记录在结构变化或写操作后刷新。
 
 本次书卷与翻页优化关联 [GitHub Issue #26](https://github.com/CubePlus1/echolog/issues/26)；实现上下文保存在 `.trellis/tasks/08-17-web-book-pagination-optimization/`。
+
+screen-understanding 已接通 Provider/Keychain 管理、macOS 原生截图助手和真实 vision provider 调用；默认关闭，需在本机显式配置并启用。设置与截图基础由 [Issue #23](https://github.com/CubePlus1/echolog/issues/23) / [PR #22](https://github.com/CubePlus1/echolog/pull/22) 提供，运行时实现与验收记录在 [Trellis 任务](.trellis/tasks/08-20-screen-understanding-runtime/)；原始截图不落盘。
 
 ## 插件设计与功能
 

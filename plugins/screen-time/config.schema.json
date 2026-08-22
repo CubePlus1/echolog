@@ -16,6 +16,13 @@
       "minimum": 30,
       "maximum": 86400,
       "default": 180
+    },
+    "macos_helper_path": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096,
+      "pattern": "^/.*\\/EchoLogScreenCapture\\.app/Contents/MacOS/echolog-screen-capture$",
+      "description": "Optional absolute path to the packaged EchoLog screen-capture inner executable"
     }
   }
 }

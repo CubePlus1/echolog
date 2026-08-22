@@ -63,6 +63,7 @@ export interface PluginRoute {
   method: PluginHttpMethod;
   path: string;
   compatibilityAlias?: boolean;
+  localOnly?: boolean;
   handler(
     request: PluginHttpRequest,
     signal: AbortSignal
@@ -90,6 +91,7 @@ export interface PluginCommandRequest {
   timeoutMs?: number;
   maxBufferBytes?: number;
   env?: Record<string, string>;
+  stdin?: string;
 }
 
 export interface PluginCommandResult {

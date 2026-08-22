@@ -3,17 +3,32 @@ import type {
   PluginManifest,
 } from "@echolog/plugin-sdk";
 import manifestJson from "../echolog.plugin.json";
+import { MacKeychainClient } from "./macos-keychain-client.js";
+import {
+  MacScreenCaptureService,
+} from "./macos-screen-capture.js";
+import { validateMacosHelperExecutableOverride } from "./macos-helper.js";
+import { ProviderProfileService } from "./provider-profiles.js";
 import { createScreenRoutes } from "./routes.js";
 import { ScreenService } from "./screen.js";
 import { ScreenStore } from "./store.js";
 import { ScreenTracker } from "./tracker.js";
 import { UnderstandingSettingsService } from "./understanding-settings.js";
+import { ScreenUnderstandingService } from "./understanding.js";
+import { OpenAICompatibleVisionClient } from "./vision-provider.js";
 
 const manifest = manifestJson as PluginManifest;
 let store: ScreenStore | null = null;
 let tracker: ScreenTracker | null = null;
 let service: ScreenService | null = null;
 let understandingSettings: UnderstandingSettingsService | null = null;
+let providerProfiles: ProviderProfileService | null = null;
+let screenCapture: MacScreenCaptureService | null = null;
+let screenUnderstanding: ScreenUnderstandingService | null = null;
+
+// Poll frequently enough that a dynamic 120-second setting is not rounded up
+// to the next minute-sized scheduler tick.
+export const SCREEN_UNDERSTANDING_SCHEDULER_POLL_MS = 5_000;
 
 function requireService(): ScreenService {
   if (!service) throw new Error("screen-time service is not initialized");
@@ -25,6 +40,27 @@ function requireUnderstandingSettings(): UnderstandingSettingsService {
     throw new Error("screen understanding settings service is not initialized");
   }
   return understandingSettings;
+}
+
+function requireProviderProfiles(): ProviderProfileService {
+  if (!providerProfiles) {
+    throw new Error("screen understanding provider service is not initialized");
+  }
+  return providerProfiles;
+}
+
+function requireScreenCapture(): MacScreenCaptureService {
+  if (!screenCapture) {
+    throw new Error("screen capture service is not initialized");
+  }
+  return screenCapture;
+}
+
+function requireScreenUnderstanding(): ScreenUnderstandingService {
+  if (!screenUnderstanding) {
+    throw new Error("screen understanding service is not initialized");
+  }
+  return screenUnderstanding;
 }
 
 function integerConfig(
@@ -40,7 +76,13 @@ function integerConfig(
 
 export const screenTimePlugin: PluginDefinition = {
   manifest,
-  routes: createScreenRoutes(requireService, requireUnderstandingSettings),
+  routes: createScreenRoutes(
+    requireService,
+    requireUnderstandingSettings,
+    requireProviderProfiles,
+    requireScreenCapture,
+    requireScreenUnderstanding
+  ),
   defaultEnabled: true,
   defaultConfig: {
     sample_seconds: 5,
@@ -50,6 +92,9 @@ export const screenTimePlugin: PluginDefinition = {
     return {
       sample_seconds: integerConfig(config, "sample_seconds", 5),
       idle_seconds: integerConfig(config, "idle_seconds", 180),
+      ...(typeof config.macos_helper_path === "string"
+        ? { macos_helper_path: config.macos_helper_path }
+        : {}),
     };
   },
   validateConfig(config) {
@@ -62,6 +107,10 @@ export const screenTimePlugin: PluginDefinition = {
     if (idleSeconds < 30 || idleSeconds > 86_400) {
       errors.push("idle_seconds must be an integer from 30 to 86400");
     }
+    const helperPathError = validateMacosHelperExecutableOverride(
+      config.macos_helper_path
+    );
+    if (helperPathError) errors.push(helperPathError);
     return errors;
   },
   migrations: [{
@@ -111,21 +160,100 @@ export const screenTimePlugin: PluginDefinition = {
           CHECK (capture_display = 'active')
       );
     `,
+  }, {
+    name: "003_screen_understanding_provider_profiles",
+    sql: `
+      CREATE TABLE IF NOT EXISTS screen_understanding_provider_profiles (
+        id TEXT PRIMARY KEY,
+        version INTEGER NOT NULL DEFAULT 1,
+        display_name TEXT NOT NULL,
+        provider_kind TEXT NOT NULL,
+        base_url TEXT NOT NULL,
+        model TEXT NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        CONSTRAINT screen_understanding_provider_profiles_version_check
+          CHECK (version >= 1),
+        CONSTRAINT screen_understanding_provider_profiles_kind_check
+          CHECK (provider_kind = 'openai-compatible'),
+        CONSTRAINT screen_understanding_provider_profiles_display_name_check
+          CHECK (char_length(display_name) BETWEEN 1 AND 80),
+        CONSTRAINT screen_understanding_provider_profiles_model_check
+          CHECK (char_length(model) BETWEEN 1 AND 200)
+      );
+    `,
+  }, {
+    name: "004_screen_understanding_runtime",
+    sql: `
+      CREATE TABLE IF NOT EXISTS screen_understanding_requests (
+        id TEXT PRIMARY KEY,
+        requested_at TIMESTAMPTZ NOT NULL,
+        provider_profile_id TEXT NOT NULL,
+        status TEXT NOT NULL,
+        cost_micros INTEGER NOT NULL DEFAULT 0,
+        completed_at TIMESTAMPTZ
+      );
+      CREATE INDEX IF NOT EXISTS idx_screen_understanding_requests_requested_at
+        ON screen_understanding_requests(requested_at);
+      CREATE TABLE IF NOT EXISTS screen_understanding_observations (
+        id TEXT PRIMARY KEY,
+        captured_at TIMESTAMPTZ NOT NULL,
+        completed_at TIMESTAMPTZ NOT NULL,
+        provider_profile_id TEXT NOT NULL,
+        model TEXT NOT NULL,
+        summary TEXT NOT NULL,
+        activity TEXT NOT NULL,
+        confidence REAL NOT NULL,
+        sensitive BOOLEAN NOT NULL DEFAULT FALSE,
+        apps JSONB NOT NULL,
+        latency_ms INTEGER NOT NULL,
+        cost_micros INTEGER
+      );
+      CREATE INDEX IF NOT EXISTS idx_screen_understanding_observations_captured_at
+        ON screen_understanding_observations(captured_at);
+    `,
   }],
   register(context) {
     store = new ScreenStore(context.service<string>("database.url"));
-    understandingSettings = new UnderstandingSettingsService(store);
+    const helperPath = typeof context.config.macos_helper_path === "string"
+      ? context.config.macos_helper_path
+      : undefined;
+    const exec = (request: Parameters<typeof context.exec>[0], signal?: AbortSignal) =>
+      context.exec(request, signal);
+    providerProfiles = new ProviderProfileService(
+      store,
+      new MacKeychainClient(exec, helperPath)
+    );
+    screenCapture = new MacScreenCaptureService(exec, helperPath);
+    understandingSettings = new UnderstandingSettingsService(
+      store,
+      providerProfiles
+    );
     tracker = new ScreenTracker(context, store, {
       sampleSeconds: integerConfig(context.config, "sample_seconds", 5),
       idleSeconds: integerConfig(context.config, "idle_seconds", 180),
     });
     service = new ScreenService(store, tracker);
+    screenUnderstanding = new ScreenUnderstandingService(
+      store,
+      understandingSettings,
+      providerProfiles,
+      screenCapture,
+      new OpenAICompatibleVisionClient(),
+      tracker
+    );
 
     context.registerJob({
       id: "foreground-sample",
       intervalMs: tracker.config.sampleSeconds * 1_000,
       timeoutMs: 10_000,
       run: (signal) => tracker!.sample(signal),
+    });
+    context.registerJob({
+      id: "screen-understanding",
+      intervalMs: SCREEN_UNDERSTANDING_SCHEDULER_POLL_MS,
+      timeoutMs: 130_000,
+      run: (signal) => screenUnderstanding!.runScheduled(signal).then(() => undefined),
     });
     context.registerReportSection({
       id: "daily-screen-time",
@@ -156,6 +284,9 @@ export const screenTimePlugin: PluginDefinition = {
     tracker = null;
     service = null;
     understandingSettings = null;
+    providerProfiles = null;
+    screenCapture = null;
+    screenUnderstanding = null;
     store = null;
   },
   async doctor(context) {
@@ -194,6 +325,12 @@ export const screenTimePlugin: PluginDefinition = {
         });
       }
     }
+    checks.push(...await new MacScreenCaptureService(
+      (request, signal) => context.exec(request, signal),
+      typeof context.config.macos_helper_path === "string"
+        ? context.config.macos_helper_path
+        : undefined
+    ).doctor());
     return checks;
   },
 };

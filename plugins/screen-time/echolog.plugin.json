@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "apiVersion": "1",
   "displayName": "Screen Time",
-  "description": "Passive foreground application tracking and classification",
+  "description": "Passive foreground tracking, classification, and opt-in AI screen understanding",
   "entries": {
     "server": "./dist/index.js",
     "cli": "./dist/cli.js",
@@ -12,7 +12,8 @@
   },
   "capabilities": [
     "screen-usage",
-    "daily-report"
+    "daily-report",
+    "screen-understanding"
   ],
   "permissions": [
     "database:plugin",

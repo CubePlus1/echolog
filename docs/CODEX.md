@@ -30,7 +30,7 @@ The Plugin and Skills do not install dependencies, start Docker, expose the daem
 
 ## Install the combined Plugin
 
-The package at `integrations/codex/echolog` combines both Skills and an
+The package at `integrations/codex/echolog` combines all three Skills and an
 `.mcp.json` launcher for `el mcp`. For a default personal marketplace
 development install, follow the exact create, sync, validate, install, update,
 remove, and reinstall commands in the [Plugin README](../integrations/codex/echolog/README.md).
@@ -41,15 +41,16 @@ new Skills or MCP tools.
 
 ## Skills
 
-The combined Plugin exposes two namespaced Skills:
+The combined Plugin exposes three namespaced Skills:
 
 - `$echolog:track-work` performs explicit record writes. Implicit invocation is disabled.
 - `$echolog:review-work` reads status, history, notes, subtasks, reports, and screen-time without changing records.
+- `$echolog:screen-understanding` reads recent structured AI screen-recognition observations without changing settings or credentials.
 
 When either Skill is installed standalone rather than through the Plugin, use
 its unprefixed name: `$track-work` or `$review-work`.
 
-Inside the combined Plugin, both Skills prefer the bundled MCP tools. They
+Inside the combined Plugin, all three Skills prefer the bundled MCP tools. They
 retain `el --json` as a standalone fallback; record-note review uses CLI because
 the scoped MCP adapter does not expose note listing. API and ambiguity errors
 remain structured so Codex can show candidates rather than guessing.
@@ -60,6 +61,7 @@ Representative prompts:
 Use $echolog:track-work to start a task named "Review Codex Plugin manifest" in project echolog.
 Use $echolog:track-work to add a blocker to record <id>.
 Use $echolog:review-work to summarize my EchoLog activity today.
+Use $echolog:screen-understanding to tell me what the most recent screenshots showed.
 ```
 
 ## MCP tools
@@ -72,8 +74,9 @@ codex mcp add echolog -- el mcp
 codex mcp list
 ```
 
-The adapter exposes eight typed tools for status, history, subtasks, explicit
-start/control/note writes, daily report generation, and screen-time. It uses the
+The adapter exposes nine typed tools for status, history, subtasks, explicit
+start/control/note writes, daily report generation, screen-time, and recent AI
+screen-understanding observations. It uses the
 same HTTP thin-client boundary as the CLI. Full contracts and limits are in
 [MCP Server](MCP.md).
 

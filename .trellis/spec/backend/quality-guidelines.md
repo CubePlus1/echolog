@@ -39,6 +39,11 @@
 
 - doctor 类端点失败可返回 503,但响应仍须包含顶层 `error` 以及逐项 diagnostics。CLI 必须保留原始 JSON 错误体,人类模式必须展示逐项检查,两种模式都以非零退出。
 
+### macOS 发布包可移植性
+
+- 从隔离目录执行 `pnpm install` 后，不得直接归档完整安装树：`.modules.yaml`、`.pnpm-workspace-state-v1.json` 和 `.bin` shim 会记录 pnpm store 或临时 workspace 的绝对路径。ready-to-run 包应预编译迁移入口、裁剪为 production dependencies、删除这些本机元数据，并在归档前扫描打包机的实际 `HOME`、pnpm store、源码/临时根路径和绝对 symlink；不要用泛化的 `/Users/*` 规则误报依赖或文档中的第三方示例路径。
+- Swift release executable 在 codesign 前执行 `strip -S`，移除编译路径；随后必须重新签名并复验 designated requirement、`codesign --verify --deep --strict`、架构、最低系统版本和 `status --json`。
+
 ---
 
 ## Verification Checklist

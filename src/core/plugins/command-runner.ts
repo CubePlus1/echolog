@@ -9,8 +9,17 @@ export type PluginCommandRunner = (
   signal?: AbortSignal
 ) => Promise<PluginCommandResult>;
 
-export const runPluginCommand: PluginCommandRunner = (request, signal) =>
-  new Promise((resolve, reject) => {
+export const MAX_PLUGIN_STDIN_BYTES = 64 * 1024;
+
+export const runPluginCommand: PluginCommandRunner = (request, signal) => {
+  if (
+    request.stdin !== undefined &&
+    Buffer.byteLength(request.stdin, "utf8") > MAX_PLUGIN_STDIN_BYTES
+  ) {
+    return Promise.reject(new Error("Plugin command stdin exceeds 65536 bytes"));
+  }
+
+  return new Promise((resolve, reject) => {
     const child = execFile(
       request.executable,
       request.args,
@@ -34,4 +43,15 @@ export const runPluginCommand: PluginCommandRunner = (request, signal) =>
         });
       }
     );
+    if (request.stdin !== undefined && child.stdin) {
+      // A process may exit before consuming stdin. Swallowing the stream-level
+      // EPIPE is safe because execFile's callback still reports the exit.
+      child.stdin.on("error", (error: NodeJS.ErrnoException) => {
+        if (error.code !== "EPIPE") {
+          reject(new Error("Plugin command stdin write failed"));
+        }
+      });
+      child.stdin.end(request.stdin);
+    }
   });
+};

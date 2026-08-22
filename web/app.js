@@ -799,6 +799,25 @@ import { currentPeriod, periodBounds, volumeKey } from "./volumes.js";
     return state.flipped > 0 ? state.sheets.get(state.flipped - 1)?.children[1] : null;
   }
 
+  const LEFT_HIT_INTERACTIVE = "button, input, textarea, select";
+
+  function syncHitControlState(sourceControl, proxyControl, index) {
+    proxyControl.dataset.hitSourceIndex = String(index);
+    proxyControl.tabIndex = -1;
+    proxyControl.disabled = Boolean(sourceControl.disabled);
+    if (sourceControl instanceof HTMLInputElement && proxyControl instanceof HTMLInputElement) {
+      if (sourceControl.type === "checkbox" || sourceControl.type === "radio") {
+        proxyControl.checked = sourceControl.checked;
+      } else if (sourceControl.type !== "password") {
+        proxyControl.value = sourceControl.value;
+      }
+    } else if (sourceControl instanceof HTMLTextAreaElement && proxyControl instanceof HTMLTextAreaElement) {
+      proxyControl.value = sourceControl.value;
+    } else if (sourceControl instanceof HTMLSelectElement && proxyControl instanceof HTMLSelectElement) {
+      proxyControl.value = sourceControl.value;
+    }
+  }
+
   function syncLeftHitProxy() {
     const proxy = $("leftPageHitProxy");
     const source = visibleLeftLeaf();
@@ -815,11 +834,17 @@ import { currentPeriod, periodBounds, volumeKey } from "./volumes.js";
       el.tabIndex = -1;
     });
 
-    const sourceButtons = source.querySelectorAll("button");
-    proxy.querySelectorAll("button").forEach((button, index) => {
-      button.dataset.hitSourceIndex = String(index);
-      button.tabIndex = -1;
-      button.disabled = sourceButtons[index]?.disabled ?? true;
+    const sourceControls = source.querySelectorAll(LEFT_HIT_INTERACTIVE);
+    proxy.querySelectorAll(LEFT_HIT_INTERACTIVE).forEach((control, index) => {
+      const sourceControl = sourceControls[index];
+      if (sourceControl) syncHitControlState(sourceControl, control, index);
+    });
+    proxy.querySelectorAll("label").forEach((label) => {
+      const control = label.querySelector(LEFT_HIT_INTERACTIVE);
+      if (control?.dataset.hitSourceIndex !== undefined) {
+        label.dataset.hitSourceIndex = control.dataset.hitSourceIndex;
+        label.tabIndex = -1;
+      }
     });
   }
 
@@ -1029,12 +1054,39 @@ import { currentPeriod, periodBounds, volumeKey } from "./volumes.js";
   function setupActions() {
     const pages = $("pages");
 
+    const mirrorHitControl = (target) => {
+      if (!(target instanceof Element)) return null;
+      const hitProxy = target.closest("[data-hit-source-index]");
+      if (!hitProxy) return null;
+      const sourceControls = visibleLeftLeaf()?.querySelectorAll(LEFT_HIT_INTERACTIVE);
+      const sourceControl = sourceControls?.[Number(hitProxy.dataset.hitSourceIndex)];
+      if (!sourceControl || sourceControl.disabled) return null;
+      const proxyControl = hitProxy.matches(LEFT_HIT_INTERACTIVE)
+        ? hitProxy
+        : hitProxy.querySelector(LEFT_HIT_INTERACTIVE);
+      if (proxyControl instanceof HTMLInputElement && sourceControl instanceof HTMLInputElement) {
+        if (sourceControl.type === "checkbox" || sourceControl.type === "radio") sourceControl.checked = proxyControl.checked;
+        else sourceControl.value = proxyControl.value;
+      } else if (proxyControl instanceof HTMLTextAreaElement && sourceControl instanceof HTMLTextAreaElement) {
+        sourceControl.value = proxyControl.value;
+      } else if (proxyControl instanceof HTMLSelectElement && sourceControl instanceof HTMLSelectElement) {
+        sourceControl.value = proxyControl.value;
+      }
+      return { hitProxy, proxyControl, sourceControl };
+    };
+
     pages.addEventListener("click", (e) => {
-      const hitProxy = e.target.closest("[data-hit-source-index]");
+      const mirrored = mirrorHitControl(e.target);
+      const hitProxy = mirrored?.hitProxy;
       if (hitProxy) {
-        const sourceButtons = visibleLeftLeaf()?.querySelectorAll("button");
-        const sourceButton = sourceButtons?.[Number(hitProxy.dataset.hitSourceIndex)];
-        if (sourceButton && !sourceButton.disabled) sourceButton.click();
+        if (mirrored.sourceControl.tagName === "BUTTON") {
+          mirrored.sourceControl.click();
+          e.preventDefault();
+        }
+        else {
+          mirrored.proxyControl?.focus();
+          mirrored.sourceControl.dispatchEvent(new Event("change", { bubbles: true }));
+        }
         return;
       }
 
@@ -1085,6 +1137,13 @@ import { currentPeriod, periodBounds, volumeKey } from "./volumes.js";
       const btn = e.target.closest("[data-act]");
       if (btn) doAction(btn);
     });
+
+    for (const eventName of ["input", "change"]) {
+      pages.addEventListener(eventName, (e) => {
+        const mirrored = mirrorHitControl(e.target);
+        if (mirrored) mirrored.sourceControl.dispatchEvent(new Event(eventName, { bubbles: true }));
+      });
+    }
 
     pages.addEventListener("keydown", (e) => {
       if (e.key !== "Enter") return;

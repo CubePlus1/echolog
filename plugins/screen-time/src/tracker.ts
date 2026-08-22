@@ -64,6 +64,7 @@ export class ScreenTracker {
   private current: Segment | null = null;
   private lastSampleAt = 0;
   private lastMediaAt = 0;
+  private lastSample: Sample | null = null;
 
   constructor(
     private readonly context: PluginContext,
@@ -75,6 +76,14 @@ export class ScreenTracker {
     if (!this.current) return null;
     const { id, bundleId, appName, startAt, lastSeenAt } = this.current;
     return { id, bundleId, appName, startAt, lastSeenAt };
+  }
+
+  isIdle(): boolean {
+    return Boolean(
+      this.lastSample &&
+      this.lastSample.idleSeconds >= this.config.idleSeconds &&
+      !this.lastSample.mediaActive
+    );
   }
 
   async sample(signal: AbortSignal): Promise<void> {
@@ -91,6 +100,7 @@ export class ScreenTracker {
     this.lastSampleAt = nowMs;
 
     const sample = await this.takeSample(signal);
+    this.lastSample = sample;
     if (sample.mediaActive) this.lastMediaAt = nowMs;
     if (sample.idleSeconds >= this.config.idleSeconds && !sample.mediaActive) {
       if (this.current) {

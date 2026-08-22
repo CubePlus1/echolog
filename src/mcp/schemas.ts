@@ -75,6 +75,29 @@ export const screenTimeSchema = z.object({
   segments: z.array(z.record(z.string(), z.unknown())),
 }).passthrough();
 
+export const screenUnderstandingInputSchema = z.object({
+  limit: z.number().int().min(1).max(100).default(5),
+});
+
+export const screenUnderstandingObservationSchema = z.object({
+  id: z.string(),
+  capturedAt: z.string(),
+  completedAt: z.string(),
+  providerProfileId: z.string(),
+  model: z.string(),
+  summary: z.string(),
+  activity: z.string(),
+  confidence: z.number().min(0).max(1),
+  sensitive: z.boolean(),
+  apps: z.array(z.string()),
+  latencyMs: z.number().nonnegative(),
+  costMicros: z.number().int().nonnegative().nullable(),
+}).passthrough();
+
+export const screenUnderstandingSchema = z.object({
+  observations: z.array(screenUnderstandingObservationSchema),
+});
+
 export const emptyInputSchema = z.object({});
 
 export const listRecordsInputSchema = z.object({

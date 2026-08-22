@@ -34,10 +34,11 @@ Codex Cloud or ChatGPT Web.
 | `add_note` | Add a note, blocker, or next action | `POST /api/records/:id/notes` or `/active/notes` |
 | `generate_report` | Generate daily Markdown without sync | `POST /api/reports/daily` |
 | `get_screen_time` | Read screen-time usage | `GET /api/screen/today` or `/daily/:date` |
+| `get_screen_understanding` | Read recent AI screen-understanding observations | `GET /api/plugins/screen-time/understanding/history` |
 
 The server publishes Zod-derived input and output schemas plus MCP tool
 annotations. `get_status`, `list_records`, `get_subtasks`, `generate_report`,
-and `get_screen_time` are read-only. `start_record` and `add_note` are
+and `get_screen_time`, `get_screen_understanding` are read-only. `start_record` and `add_note` are
 non-idempotent writes. `control_record` is conservatively marked destructive
 because `stop` cannot be reversed by the current record state machine.
 

@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { ToolAnnotations } from "@modelcontextprotocol/sdk/types.js";
 import { api, patch, post } from "../client/api.js";
-import { executeTool, wrapRecords } from "./result.js";
+import { executeTool, wrapRecords, wrapScreenUnderstanding } from "./result.js";
 import {
   addNoteInputSchema,
   controlRecordInputSchema,
@@ -13,6 +13,8 @@ import {
   recordSchema,
   recordsSchema,
   reportSchema,
+  screenUnderstandingInputSchema,
+  screenUnderstandingSchema,
   screenTimeSchema,
   startRecordInputSchema,
   statusSchema,
@@ -28,6 +30,7 @@ export const MCP_TOOL_NAMES = [
   "add_note",
   "generate_report",
   "get_screen_time",
+  "get_screen_understanding",
 ] as const;
 
 const READ_ONLY: ToolAnnotations = {
@@ -185,6 +188,21 @@ export function createMcpServer(): McpServer {
     async ({ date }) => executeTool(() => api<unknown>(
       date ? `/api/screen/daily/${encodeURIComponent(date)}` : "/api/screen/today"
     ))
+  );
+
+  server.registerTool(
+    "get_screen_understanding",
+    {
+      title: "Get AI Screen Understanding",
+      description: "Return recent structured AI screen-understanding observations. This is read-only and never returns raw screenshots or API keys.",
+      inputSchema: screenUnderstandingInputSchema,
+      outputSchema: screenUnderstandingSchema,
+      annotations: READ_ONLY,
+    },
+    async ({ limit }) => executeTool(
+      () => api<unknown>(`/api/plugins/screen-time/understanding/history?limit=${limit}`),
+      wrapScreenUnderstanding
+    )
   );
 
   return server;

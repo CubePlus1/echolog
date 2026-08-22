@@ -9,7 +9,10 @@ import {
   type PluginManifest,
 } from "@echolog/plugin-sdk";
 import { PluginHost } from "../src/core/plugins/host.js";
-import { pluginRoutes } from "../src/server/routes/plugins.js";
+import {
+  isLoopbackAddress,
+  pluginRoutes,
+} from "../src/server/routes/plugins.js";
 
 const logger: PluginLogger = {
   debug() {},
@@ -244,6 +247,56 @@ test("plugin doctor failures use a structured 503 response", async () => {
     }],
   });
 
+  await app.close();
+  await pluginHost.stop();
+});
+
+test("local-only plugin routes reject remote clients before calling the handler", async () => {
+  assert.equal(isLoopbackAddress("127.0.0.1"), true);
+  assert.equal(isLoopbackAddress("::1"), true);
+  assert.equal(isLoopbackAddress("::ffff:127.0.0.1"), true);
+  assert.equal(isLoopbackAddress("192.0.2.10"), false);
+
+  let calls = 0;
+  const pluginHost = host([{
+    manifest: manifest("local-route"),
+    defaultEnabled: true,
+    routes: [{
+      method: "PUT",
+      path: "/api/plugins/local-route/key",
+      localOnly: true,
+      async handler() {
+        calls++;
+        return { ok: true };
+      },
+    }],
+  }]);
+  await pluginHost.initialize();
+  const app = Fastify();
+  await pluginRoutes(app, pluginHost);
+
+  const rejected = await app.inject({
+    method: "PUT",
+    url: "/api/plugins/local-route/key",
+    remoteAddress: "192.0.2.10",
+    payload: { ignored: "request-content" },
+  });
+  assert.equal(rejected.statusCode, 403);
+  assert.deepEqual(rejected.json(), {
+    error: "This operation is only available from localhost",
+    code: "PLUGIN_LOCAL_ONLY",
+    pluginId: "local-route",
+  });
+  assert.equal(rejected.body.includes("request-content"), false);
+  assert.equal(calls, 0);
+
+  const accepted = await app.inject({
+    method: "PUT",
+    url: "/api/plugins/local-route/key",
+    remoteAddress: "127.0.0.1",
+  });
+  assert.equal(accepted.statusCode, 200);
+  assert.equal(calls, 1);
   await app.close();
   await pluginHost.stop();
 });

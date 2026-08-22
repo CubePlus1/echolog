@@ -1,6 +1,6 @@
 # EchoLog Codex Plugin
 
-This Plugin packages two EchoLog Skills and the local `el mcp` server for
+This Plugin packages three EchoLog Skills and the local `el mcp` server for
 same-machine Codex use. It does not install EchoLog, PostgreSQL, or the daemon,
 and it never bundles `config.yaml`, credentials, or activity history.
 

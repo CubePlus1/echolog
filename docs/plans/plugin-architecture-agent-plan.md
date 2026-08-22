@@ -2,7 +2,7 @@
 
 ## 角色与目标
 
-你负责调查并规划 `/Users/sc/0code/0tools/echolog` 的插件化重构，同时核对 `/Users/sc/0code/tmux-status-package` 的外部 JSON 契约。当前阶段只完成 Trellis 规划和审核材料，不实现代码。
+你负责调查并规划 EchoLog 仓库的插件化重构，同时核对同级 tmux-status 仓库的外部 JSON 契约。当前阶段只完成 Trellis 规划和审核材料，不实现代码。
 
 目标是把 EchoLog 收敛为主动记录 Core，并建立可信 bundled plugins：
 
