@@ -190,7 +190,7 @@ Plugin API v1 的通知 named service 由 [GitHub Issue #35](https://github.com/
 
 - **screen-time**：macOS 前台应用被动采样；按应用和规则聚合今日屏幕使用，Web 可查看分类、维护分类规则，并提供运行时 screen-understanding settings 的版本化 GET/PUT API。历史 `app_usage`、`app_rules` 数据保持兼容。
 - **tmux-status**：调用外部 `tmux-status` CLI 获取结构化 pane、资源和状态观测；支持 v1/v2/v3 兼容解析、资源边界校验、幂等同步和已验证的 Agent conversation↔pane 恢复映射。插件默认关闭；不把 CPU、selected pane、进程存活或 pane 前台状态直接当作有效工时，也不保存 prompt、回复正文或 pane 内容。
-- **Inspiration**：一个插件的两个阶段——[Issue #33](https://github.com/CubePlus1/echolog/issues/33) 提供无活跃记录也可用的灵感捕捉、Inbox、整理、筛选与归档历史，[Issue #34](https://github.com/CubePlus1/echolog/issues/34) 提供确定性 Flow 回顾、冷却/安静时间/每日上限、稍后与投递账本。它与 Schedule 完全独立，不创建、转换或关联日程；实现上下文见 [Trellis 父任务](.trellis/tasks/08-24-inspiration-plugin/)。
+- **Inspiration**：一个插件的两个阶段——[Issue #33](https://github.com/CubePlus1/echolog/issues/33) 提供无活跃记录也可用的灵感捕捉、Inbox、整理、筛选与归档历史，[Issue #34](https://github.com/CubePlus1/echolog/issues/34) 提供确定性 Flow 回顾、冷却/安静时间/每日上限、稍后与投递账本。它与 Schedule 完全独立，不创建、转换或关联日程；实现上下文见 [Trellis 父任务](.trellis/tasks/archive/2026-08/08-24-inspiration-plugin/)。
 
 插件清单、生命周期、路由、迁移、Web 贡献和错误处理详见 [Bundled Plugin API v1](docs/PLUGIN_API.md)。Codex 侧的 `$echolog:track-work`、`$echolog:review-work` 和本地 stdio MCP 是独立的集成层，说明见 [Codex Integration](docs/CODEX.md)。
 
