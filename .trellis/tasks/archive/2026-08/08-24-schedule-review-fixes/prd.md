@@ -29,4 +29,4 @@ service boundary.
       the existing integration suite remains green.
 - [x] Focused tests, PostgreSQL integration, `pnpm test`, `pnpm typecheck`,
       and `pnpm build` pass.
-- [ ] Fixes are committed on `codex/schedule-plugin` after final diff review.
+- [x] Fixes are committed on `codex/schedule-plugin` after final diff review.
