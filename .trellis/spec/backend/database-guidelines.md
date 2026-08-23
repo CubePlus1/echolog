@@ -57,6 +57,9 @@ PostgreSQL（docker compose 起在 5436 端口，容器名 echolog-db）+ drizzl
 - Claim a reminder by inserting a unique ledger key before delivery. A ledger
   row in any state (`claimed`, `sent`, or `failed`) makes that exact
   item/reminder instant ineligible for another attempt.
+- The ledger MUST index `(item_id, reminder_at)` in the same order used by the
+  due-query anti-join. A `dedupe_key` index cannot serve predicates on its
+  component columns, and the ledger grows for the lifetime of the plugin.
 - At-most-once means a crash after claim may lose one reminder; restart must not
   repeat a possibly delivered notification. A user action that chooses a new
   reminder instant creates a new key.
@@ -92,6 +95,8 @@ PostgreSQL（docker compose 起在 5436 端口，容器名 echolog-db）+ drizzl
   remaining candidates.
 - Assert `claimed`, `sent`, and `failed` ledger rows are all excluded before
   `LIMIT`; a new snooze instant remains eligible.
+- Assert the immutable follow-up migration and Drizzle schema both declare the
+  `(item_id, reminder_at)` lookup index.
 - Assert failed/ignored delivery does not modify status, confirmed timestamp, or
   create a Core record.
 
@@ -119,6 +124,9 @@ WHERE i.next_reminder_at <= NOW()
   )
 ORDER BY i.next_reminder_at
 LIMIT 100;
+
+CREATE INDEX idx_schedule_reminder_deliveries_item_reminder
+  ON schedule_reminder_deliveries(item_id, reminder_at);
 ```
 
 ## Common Mistakes

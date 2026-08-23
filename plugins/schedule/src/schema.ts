@@ -112,6 +112,10 @@ export const scheduleReminderDeliveries = pgTable(
     uniqueIndex("idx_schedule_reminder_deliveries_dedupe_key").on(
       table.dedupeKey
     ),
+    index("idx_schedule_reminder_deliveries_item_reminder").on(
+      table.itemId,
+      table.reminderAt
+    ),
     index("idx_schedule_reminder_deliveries_attempted_at").on(table.attemptedAt),
     check(
       "schedule_reminder_deliveries_status_check",

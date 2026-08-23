@@ -44,5 +44,7 @@ web/
   是全局 `document.getElementById`。交互控件 id 与 action target 必须包含
   face/surface 作用域（例如 `day:<encoded-item-id>`），handler 再安全还原真实
   id；禁止仅用实体 id 生成控件 id，否则不可见页的同名控件会截获当前页输入。
+  同一规则也适用于错误/状态容器：handler 必须用 action target 的 surface 选择
+  当前 face 的错误元素，不能固定写 overview 的全局 id。
   Web 测试须同时渲染两个 face，为两个控件设置不同值，并断言点击某一 face
-  只读取该 face 的值且 API URL 只编码真实实体 id 一次。
+  只读取该 face 的值、错误只落在该 face，且 API URL 只编码真实实体 id 一次。

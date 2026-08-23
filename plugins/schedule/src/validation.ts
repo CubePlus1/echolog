@@ -5,7 +5,7 @@ import type {
 } from "./types.js";
 
 const EXPLICIT_INSTANT_RE =
-  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:Z|[+-](\d{2}):(\d{2}))$/;
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?(?:Z|[+-](\d{2}):(\d{2}))$/;
 const ITEM_ID_RE = /^[A-Za-z0-9_-]{8,32}$/;
 const STATUSES = new Set<ScheduleStatus>([
   "scheduled",
@@ -77,7 +77,8 @@ export function parseExplicitInstant(
     year! < 1 ||
     month! < 1 || month! > 12 ||
     day! < 1 || day! > daysInMonth ||
-    hour! > 23 || minute! > 59 || second! > 59 ||
+    hour! > 23 || minute! > 59 ||
+    (second !== undefined && second > 59) ||
     (offsetHour !== undefined && offsetHour > 23) ||
     (offsetMinute !== undefined && offsetMinute > 59)
   ) {

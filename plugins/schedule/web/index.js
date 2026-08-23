@@ -152,9 +152,15 @@ function parseActionTarget(value) {
   const target = String(value ?? "");
   const separator = target.indexOf(":");
   const surface = separator >= 0 ? target.slice(0, separator) : "";
-  if (!ACTION_SURFACES.has(surface)) return { itemId: target, target };
+  if (!ACTION_SURFACES.has(surface)) {
+    return { itemId: target, target, surface: "overview" };
+  }
   try {
-    return { itemId: decodeURIComponent(target.slice(separator + 1)), target };
+    return {
+      itemId: decodeURIComponent(target.slice(separator + 1)),
+      target,
+      surface,
+    };
   } catch {
     return null;
   }
@@ -316,7 +322,7 @@ function renderDay(items, referenceKey, context, now) {
 }
 
 function explicitOffsetInstant(value) {
-  return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2})$/.test(value)
+  return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2})$/.test(value)
     && Number.isFinite(Date.parse(value));
 }
 
@@ -419,6 +425,9 @@ export async function activate({ api, root, now: nowFactory = () => new Date() }
       if (!route) return { handled: false };
       const parsedTarget = parseActionTarget(id);
       if (!parsedTarget) return { handled: true, refresh: false };
+      const actionErrorId = parsedTarget.surface === "day"
+        ? "scheduleActionErrorDay"
+        : "scheduleActionError";
       const item = latestItems.find((candidate) => candidate.id === parsedTarget.itemId);
       if (!item) return { handled: true, refresh: false };
       if (action === "schedule-cancel" && !confirm("取消此日程？")) {
@@ -428,7 +437,7 @@ export async function activate({ api, root, now: nowFactory = () => new Date() }
       if (action === "schedule-snooze") {
         const minutes = Number($(`scheduleSnooze:${parsedTarget.target}`)?.value ?? 10);
         if (!Number.isInteger(minutes) || minutes < 1 || minutes > 10080) {
-          setError($, "scheduleActionError", "稍后提醒须为 1 至 10080 分钟。");
+          setError($, actionErrorId, "稍后提醒须为 1 至 10080 分钟。");
           return { handled: true, refresh: false };
         }
         body.nextReminderAt = new Date(nowFactory().getTime() + minutes * 60_000).toISOString();
@@ -439,7 +448,7 @@ export async function activate({ api, root, now: nowFactory = () => new Date() }
           body: JSON.stringify(body),
         });
         replaceLatest(updated);
-        setError($, "scheduleActionError", "");
+        setError($, actionErrorId, "");
         const message = {
           "schedule-confirm-start": "已确认开始 · 行",
           "schedule-snooze": "提醒已顺延",
@@ -448,7 +457,7 @@ export async function activate({ api, root, now: nowFactory = () => new Date() }
         }[action];
         return { handled: true, message };
       } catch (error) {
-        setError($, "scheduleActionError", error);
+        setError($, actionErrorId, error);
         return { handled: true, refresh: false };
       }
     },

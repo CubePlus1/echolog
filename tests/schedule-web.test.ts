@@ -367,6 +367,86 @@ test("Schedule scopes duplicate item controls by face and day snooze reads only 
   });
 });
 
+test("Schedule routes action errors to the originating overview or day face", async () => {
+  const scheduled = item({
+    scheduledStartAt: "2026-08-23T23:30:00.000Z",
+    timezone: "Asia/Shanghai",
+  });
+  const contribution = await activate({
+    now: () => NOW,
+    api: async (_path: string, options?: unknown) => {
+      if (!options) return [scheduled];
+      throw new Error("backend failed");
+    },
+  });
+  const data = await contribution.load();
+  const context = renderContext(data.scheduleItems);
+  const overview = contribution.renderFace({ type: "schedule-overview" }, context);
+  const day = contribution.renderFace({ type: "schedule-day" }, context);
+  const overviewTarget = overview.match(
+    /data-act="schedule-confirm-start" data-id="([^"]+)"/
+  )?.[1];
+  const dayTarget = day.match(
+    /data-act="schedule-confirm-start" data-id="([^"]+)"/
+  )?.[1];
+  assert.ok(overviewTarget);
+  assert.ok(dayTarget);
+
+  const errors = {
+    scheduleActionError: { textContent: "" },
+    scheduleActionErrorDay: { textContent: "" },
+  };
+  const $ = (id: string) => errors[id as keyof typeof errors] ?? null;
+  await contribution.handleAction("schedule-confirm-start", {
+    id: dayTarget,
+    $,
+    confirm: () => true,
+  });
+  assert.equal(errors.scheduleActionError.textContent, "");
+  assert.equal(errors.scheduleActionErrorDay.textContent, "backend failed");
+
+  errors.scheduleActionErrorDay.textContent = "";
+  await contribution.handleAction("schedule-confirm-start", {
+    id: overviewTarget,
+    $,
+    confirm: () => true,
+  });
+  assert.equal(errors.scheduleActionError.textContent, "backend failed");
+  assert.equal(errors.scheduleActionErrorDay.textContent, "");
+});
+
+test("Schedule Web accepts the same minute and second precision offsets as the API", async () => {
+  const calls: Array<{ path: string; options?: { body?: string } }> = [];
+  const contribution = await activate({
+    now: () => NOW,
+    api: async (path: string, options?: { body?: string }) => {
+      calls.push({ path, options });
+      return item();
+    },
+  });
+  const elements: Record<string, { value?: string; textContent?: string }> = {
+    scheduleTitle: { value: "精度一致" },
+    scheduleDescription: { value: "" },
+    scheduleStart: { value: "2026-08-25T09:00+08:00" },
+    scheduleEnd: { value: "2026-08-25T10:30:00.123456+08:00" },
+    scheduleTimezone: { value: "Asia/Shanghai" },
+    schedulePriority: { value: "0" },
+    scheduleCreateError: { textContent: "" },
+  };
+  await contribution.handleAction("schedule-create", {
+    id: "",
+    $: (id: string) => elements[id] ?? null,
+    confirm: () => true,
+  });
+  assert.equal(elements.scheduleCreateError.textContent, "");
+  const payload = JSON.parse(calls.at(-1)?.options?.body ?? "");
+  assert.equal(payload.scheduledStartAt, "2026-08-25T09:00+08:00");
+  assert.equal(
+    payload.scheduledEndAt,
+    "2026-08-25T10:30:00.123456+08:00"
+  );
+});
+
 test("Schedule validates create and snooze locally without issuing a write", async () => {
   const calls: string[] = [];
   const contribution = await activate({

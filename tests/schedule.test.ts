@@ -111,6 +111,7 @@ test("Schedule manifest, config, migrations, and imports preserve plugin boundar
 
   assert.deepEqual(schedulePlugin.migrations?.map(({ name }) => name), [
     "001_schedule_items_and_reminder_deliveries",
+    "002_schedule_delivery_lookup_index",
   ]);
   const migration = schedulePlugin.migrations?.[0]?.sql ?? "";
   assert.match(migration, /schedule_items/);
@@ -120,6 +121,15 @@ test("Schedule manifest, config, migrations, and imports preserve plugin boundar
   assert.match(migration, /version >= 1/);
   assert.match(migration, /status IN \('scheduled', 'active', 'done', 'cancelled'\)/);
   assert.doesNotMatch(migration, /calendar_events|records|inspiration/i);
+  const lookupMigration = schedulePlugin.migrations?.[1]?.sql ?? "";
+  assert.match(
+    lookupMigration,
+    /idx_schedule_reminder_deliveries_item_reminder/
+  );
+  assert.match(
+    lookupMigration,
+    /schedule_reminder_deliveries\(item_id, reminder_at\)/
+  );
 
   const sources = ["index.ts", "reminders.ts", "routes.ts", "store.ts", "types.ts"]
     .map((name) => readFileSync(
@@ -145,8 +155,22 @@ test("Schedule boundary validation rejects local datetimes and unknown fields", 
     assert.equal(valid.value.priority, 0);
   }
 
+  const minutePrecision = validateCreateScheduleItem({
+    title: "Minute precision",
+    scheduledStartAt: "2026-08-24T10:00+08:00",
+    timezone: "Asia/Shanghai",
+  });
+  assert.equal(minutePrecision.ok, true);
+  if (minutePrecision.ok) {
+    assert.equal(
+      minutePrecision.value.scheduledStartAt.toISOString(),
+      "2026-08-24T02:00:00.000Z"
+    );
+  }
+
   for (const invalid of [
     { title: "x", scheduledStartAt: "2026-08-24T10:00:00", timezone: "UTC" },
+    { title: "x", scheduledStartAt: "2026-08-24T10:00.5Z", timezone: "UTC" },
     { title: "x", scheduledStartAt: "2026-08-24T10:00:00Z", timezone: "Mars/Base" },
     {
       title: "x",

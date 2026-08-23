@@ -134,6 +134,12 @@ export const schedulePlugin: PluginDefinition = {
       CREATE INDEX IF NOT EXISTS idx_schedule_reminder_deliveries_attempted_at
         ON schedule_reminder_deliveries(attempted_at);
     `,
+  }, {
+    name: "002_schedule_delivery_lookup_index",
+    sql: `
+      CREATE INDEX IF NOT EXISTS idx_schedule_reminder_deliveries_item_reminder
+        ON schedule_reminder_deliveries(item_id, reminder_at);
+    `,
   }],
   register(context) {
     currentStore = new ScheduleStore(context.service<string>("database.url"));
