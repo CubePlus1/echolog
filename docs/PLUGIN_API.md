@@ -84,6 +84,12 @@ validation, migration or startup failure changes that plugin to `degraded` and
 MUST NOT prevent later plugins or Core from starting. Shutdown occurs in reverse
 registry order with a five-second timeout.
 
+Manifest and API-version validation runs for every bundled definition before
+the enabled gate. A valid disabled plugin remains `disabled`; a malformed
+disabled plugin is reported as `enabled: false`, `degraded`, with structured
+diagnostic metadata. It still MUST NOT run migration, registration, start, jobs,
+or stop, and its failure MUST NOT block later plugins or Core startup.
+
 Configuration changes take effect after daemon restart. Runtime hot install,
 enable, disable and unload are not supported in v1.
 
@@ -128,7 +134,15 @@ const result = await sendNotification(
 ```
 
 The request contains only `title` and `message`; the optional second argument
-is an `AbortSignal`. The result reports the Core channels independently:
+is the caller's `AbortSignal`. Caller cancellation rejects the service call with
+an error named `AbortError`; it MUST NOT resolve a channel result, because a
+Host timeout or shutdown cannot know whether an in-flight transport accepted
+the notification. Plugins MUST leave durable delivery state retryable when they
+receive this cancellation.
+
+Core-owned transport timeouts and operational channel errors are different:
+they resolve the normal result with that channel marked `failed`. Without caller
+cancellation, the result reports the Core channels independently:
 
 ```ts
 {

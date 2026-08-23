@@ -20,9 +20,13 @@ enforcement mapping. Keep these layers synchronized in the same change:
 
 Authorization failures throw a structured `PluginError` with
 `PLUGIN_DEPENDENCY_MISSING` and identify the requesting plugin. Check permission
-before revealing whether a privileged service is installed. Disabled plugin
-lifecycle hooks never run; a bad service request during startup degrades only
-that plugin and initialization continues with later plugins.
+before revealing whether a privileged service is installed. Manifest and
+API-version validation run for every definition before the enabled gate. Valid
+disabled plugins remain `disabled`; malformed disabled plugins are
+`enabled: false` and `degraded` with diagnostics. Neither form runs migration,
+registration, start, jobs, or stop, and initialization continues with later
+plugins. A bad service request during enabled startup likewise degrades only
+that plugin.
 
 ## Notification service pattern
 
@@ -38,17 +42,22 @@ channel's outcome.
 
 Bound transport waits with a rejecting timeout race even when an underlying
 operation ignores `AbortSignal`; also honor the caller signal and remove timers
-and listeners after settlement. Existing Core fire-and-forget callers may keep
-a `void` compatibility wrapper, but plugin-facing calls use the result-bearing
-primitive so delivery failures remain observable.
+and listeners after settlement. Internal transport timeout is an operational
+channel outcome and becomes `failed`. Caller cancellation represents uncertain
+delivery ownership and MUST reject the whole service call with `AbortError`,
+never ordinary failed data; downstream plugins must not terminalize durable
+delivery state from it. Existing Core fire-and-forget callers may keep a `void`
+compatibility wrapper, but plugin-facing calls use the result-bearing primitive
+so delivery failures remain observable.
 
 ## Compatibility checklist
 
 - Treat v1 additions as additive: preserve existing generic service calls,
   bundled manifests, scheduler call signatures, routes, and lifecycle order.
 - Test permission denied and allowed paths, disabled hooks, degraded-plugin
-  isolation, per-channel outcomes, non-2xx responses, abort/timeout behavior,
-  and legacy caller compatibility.
+  isolation, actual bundled manifests, per-channel outcomes, non-2xx responses,
+  caller-abort rejection versus internal-timeout results, and legacy caller
+  compatibility.
 - Run the SDK test/build before root tests when workspace packages have not yet
   produced their `dist` type entrypoints; finish with root `test`, `typecheck`,
   and `build`.

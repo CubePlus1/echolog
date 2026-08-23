@@ -33,8 +33,15 @@ export interface NotificationDependencies {
   timeoutMs?: number;
 }
 
-class DeliveryAbortedError extends Error {}
 class DeliveryTimeoutError extends Error {}
+
+class CallerAbortError extends Error {
+  override name = "AbortError";
+}
+
+function callerAbortError(): CallerAbortError {
+  return new CallerAbortError("Notification delivery aborted");
+}
 
 function failed(error: string): PluginNotificationChannelResult {
   return {
@@ -49,9 +56,6 @@ function failureResult(
 ): PluginNotificationChannelResult {
   if (error instanceof DeliveryTimeoutError) {
     return failed(`${channel} notification timed out`);
-  }
-  if (error instanceof DeliveryAbortedError) {
-    return failed(`${channel} notification aborted`);
   }
   return failed(`${channel} notification failed`);
 }
@@ -79,7 +83,7 @@ function runBounded<T>(
     };
     const onAbort = () => {
       controller.abort();
-      finish({ error: new DeliveryAbortedError() });
+      finish({ error: callerAbortError() });
     };
 
     if (callerSignal?.aborted) {
@@ -92,12 +96,21 @@ function runBounded<T>(
       finish({ error: new DeliveryTimeoutError() });
     }, timeoutMs);
 
-    Promise.resolve()
-      .then(() => operation(controller.signal))
-      .then(
+    queueMicrotask(() => {
+      if (settled) return;
+
+      let delivery: Promise<T>;
+      try {
+        delivery = operation(controller.signal);
+      } catch (error) {
+        finish({ error });
+        return;
+      }
+      delivery.then(
         (value) => finish({ value }),
         (error: unknown) => finish({ error })
       );
+    });
   });
 }
 
@@ -131,6 +144,7 @@ async function sendMac(
     );
     return { status: "sent" };
   } catch (error) {
+    if (error instanceof CallerAbortError) throw error;
     return failureResult("mac", error);
   }
 }
@@ -162,6 +176,7 @@ async function sendNtfy(
     }
     return { status: "sent" };
   } catch (error) {
+    if (error instanceof CallerAbortError) throw error;
     return failureResult("ntfy", error);
   }
 }
@@ -171,6 +186,8 @@ export async function sendNotification(
   signal?: AbortSignal,
   dependencies: NotificationDependencies = {}
 ): Promise<PluginNotificationResult> {
+  if (signal?.aborted) throw callerAbortError();
+
   let config: Config;
   try {
     config = (dependencies.loadConfig ?? loadConfig)();
