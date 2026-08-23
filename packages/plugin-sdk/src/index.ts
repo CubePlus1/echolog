@@ -1,5 +1,13 @@
 export const PLUGIN_API_VERSION = "1" as const;
 
+export const SUPPORTED_PLUGIN_PERMISSIONS = [
+  "process:exec",
+  "database:plugin",
+  "notifications:send",
+] as const;
+
+export type PluginPermission = (typeof SUPPORTED_PLUGIN_PERMISSIONS)[number];
+
 export type PluginState =
   | "disabled"
   | "validating"
@@ -31,7 +39,7 @@ export interface PluginManifest {
     web?: string;
   };
   capabilities: string[];
-  permissions: string[];
+  permissions: PluginPermission[];
   requires: {
     coreApi: string;
     platforms?: string[];
@@ -100,6 +108,33 @@ export interface PluginCommandResult {
   exitCode: number;
 }
 
+export type PluginNotificationChannel = "mac" | "ntfy";
+
+export interface PluginNotificationRequest {
+  title: string;
+  message: string;
+}
+
+export type PluginNotificationChannelResult =
+  | { status: "sent" }
+  | { status: "disabled" }
+  | { status: "failed"; error: string };
+
+export type PluginNotificationStatus = PluginNotificationChannelResult["status"];
+
+export interface PluginNotificationResult {
+  channels: Record<PluginNotificationChannel, PluginNotificationChannelResult>;
+}
+
+export type PluginNotificationSend = (
+  request: PluginNotificationRequest,
+  signal?: AbortSignal
+) => Promise<PluginNotificationResult>;
+
+export interface PluginCoreServices {
+  "notifications.send": PluginNotificationSend;
+}
+
 export interface PluginLogger {
   debug(fields: unknown, message?: string): void;
   info(fields: unknown, message?: string): void;
@@ -122,6 +157,7 @@ export interface PluginContext {
   registerJob(job: PluginJob): void;
   registerReportSection(section: PluginReportSection): void;
   exec(request: PluginCommandRequest, signal?: AbortSignal): Promise<PluginCommandResult>;
+  service(name: "notifications.send"): PluginCoreServices["notifications.send"];
   service<T>(name: string): T;
 }
 
@@ -150,7 +186,7 @@ export interface PluginRuntimeInfo {
   enabled: boolean;
   state: PluginState;
   capabilities: string[];
-  permissions: string[];
+  permissions: PluginPermission[];
   webEntry?: string;
   error?: {
     code: PluginErrorCode;
@@ -176,6 +212,9 @@ export class PluginError extends Error {
 
 const ID_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const VERSION_RE = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
+const SUPPORTED_PLUGIN_PERMISSION_SET = new Set<string>(
+  SUPPORTED_PLUGIN_PERMISSIONS
+);
 
 export function validatePluginManifest(manifest: PluginManifest): string[] {
   const errors: string[] = [];
@@ -196,8 +235,20 @@ export function validatePluginManifest(manifest: PluginManifest): string[] {
   ] as const) {
     if (!Array.isArray(values)) {
       errors.push(`${name} must be an array`);
-    } else if (new Set(values).size !== values.length) {
-      errors.push(`${name} must not contain duplicates`);
+    } else {
+      if (new Set(values).size !== values.length) {
+        errors.push(`${name} must not contain duplicates`);
+      }
+      if (name === "permissions") {
+        const unsupported = values.filter(
+          (permission) => !SUPPORTED_PLUGIN_PERMISSION_SET.has(permission)
+        );
+        if (unsupported.length > 0) {
+          errors.push(
+            `permissions contains unsupported values: ${unsupported.join(", ")}`
+          );
+        }
+      }
     }
   }
   return errors;

@@ -59,10 +59,12 @@ restrict Host APIs and make review scope explicit:
 | --- | --- |
 | `process:exec` | Bounded `execFile` command runner; no shell |
 | `database:plugin` | Database URL for plugin-owned tables |
+| `notifications:send` | Core-owned `notifications.send` delivery service |
 
 A plugin without the corresponding declaration receives a structured
 `PLUGIN_DEPENDENCY_MISSING` error. Plugins MUST NOT import Core table schemas or
-write Core records directly.
+write Core records directly. Manifests that declare any permission outside this
+fixed vocabulary are invalid.
 
 ## Lifecycle
 
@@ -109,6 +111,53 @@ ignores `AbortSignal` cannot leave the job permanently marked as running.
 64 KiB). It is written directly to child stdin and MUST NOT be copied into
 argv, environment variables, logs, or errors. Execution remains no-shell.
 
+### Notification service
+
+A plugin that declares `notifications:send` obtains the exact named service
+from its context:
+
+```ts
+const sendNotification = context.service("notifications.send");
+const result = await sendNotification(
+  {
+    title: "Reminder",
+    message: "Stand-up starts in five minutes",
+  },
+  signal
+);
+```
+
+The request contains only `title` and `message`; the optional second argument
+is an `AbortSignal`. The result reports the Core channels independently:
+
+```ts
+{
+  channels: {
+    mac: { status: "sent" },
+    ntfy: { status: "failed", error: "Delivery failed" },
+  },
+}
+```
+
+Each `mac` and `ntfy` result is exactly one of `sent`, `disabled`, or `failed`.
+Only `failed` includes a bounded, non-sensitive `error` string. One channel's
+failure does not erase the other channel's outcome.
+
+Notification configuration is a Core privacy boundary. Global and per-channel
+enablement, ntfy server and topic, credentials, delivery timeouts, and
+deployment details MUST NOT cross into plugin code. Plugins can observe only
+the two channel outcomes above, never configuration or endpoint values. The
+notification content itself is passed to the configured delivery channels and
+MAY leave the local machine when ntfy is enabled, so a plugin MUST send only
+content appropriate for that configured destination.
+
+The downstream schedule plugin tracked by GitHub Issue #31 declares
+`notifications:send` and calls this service when a reminder becomes due. In the
+inspiration recording/push flow tracked by Issues #33 and #34, recording and
+storage remain plugin-owned and the push path calls this service only when a
+stored inspiration is selected for delivery. Those plugins are downstream of
+this API and are not implemented by the v1 service contract itself.
+
 ## Routes and errors
 
 Canonical plugin routes use:
@@ -141,7 +190,7 @@ Stable error codes:
 | `PLUGIN_DISABLED` | 503 |
 | `PLUGIN_DEGRADED` | 503 |
 | `PLUGIN_API_INCOMPATIBLE` | 503 |
-| `PLUGIN_DEPENDENCY_MISSING` | 503 |
+| `PLUGIN_DEPENDENCY_MISSING` | 403 |
 | `PLUGIN_EXEC_FAILED` | 502 |
 | `PLUGIN_TIMEOUT` | 504 |
 | `PLUGIN_OUTPUT_INVALID` | 502 |

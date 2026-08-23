@@ -183,6 +183,8 @@ screen-understanding 已接通 Provider/Keychain 管理、macOS 原生截图助�
 
 EchoLog Core 通过 Bundled Plugin API v1 托管内置插件。每个插件由 manifest 标识，独立注册路由、定时任务、迁移、配置校验、健康检查和 Web 资源；插件初始化、迁移或采集失败会将对应插件置为 degraded，不阻断 Core 启动或主动记录。插件 Web 模块只能通过宿主提供的同源 HTTP API 读写数据，不能直连数据库。
 
+Plugin API v1 的通知 named service 由 [GitHub Issue #35](https://github.com/CubePlus1/echolog/issues/35) 追踪，作为 [#31 日程插件](https://github.com/CubePlus1/echolog/issues/31)、[#33 灵感记录](https://github.com/CubePlus1/echolog/issues/33) 与 [#34 灵感推送](https://github.com/CubePlus1/echolog/issues/34) 的共享 Core 前置能力。
+
 - **screen-time**：macOS 前台应用被动采样；按应用和规则聚合今日屏幕使用，Web 可查看分类、维护分类规则，并提供运行时 screen-understanding settings 的版本化 GET/PUT API。历史 `app_usage`、`app_rules` 数据保持兼容。
 - **tmux-status**：调用外部 `tmux-status` CLI 获取结构化 pane、资源和状态观测；支持 v1/v2/v3 兼容解析、资源边界校验、幂等同步和已验证的 Agent conversation↔pane 恢复映射。插件默认关闭；不把 CPU、selected pane、进程存活或 pane 前台状态直接当作有效工时，也不保存 prompt、回复正文或 pane 内容。
 
