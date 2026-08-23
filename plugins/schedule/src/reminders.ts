@@ -36,6 +36,10 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && error.name === "AbortError";
+}
+
 function validChannelResult(value: unknown): value is NotificationChannelResult {
   if (!value || typeof value !== "object") return false;
   const result = value as Record<string, unknown>;
@@ -123,21 +127,25 @@ export async function pollDueReminders(
     let result: NotificationSendResult;
     try {
       signal.throwIfAborted();
-      result = validateNotificationResult(await send({
+      const sendResult = await send({
         title: `Schedule reminder: ${reminder.item.title}`,
         message: notificationMessage(reminder),
-      }, signal));
+      }, signal);
+      signal.throwIfAborted();
+      result = validateNotificationResult(sendResult);
     } catch (error) {
+      if (signal.aborted || isAbortError(error)) throw error;
+      signal.throwIfAborted();
       await store.finishReminder(claimed.id, {
         status: "failed",
         channelResults: null,
         failure: errorMessage(error),
       }, new Date());
       summary.failed++;
-      if (signal.aborted) throw error;
       continue;
     }
     const outcome = resultOutcome(result);
+    signal.throwIfAborted();
     await store.finishReminder(claimed.id, {
       status: outcome.status,
       channelResults: result.channels,

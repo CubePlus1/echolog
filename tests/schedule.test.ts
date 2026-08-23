@@ -327,6 +327,10 @@ test("canonical routes preserve raw item arrays and structured conflicts", async
 interface ReminderState {
   due: DueReminder[];
   deliveries: Map<string, ReminderDelivery>;
+  terminalWrites: Array<{
+    id: string;
+    status: "sent" | "failed";
+  }>;
 }
 
 class MemoryReminderStore {
@@ -362,6 +366,7 @@ class MemoryReminderStore {
       failure: string | null;
     }
   ): Promise<ReminderDelivery> {
+    this.state.terminalWrites.push({ id, status: input.status });
     const entry = [...this.state.deliveries.values()].find((value) => value.id === id);
     if (!entry || entry.status !== "claimed") throw new Error("not claimable");
     Object.assign(entry, input, { completedAt: new Date().toISOString() });
@@ -374,6 +379,7 @@ function reminderState(): ReminderState {
   return {
     due: [{ item: scheduled, reminderAt: new Date(scheduled.nextReminderAt!) }],
     deliveries: new Map(),
+    terminalWrites: [],
   };
 }
 
@@ -421,7 +427,7 @@ test("reminder polling is at-most-once across repeat polls and store restarts", 
   assert.equal(state.deliveries.size, 2);
 });
 
-test("reminder polling records disabled, failed, thrown, and aborted deliveries", async () => {
+test("reminder polling terminalizes operational failures but retains caller-aborted claims", async () => {
   const disabled = reminderState();
   await pollDueReminders(new MemoryReminderStore(disabled), async () => ({
     channels: {
@@ -433,6 +439,7 @@ test("reminder polling records disabled, failed, thrown, and aborted deliveries"
   assert.equal(disabledDelivery.status, "failed");
   assert.match(disabledDelivery.failure!, /mac: disabled/);
   assert.match(disabledDelivery.failure!, /ntfy: offline/);
+  assert.deepEqual(disabled.terminalWrites.map(({ status }) => status), ["failed"]);
 
   const thrown = reminderState();
   await pollDueReminders(new MemoryReminderStore(thrown), async () => {
@@ -443,6 +450,7 @@ test("reminder polling records disabled, failed, thrown, and aborted deliveries"
     [...thrown.deliveries.values()][0]!.failure,
     "notification provider unavailable"
   );
+  assert.deepEqual(thrown.terminalWrites.map(({ status }) => status), ["failed"]);
 
   const aborted = reminderState();
   const controller = new AbortController();
@@ -454,7 +462,22 @@ test("reminder polling records disabled, failed, thrown, and aborted deliveries"
     }, controller.signal),
     (error) => error instanceof Error && error.name === "AbortError"
   );
-  assert.equal([...aborted.deliveries.values()][0]!.status, "failed");
+  const abortedDelivery = [...aborted.deliveries.values()][0]!;
+  assert.equal(abortedDelivery.status, "claimed");
+  assert.equal(abortedDelivery.completedAt, null);
+  assert.deepEqual(aborted.terminalWrites, []);
+
+  const abortError = reminderState();
+  await assert.rejects(
+    pollDueReminders(new MemoryReminderStore(abortError), async () => {
+      throw Object.assign(new Error("notification caller aborted"), {
+        name: "AbortError",
+      });
+    }, signal),
+    (error) => error instanceof Error && error.name === "AbortError"
+  );
+  assert.equal([...abortError.deliveries.values()][0]!.status, "claimed");
+  assert.deepEqual(abortError.terminalWrites, []);
 
   const preAborted = reminderState();
   const before = new AbortController();
@@ -466,6 +489,7 @@ test("reminder polling records disabled, failed, thrown, and aborted deliveries"
     (error) => error instanceof Error && error.name === "AbortError"
   );
   assert.equal(preAborted.deliveries.size, 0);
+  assert.deepEqual(preAborted.terminalWrites, []);
 });
 
 test("Schedule registers one bounded Host job and cleans lifecycle state", async () => {

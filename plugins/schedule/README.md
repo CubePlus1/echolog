@@ -31,6 +31,11 @@ optional `AbortSignal`, and per-channel `sent | disabled | failed` results.
 It does not import the Core notifier or access notification configuration.
 Missing service capability degrades only this plugin.
 
+Host timeout or daemon stop aborts the caller signal. If notification delivery
+settles after that abort, Schedule retains the ledger as `claimed` for
+diagnosis and performs no late `sent`/`failed` write. Normal channel failure
+while the caller remains active is still terminalized as `failed`.
+
 Canonical routes:
 
 - `GET|POST /api/plugins/schedule/items`
