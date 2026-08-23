@@ -187,7 +187,7 @@ EchoLog Core 通过 Bundled Plugin API v1 托管内置插件。每个插件由 m
 
 - **screen-time**：macOS 前台应用被动采样；按应用和规则聚合今日屏幕使用，Web 可查看分类、维护分类规则，并提供运行时 screen-understanding settings 的版本化 GET/PUT API。历史 `app_usage`、`app_rules` 数据保持兼容。
 - **tmux-status**：调用外部 `tmux-status` CLI 获取结构化 pane、资源和状态观测；支持 v1/v2/v3 兼容解析、资源边界校验、幂等同步和已验证的 Agent conversation↔pane 恢复映射。插件默认关闭；不把 CPU、selected pane、进程存活或 pane 前台状态直接当作有效工时，也不保存 prompt、回复正文或 pane 内容。
-- **schedule**：以同一套日程数据提供显式确认开始、延后提醒、完成/取消，以及月/周/日视图；到点只提醒，绝不自动启动或创建 Core record。它只通过 Host 的 `notifications.send` 命名服务投递，能力缺失时仅本插件 degraded。实现追踪见 [Issue #31](https://github.com/CubePlus1/echolog/issues/31)、[Issue #32](https://github.com/CubePlus1/echolog/issues/32) 与 [Trellis 父任务](.trellis/tasks/08-24-schedule-plugin/)。
+- **schedule**：以同一套日程数据提供显式确认开始、延后提醒、完成/取消，以及月/周/日视图；到点只提醒，绝不自动启动或创建 Core record。它只通过 Host 的 `notifications.send` 命名服务投递，能力缺失时仅本插件 degraded。实现追踪见 [Issue #31](https://github.com/CubePlus1/echolog/issues/31)、[Issue #32](https://github.com/CubePlus1/echolog/issues/32) 与 [Trellis 父任务](.trellis/tasks/archive/2026-08/08-24-schedule-plugin/)。
 
 插件清单、生命周期、路由、迁移、Web 贡献和错误处理详见 [Bundled Plugin API v1](docs/PLUGIN_API.md)。Codex 侧的 `$echolog:track-work`、`$echolog:review-work` 和本地 stdio MCP 是独立的集成层，说明见 [Codex Integration](docs/CODEX.md)。
 

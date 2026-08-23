@@ -52,7 +52,7 @@ cross-child contract and final integration for GitHub Issues #31 and #32.
       root after integration.
 - [x] An independent check agent reviews the integrated diff after all three
       implementation agents finish, and verified findings are resolved.
-- [ ] Changes are committed on `codex/schedule-plugin` without merging any
+- [x] Changes are committed on `codex/schedule-plugin` without merging any
       sibling branch.
 
 ## Child Map
