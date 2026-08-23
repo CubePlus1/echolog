@@ -19,7 +19,11 @@ Added notifications.send with notifications:send permission enforcement, structu
 
 ### Main Changes
 
-(Add details)
+- Added the `notifications.send` named Core service and SDK request/result types.
+- Enforced `notifications:send` across TypeScript validation, JSON Schema, and Host lookup.
+- Refactored Core delivery to return independent mac/ntfy results with bounded timeout and abort behavior.
+- Preserved the legacy scheduler-facing `notify(title, message): void` wrapper.
+- Added Plugin API/README/backend-spec documentation and permission, delivery, compatibility, and isolation tests.
 
 ### Git Commits
 
@@ -30,7 +34,10 @@ Added notifications.send with notifications:send permission enforcement, structu
 
 ### Testing
 
-- [OK] (Add test results)
+- [OK] `pnpm test` — 113 tests, 112 passed, 1 platform-conditional skip
+- [OK] `pnpm typecheck`
+- [OK] `pnpm build`
+- [OK] `git diff --check`
 
 ### Status
 
@@ -38,4 +45,4 @@ Added notifications.send with notifications:send permission enforcement, structu
 
 ### Next Steps
 
-- None - task complete
+- Schedule plugin #31 and inspiration plugins #33/#34 can adopt the new service contract independently.
