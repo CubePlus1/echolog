@@ -17,7 +17,7 @@
 - **父子任务**：一个大任务可挂多层小任务；服务端防止自指/成环，CLI 与 Web 可创建、查询并查看直接子任务进度
 - **笔记**：给任意记录追加 `note | blocker | next`
 - **补录与编辑**：`el add --at --for`、`el edit`
-- **内置插件**：screen-time 采样和追溯分类前台应用；tmux-status 通过外部 CLI 提供结构化 pane/资源观测，并以 v3 合约持久化已验证的 Agent conversation↔pane 恢复映射
+- **内置插件**：screen-time 采样和追溯分类前台应用；tmux-status 通过外部 CLI 提供结构化 pane/资源观测，并以 v3 合约持久化已验证的 Agent conversation↔pane 恢复映射；Inspiration 覆盖独立灵感捕捉、整理与 Flow 回顾
 - **汇总与日报**：今日/指定日汇总、日报 Markdown 生成、可同步到指定目录
 - **提醒**（可选）：任务超时、空闲提醒、macOS 通知 + ntfy 推送到手机
 - **四个入口，一套 REST API**：免构建的 Web 控制台、`el` CLI、本地 stdio MCP、HTTP API（`docs/API.md`）
@@ -90,6 +90,7 @@ el report                        # 输出日报 Markdown
 ```bash
 el status --json          # 今日概览 + 活跃任务
 el log --json -n 50       # 历史记录
+el inspiration list --json # 灵感 Inbox 与筛选历史
 el screen --json          # 今日屏幕使用（macOS）
 el plugins list --json    # 内置插件清单与状态
 el tmux status --json     # tmux-status 原始快照（插件默认禁用）
@@ -111,6 +112,7 @@ el tmux status --json     # tmux-status 原始快照（插件默认禁用）
 | `database` | PostgreSQL 连接（与 docker-compose 默认值对应） |
 | `plugins.screen-time` | 屏幕采样开关、频率与空闲阈值（默认启用） |
 | `plugins.tmux-status` | 外部 executable、超时、采样频率、异常阈值，以及 v3 Agent conversation↔pane 恢复映射（默认禁用） |
+| `plugins.inspiration` | 独立灵感捕捉与 Flow 回顾插件开关；Flow 规则保存在插件私有 settings 中 |
 | `sync` | 日报 Markdown 同步目标目录 |
 | `notifications` | macOS 通知、ntfy 推送、超时/空闲/日报提醒规则 |
 
@@ -158,7 +160,8 @@ EchoLog Core (records, notes, subtasks, reports, sync)
         |
 Bundled Plugin API v1
         |-- screen-time
-        `-- tmux-status -> external tmux-status executable
+        |-- tmux-status -> external tmux-status executable
+        `-- inspiration -> notifications.send (lazy Host service)
 
 Codex Plugin Skills -> el --json ---------^
 Codex MCP host ------> el mcp ------------^
@@ -185,6 +188,7 @@ EchoLog Core 通过 Bundled Plugin API v1 托管内置插件。每个插件由 m
 
 - **screen-time**：macOS 前台应用被动采样；按应用和规则聚合今日屏幕使用，Web 可查看分类、维护分类规则，并提供运行时 screen-understanding settings 的版本化 GET/PUT API。历史 `app_usage`、`app_rules` 数据保持兼容。
 - **tmux-status**：调用外部 `tmux-status` CLI 获取结构化 pane、资源和状态观测；支持 v1/v2/v3 兼容解析、资源边界校验、幂等同步和已验证的 Agent conversation↔pane 恢复映射。插件默认关闭；不把 CPU、selected pane、进程存活或 pane 前台状态直接当作有效工时，也不保存 prompt、回复正文或 pane 内容。
+- **Inspiration**：一个插件的两个阶段——[Issue #33](https://github.com/CubePlus1/echolog/issues/33) 提供无活跃记录也可用的灵感捕捉、Inbox、整理、筛选与归档历史，[Issue #34](https://github.com/CubePlus1/echolog/issues/34) 提供确定性 Flow 回顾、冷却/安静时间/每日上限、稍后与投递账本。它与 Schedule 完全独立，不创建、转换或关联日程；实现上下文见 [Trellis 父任务](.trellis/tasks/08-24-inspiration-plugin/)。
 
 插件清单、生命周期、路由、迁移、Web 贡献和错误处理详见 [Bundled Plugin API v1](docs/PLUGIN_API.md)。Codex 侧的 `$echolog:track-work`、`$echolog:review-work` 和本地 stdio MCP 是独立的集成层，说明见 [Codex Integration](docs/CODEX.md)。
 

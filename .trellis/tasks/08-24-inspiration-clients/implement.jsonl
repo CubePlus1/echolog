@@ -1,0 +1,4 @@
+{"file":".trellis/spec/backend/cli-agent-contract.md","reason":"HTTP-thin CLI, raw JSON, help, and exit-code contract"}
+{"file":".trellis/spec/frontend/directory-structure.md","reason":"Native JS contribution, escaping, and event delegation conventions"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Keep DTOs and backend policy consistent"}
+{"file":".trellis/tasks/08-24-inspiration-plugin/research/plugin-patterns.md","reason":"Existing CLI/Web contribution mechanics"}

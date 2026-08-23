@@ -1,0 +1,25 @@
+{
+  "manifestVersion": 1,
+  "id": "inspiration",
+  "version": "1.0.0",
+  "apiVersion": "1",
+  "displayName": "Inspiration",
+  "description": "Standalone inspiration capture, organization, and deterministic resurfacing",
+  "entries": {
+    "server": "./dist/index.js",
+    "cli": "./dist/cli.js",
+    "web": "/plugins/inspiration/index.js"
+  },
+  "capabilities": [
+    "inspiration-capture",
+    "inspiration-flow",
+    "daily-report"
+  ],
+  "permissions": [
+    "database:plugin"
+  ],
+  "requires": {
+    "coreApi": "^1.0.0"
+  },
+  "configSchema": "./config.schema.json"
+}

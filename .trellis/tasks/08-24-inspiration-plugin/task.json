@@ -1,0 +1,30 @@
+{
+  "id": "inspiration-plugin",
+  "name": "inspiration-plugin",
+  "title": "Inspiration bundled plugin",
+  "description": "",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": "plugins/inspiration + bundled registry/build/docs tracking",
+  "package": null,
+  "priority": "P2",
+  "creator": "sc",
+  "assignee": "sc",
+  "createdAt": "2026-08-24",
+  "completedAt": null,
+  "branch": "codex/inspiration-plugin",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "08-24-inspiration-capture",
+    "08-24-inspiration-flow",
+    "08-24-inspiration-clients"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}
