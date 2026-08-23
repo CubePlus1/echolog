@@ -1,0 +1,3 @@
+{"file":".trellis/spec/backend/database-guidelines.md","reason":"Verify migrations, private schema, and atomic updates"}
+{"file":".trellis/spec/backend/error-handling.md","reason":"Verify route status and body contracts"}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"Backend quality gate"}

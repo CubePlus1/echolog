@@ -35,6 +35,12 @@
 - 崩溃容忍:片段开启即 INSERT,周期 UPDATE(60s),`stopTracker` 收尾在 `lastSeenAt` 而非 `new Date()`
 - 采样断档检测(`now - lastSampleAt > 3×间隔`)兜住睡眠/合盖,在最后活跃时刻收尾
 
+### 持久化插件投递任务
+
+- 时间 bucket 的唯一 dedupe key 只能防当前 bucket 重复，不能单独承担崩溃恢复：daemon 可能在写入 `reserved` 后、完成外部投递前退出，并在下一 bucket 才重启。创建新投递前必须先认领最旧的 stale `reserved` 行，保留原 dedupe key，并记录 attempt 次数。
+- 恢复认领要在事务中使用短租约、版本/状态前置条件和 `.returning()`；租约内的重复轮询只观察既有投递，不再次调用外部服务。外部服务仍须消费同一个 dedupe key，兜住超出租约的非协作超时。
+- `AbortSignal` 检查不能只放在事务入口。每个可能等待行锁/ advisory lock 的语句返回后、以及任何持久状态变更前后都要再次检查，使 Host 超时释放 non-reentry 后，迟到的事务能回滚而不是继续写入。
+
 ### 结构化诊断端点
 
 - doctor 类端点失败可返回 503,但响应仍须包含顶层 `error` 以及逐项 diagnostics。CLI 必须保留原始 JSON 错误体,人类模式必须展示逐项检查,两种模式都以非零退出。

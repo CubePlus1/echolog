@@ -834,6 +834,485 @@ withJson(
   })
 );
 
+type InspirationLifecycleStatus = "inbox" | "kept" | "archived";
+type InspirationFlowOutcome =
+  | "viewed"
+  | "continued"
+  | "kept"
+  | "later"
+  | "archived";
+
+const inspirationApiPrefix = "/api/plugins/inspiration";
+
+function inspirationInteger(value: string, option: string, minimum = 0): number {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < minimum) {
+    throw new CliUsageError(`${option} 必须是大于或等于 ${minimum} 的整数`);
+  }
+  return parsed;
+}
+
+function inspirationLimit(value: string, option: string): number {
+  const parsed = inspirationInteger(value, option, 1);
+  if (parsed > 100) throw new CliUsageError(`${option} 必须是 1 到 100 的整数`);
+  return parsed;
+}
+
+function inspirationBoolean(value: string, option: string): boolean {
+  if (value === "true") return true;
+  if (value === "false") return false;
+  throw new CliUsageError(`${option} 只能是 true 或 false`);
+}
+
+function inspirationStatus(value: string, allowArchived = true): InspirationLifecycleStatus {
+  if (value === "inbox" || value === "kept" || (allowArchived && value === "archived")) {
+    return value;
+  }
+  throw new CliUsageError(
+    allowArchived
+      ? "status 只能是 inbox、kept 或 archived"
+      : "status 只能是 inbox 或 kept"
+  );
+}
+
+function inspirationOutcome(value: string): InspirationFlowOutcome {
+  if (
+    value === "viewed" ||
+    value === "continued" ||
+    value === "kept" ||
+    value === "later" ||
+    value === "archived"
+  ) {
+    return value;
+  }
+  throw new CliUsageError(
+    "outcome 只能是 viewed、continued、kept、later 或 archived"
+  );
+}
+
+function inspirationMinute(value: string, option: string): number {
+  const match = /^(\d{2}):(\d{2})$/.exec(value);
+  if (!match) throw new CliUsageError(`${option} 必须是 HH:mm`);
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+  if (hour > 23 || minute > 59) {
+    throw new CliUsageError(`${option} 必须是有效的 24 小时时间`);
+  }
+  return hour * 60 + minute;
+}
+
+function inspirationItems(result: any): any[] {
+  if (Array.isArray(result)) return result;
+  if (Array.isArray(result?.items)) return result.items;
+  return [];
+}
+
+function printInspirations(result: any): void {
+  const items = inspirationItems(result);
+  if (items.length === 0) {
+    console.log("暂无灵感");
+    return;
+  }
+  for (const item of items) {
+    const tags = item.tags?.length ? ` #${item.tags.join(" #")}` : "";
+    const project = item.project ? ` · ${item.project}` : "";
+    console.log(`${item.id}\tv${item.version}\t${item.status}${project}${tags}`);
+    console.log(`  ${item.content}`);
+  }
+}
+
+const inspiration = program
+  .command("inspiration")
+  .description("独立捕捉、整理灵感并使用确定性的 Inspiration Flow；不依赖活跃记录。")
+  .addHelpText(
+    "after",
+    `
+示例:
+  $ el inspiration capture "为发布页画一张对照图" --tags design,launch
+  $ el inspiration list --statuses inbox,kept --json
+  $ el inspiration flow next --json
+  $ el inspiration flow outcome <delivery-id> later --delivery-version 1 --inspiration-version 3 --snooze-minutes 120
+`
+  );
+
+withJson(
+  inspiration
+    .command("capture <content>")
+    .description("捕捉一条独立灵感；status 只能是 inbox 或 kept，默认 inbox。")
+    .option("-t, --tags <tags>", "标签，逗号分隔，如 design,launch")
+    .option("-p, --project <project>", "可选自由文本项目分组")
+    .option("--status <status>", "生命周期状态: inbox | kept", "inbox")
+    .addHelpText(
+      "after",
+      `
+示例:
+  $ el inspiration capture "试试更短的 onboarding" --tags product,ux
+  $ el inspiration capture "保留这条原则" --status kept --project EchoLog --json
+`
+    )
+).action(
+  action(async (
+    thisCommand,
+    content: string,
+    opts: { tags?: string; project?: string; status: string }
+  ) => {
+    const created = await post(`${inspirationApiPrefix}/inspirations`, {
+      content,
+      tags: splitCsv(opts.tags),
+      project: opts.project?.trim() || null,
+      status: inspirationStatus(opts.status, false),
+    });
+    printSuccess(thisCommand, created, () => {
+      console.log(`✓ 已捕捉灵感 [${(created as any).id}] v${(created as any).version}`);
+      console.log(`  ${(created as any).content}`);
+    });
+  })
+);
+
+withJson(
+  inspiration
+    .command("list")
+    .alias("inbox")
+    .description("列出或筛选灵感；支持文本、标签、项目、生命周期与归档历史。")
+    .option("--text <query>", "正文包含的文本")
+    .option("--tags <tags>", "必须匹配的标签，逗号分隔")
+    .option("--project <project>", "精确项目分组")
+    .option("--statuses <statuses>", "状态，逗号分隔: inbox | kept | archived")
+    .option("--include-archived", "包含 archived 历史")
+    .option("--limit <n>", "返回数量，范围 1–100", "50")
+    .option("--created-before <iso>", "只看此创建时间之前，ISO 8601 且包含时区")
+    .option("--created-after <iso>", "只看此创建时间之后，ISO 8601 且包含时区")
+    .option("--cursor <cursor>", "上一页响应的 opaque nextCursor")
+    .addHelpText(
+      "after",
+      `
+示例:
+  $ el inspiration list
+  $ el inspiration inbox --text onboarding --tags ux,product
+  $ el inspiration list --statuses kept,archived --include-archived --created-before 2026-08-24T12:00:00+08:00 --json
+`
+    )
+).action(
+  action(async (thisCommand, opts: {
+    text?: string;
+    tags?: string;
+    project?: string;
+    statuses?: string;
+    includeArchived?: boolean;
+    limit: string;
+    createdBefore?: string;
+    createdAfter?: string;
+    cursor?: string;
+  }) => {
+    const params = new URLSearchParams();
+    if (opts.text) params.set("text", opts.text);
+    for (const tag of splitCsv(opts.tags)) params.append("tag", tag);
+    if (opts.project) params.set("project", opts.project);
+    if (opts.statuses) {
+      const statuses = splitCsv(opts.statuses).map((value) => inspirationStatus(value));
+      for (const status of statuses) params.append("status", status);
+    }
+    if (opts.includeArchived) params.set("includeArchived", "true");
+    params.set("limit", String(inspirationLimit(opts.limit, "--limit")));
+    if (opts.createdBefore) params.set("createdBefore", opts.createdBefore);
+    if (opts.createdAfter) params.set("createdAfter", opts.createdAfter);
+    if (opts.cursor) params.set("cursor", opts.cursor);
+    const result = await api(`${inspirationApiPrefix}/inspirations?${params}`);
+    printSuccess(thisCommand, result, () => printInspirations(result));
+  })
+);
+
+withJson(
+  inspiration
+    .command("show <id>")
+    .description("查看一条灵感；id 来自 inspiration list。")
+    .addHelpText("after", `\n示例:\n  $ el inspiration show <id> --json\n`)
+).action(
+  action(async (thisCommand, id: string) => {
+    const item = await api(`${inspirationApiPrefix}/inspirations/${encodeURIComponent(id)}`);
+    printSuccess(thisCommand, item, () => printInspirations([item]));
+  })
+);
+
+withJson(
+  inspiration
+    .command("edit <id>")
+    .description("按 expectedVersion 编辑正文、标签、项目或 inbox/kept 状态；冲突返回 409。")
+    .requiredOption("--version <n>", "当前 inspiration version，必须与服务端一致")
+    .option("--content <content>", "替换正文")
+    .option("--tags <tags>", "替换标签，逗号分隔；空字符串清空")
+    .option("--project <project>", "替换项目分组")
+    .option("--clear-project", "清除项目分组")
+    .option("--status <status>", "生命周期状态: inbox | kept")
+    .addHelpText(
+      "after",
+      `
+示例:
+  $ el inspiration edit <id> --version 2 --content "更明确的想法" --tags product,copy
+  $ el inspiration edit <id> --version 3 --clear-project --status kept --json
+`
+    )
+).action(
+  action(async (thisCommand, id: string, opts: {
+    version: string;
+    content?: string;
+    tags?: string;
+    project?: string;
+    clearProject?: boolean;
+    status?: string;
+  }) => {
+    if (opts.project != null && opts.clearProject) {
+      throw new CliUsageError("--project 和 --clear-project 不能同时使用");
+    }
+    const body: Record<string, unknown> = {
+      expectedVersion: inspirationInteger(opts.version, "--version", 1),
+    };
+    if (opts.content != null) body.content = opts.content;
+    if (opts.tags != null) body.tags = splitCsv(opts.tags);
+    if (opts.project != null) body.project = opts.project.trim() || null;
+    if (opts.clearProject) body.project = null;
+    if (opts.status != null) body.status = inspirationStatus(opts.status, false);
+    if (Object.keys(body).length === 1) {
+      throw new CliUsageError("至少指定 --content、--tags、--project、--clear-project 或 --status 之一");
+    }
+    const updated = await patch(
+      `${inspirationApiPrefix}/inspirations/${encodeURIComponent(id)}`,
+      body
+    );
+    printSuccess(thisCommand, updated, () => {
+      console.log(`✓ 已更新灵感 [${(updated as any).id}] v${(updated as any).version}`);
+    });
+  })
+);
+
+for (const operation of ["archive", "restore"] as const) {
+  withJson(
+    inspiration
+      .command(`${operation} <id>`)
+      .description(
+        operation === "archive"
+          ? "按 expectedVersion 归档灵感；历史仍可查询。"
+          : "按 expectedVersion 将已归档灵感恢复到 inbox。"
+      )
+      .requiredOption("--version <n>", "当前 inspiration version，必须与服务端一致")
+      .addHelpText(
+        "after",
+        `\n示例:\n  $ el inspiration ${operation} <id> --version 2 --json\n`
+      )
+  ).action(
+    action(async (thisCommand, id: string, opts: { version: string }) => {
+      const result = await post(
+        `${inspirationApiPrefix}/inspirations/${encodeURIComponent(id)}/${operation}`,
+        { expectedVersion: inspirationInteger(opts.version, "--version", 1) }
+      );
+      printSuccess(thisCommand, result, () => {
+        console.log(
+          `✓ 灵感已${operation === "archive" ? "归档" : "恢复"} [${(result as any).id}] v${(result as any).version}`
+        );
+      });
+    })
+  );
+}
+
+const inspirationFlow = inspiration
+  .command("flow")
+  .description("手动浮现灵感、记录用户结果，并查看 Flow 设置与投递历史。")
+  .addHelpText(
+    "after",
+    `
+示例:
+  $ el inspiration flow next --idempotency-key manual-20260824 --json
+  $ el inspiration flow deliveries --limit 20
+`
+  );
+
+withJson(
+  inspirationFlow
+    .command("next")
+    .description("使用服务端确定性选择器浮现下一条；不在客户端推断候选。")
+    .option("--idempotency-key <key>", "可选手动幂等键，最长 200 字符")
+    .addHelpText(
+      "after",
+      `\n示例:\n  $ el inspiration flow next\n  $ el inspiration flow next --idempotency-key morning-review --json\n`
+    )
+).action(
+  action(async (thisCommand, opts: { idempotencyKey?: string }) => {
+    const result = await post(`${inspirationApiPrefix}/flow/next`,
+      opts.idempotencyKey ? { idempotencyKey: opts.idempotencyKey } : {}
+    );
+    printSuccess(thisCommand, result, () => {
+      const candidate = (result as any).candidate;
+      if (!candidate) {
+        console.log("暂无可浮现的灵感");
+        for (const reason of (result as any).explanation ?? []) console.log(`  - ${reason}`);
+        return;
+      }
+      console.log(`${candidate.inspiration.content}`);
+      console.log(`  inspiration ${candidate.inspiration.id} v${candidate.inspiration.version}`);
+      console.log(`  delivery ${candidate.delivery.id} v${candidate.delivery.version}`);
+      for (const reason of candidate.explanation ?? []) console.log(`  - ${reason}`);
+    });
+  })
+);
+
+withJson(
+  inspirationFlow
+    .command("outcome <deliveryId> <outcome>")
+    .description("记录 Flow 结果: viewed | continued | kept | later | archived。")
+    .requiredOption("--delivery-version <n>", "当前 delivery version")
+    .requiredOption("--inspiration-version <n>", "候选 inspiration version")
+    .option("--snooze-minutes <n>", "later 的稍后分钟数；省略时使用服务端默认值")
+    .addHelpText(
+      "after",
+      `
+示例:
+  $ el inspiration flow outcome <delivery-id> viewed --delivery-version 1 --inspiration-version 3
+  $ el inspiration flow outcome <delivery-id> later --delivery-version 1 --inspiration-version 3 --snooze-minutes 120 --json
+`
+    )
+).action(
+  action(async (thisCommand, deliveryId: string, outcomeValue: string, opts: {
+    deliveryVersion: string;
+    inspirationVersion: string;
+    snoozeMinutes?: string;
+  }) => {
+    const outcome = inspirationOutcome(outcomeValue);
+    const body: Record<string, unknown> = {
+      expectedDeliveryVersion: inspirationInteger(opts.deliveryVersion, "--delivery-version", 1),
+      expectedInspirationVersion: inspirationInteger(opts.inspirationVersion, "--inspiration-version", 1),
+      outcome,
+    };
+    if (opts.snoozeMinutes != null) {
+      if (outcome !== "later") {
+        throw new CliUsageError("--snooze-minutes 只能与 outcome=later 一起使用");
+      }
+      body.snoozeMinutes = inspirationInteger(opts.snoozeMinutes, "--snooze-minutes", 1);
+    }
+    const result = await post(
+      `${inspirationApiPrefix}/flow/deliveries/${encodeURIComponent(deliveryId)}/outcome`,
+      body
+    );
+    printSuccess(thisCommand, result, () => {
+      console.log(`✓ 已记录 Flow 结果: ${outcome}`);
+    });
+  })
+);
+
+const inspirationFlowSettings = inspirationFlow
+  .command("settings")
+  .description("查看 Flow 设置；使用 settings set 提交完整的版本化设置。")
+  .addHelpText(
+    "after",
+    `\n示例:\n  $ el inspiration flow settings --json\n  $ el inspiration flow settings set --help\n`
+  );
+
+withJson(inspirationFlowSettings).action(
+  action(async (thisCommand) => {
+    const settings = await api(`${inspirationApiPrefix}/flow/settings`);
+    printSuccess(thisCommand, settings, () => {
+      const value = settings as any;
+      console.log(`Flow: ${value.enabled ? "已启用" : "未启用"} · v${value.version}`);
+      console.log(`  周期 ${value.intervalMinutes} 分钟 · 冷却 ${value.cooldownMinutes} 分钟 · 每日上限 ${value.dailyLimit}`);
+      console.log(`  安静时间 ${formatMinute(value.quietStartMinute)}–${formatMinute(value.quietEndMinute)}`);
+    });
+  })
+);
+
+withJson(
+  inspirationFlowSettings
+    .command("set")
+    .description("提交完整 FlowSettingsUpdate；所有选项必填，版本冲突返回 409。")
+    .requiredOption("--version <n>", "当前 settings version")
+    .requiredOption("--enabled <boolean>", "是否启用定时 Flow: true | false")
+    .requiredOption("--interval-minutes <n>", "定时检查间隔分钟数")
+    .requiredOption("--quiet-start <HH:mm>", "安静时间开始，HH:mm")
+    .requiredOption("--quiet-end <HH:mm>", "安静时间结束，HH:mm；开始晚于结束表示跨夜")
+    .requiredOption("--cooldown-minutes <n>", "同一灵感冷却分钟数")
+    .requiredOption("--daily-limit <n>", "每日浮现上限")
+    .requiredOption("--default-snooze-minutes <n>", "later 默认稍后分钟数")
+    .requiredOption("--statuses <statuses>", "候选状态，逗号分隔: inbox | kept")
+    .requiredOption("--tags <tags>", "可选标签筛选，逗号分隔；传空字符串表示不限")
+    .requiredOption("--projects <projects>", "可选项目筛选，逗号分隔；传空字符串表示不限")
+    .addHelpText(
+      "after",
+      `
+示例:
+  $ el inspiration flow settings set --version 1 --enabled true --interval-minutes 180 --quiet-start 22:00 --quiet-end 08:00 --cooldown-minutes 1440 --daily-limit 3 --default-snooze-minutes 120 --statuses inbox,kept --tags "" --projects "" --json
+`
+    )
+).action(
+  action(async (thisCommand, opts: {
+    version: string;
+    enabled: string;
+    intervalMinutes: string;
+    quietStart: string;
+    quietEnd: string;
+    cooldownMinutes: string;
+    dailyLimit: string;
+    defaultSnoozeMinutes: string;
+    statuses: string;
+    tags: string;
+    projects: string;
+  }) => {
+    const statuses = splitCsv(opts.statuses).map((value) => inspirationStatus(value, false));
+    if (statuses.length === 0) throw new CliUsageError("--statuses 至少包含 inbox 或 kept");
+    const settings = await patch(`${inspirationApiPrefix}/flow/settings`, {
+      expectedVersion: inspirationInteger(opts.version, "--version", 1),
+      enabled: inspirationBoolean(opts.enabled, "--enabled"),
+      intervalMinutes: inspirationInteger(opts.intervalMinutes, "--interval-minutes", 1),
+      quietStartMinute: inspirationMinute(opts.quietStart, "--quiet-start"),
+      quietEndMinute: inspirationMinute(opts.quietEnd, "--quiet-end"),
+      cooldownMinutes: inspirationInteger(opts.cooldownMinutes, "--cooldown-minutes"),
+      dailyLimit: inspirationInteger(opts.dailyLimit, "--daily-limit", 1),
+      defaultSnoozeMinutes: inspirationInteger(
+        opts.defaultSnoozeMinutes,
+        "--default-snooze-minutes",
+        1
+      ),
+      statuses,
+      tags: splitCsv(opts.tags),
+      projects: splitCsv(opts.projects),
+    });
+    printSuccess(thisCommand, settings, () => {
+      console.log(`✓ Flow 设置已保存 v${(settings as any).version}`);
+    });
+  })
+);
+
+withJson(
+  inspirationFlow
+    .command("deliveries")
+    .description("查看 Flow 投递 ledger；不包含灵感正文。")
+    .option("--limit <n>", "返回数量，范围 1–100", "20")
+    .option("--before <iso>", "surfacedAt 游标，ISO 8601 且包含时区")
+    .addHelpText(
+      "after",
+      `\n示例:\n  $ el inspiration flow deliveries --limit 20\n  $ el inspiration flow deliveries --before 2026-08-24T12:00:00+08:00 --json\n`
+    )
+).action(
+  action(async (thisCommand, opts: { limit: string; before?: string }) => {
+    const params = new URLSearchParams({
+      limit: String(inspirationLimit(opts.limit, "--limit")),
+    });
+    if (opts.before) params.set("before", opts.before);
+    const result = await api(`${inspirationApiPrefix}/flow/deliveries?${params}`);
+    printSuccess(thisCommand, result, () => {
+      const deliveries = Array.isArray((result as any).deliveries)
+        ? (result as any).deliveries
+        : [];
+      if (deliveries.length === 0) {
+        console.log("暂无 Flow 投递");
+        return;
+      }
+      for (const delivery of deliveries) {
+        console.log(
+          `${delivery.id}\tv${delivery.version}\t${delivery.status}\t${delivery.outcome ?? "-"}\t${delivery.surfacedAt}`
+        );
+      }
+    });
+  })
+);
+
 // el screen [date]
 const screen = program
   .command("screen")

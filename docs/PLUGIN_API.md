@@ -240,6 +240,24 @@ then delegates data loading, face descriptions, rendering and actions. A module
 failure removes only that contribution. Disabled plugins do not add navigation
 or pages.
 
+## Inspiration notification dependency
+
+The bundled `inspiration` plugin owns capture, organization, and deterministic
+Flow resurfacing under `/api/plugins/inspiration/*`. Its inspiration lifecycle
+and Flow delivery ledger are separate; snoozing a delivery MUST NOT change the
+inspiration's kept/archived state. The plugin has no Schedule/Core-record API or
+table relationship.
+
+Flow resolves the named service `notifications.send` lazily through
+`PluginContext.service()`, using the SDK-exported `PluginNotificationSend`
+function. It sends only `{title, message}`. Inspiration-owned dedupe keys,
+inspiration IDs, and delivery IDs never cross the Core service boundary. The
+plugin persists the bounded `mac`/`ntfy` result projection in its private
+delivery ledger and treats the delivery as sent only when at least one channel
+reports `sent`. The notification service is Host-owned; the plugin MUST NOT
+import or copy the Core notifier. Missing/failing delivery is recorded while
+capture remains available.
+
 ## Compatibility policy
 
 API v1 changes are additive. A breaking SDK, lifecycle or manifest change
