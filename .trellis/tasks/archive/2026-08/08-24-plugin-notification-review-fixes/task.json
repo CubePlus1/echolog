@@ -1,0 +1,30 @@
+{
+  "id": "plugin-notification-review-fixes",
+  "name": "plugin-notification-review-fixes",
+  "title": "PR 36 notification host review fixes",
+  "description": "",
+  "status": "completed",
+  "dev_type": null,
+  "scope": "backend,cross-layer",
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-08-24",
+  "completedAt": "2026-08-24",
+  "branch": "codex/plugin-notification-service",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": "fdd22d9",
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "PR #36 Codex review repair; follows archived plugin-notification-service task.",
+  "meta": {
+    "pr": 36,
+    "pr_url": "https://github.com/CubePlus1/echolog/pull/36",
+    "reviewed_commit": "b751338a0aa300602716f82fcaf8a075ee012a3e"
+  }
+}
