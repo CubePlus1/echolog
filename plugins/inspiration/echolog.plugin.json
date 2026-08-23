@@ -16,7 +16,8 @@
     "daily-report"
   ],
   "permissions": [
-    "database:plugin"
+    "database:plugin",
+    "notifications:send"
   ],
   "requires": {
     "coreApi": "^1.0.0"

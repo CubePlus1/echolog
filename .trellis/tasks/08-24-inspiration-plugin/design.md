@@ -48,9 +48,25 @@ optimistic/dedupe conflicts 409 with structured version context.
 The plugin is bundled and enabled by default for capture. The Flow send service
 is resolved only when a notification is attempted, so missing notification
 capability does not disable capture. A missing or failed service call finalizes
-the delivery as failed and is visible in diagnostics/ledger. Once the separate
-notifications worktree registers `notifications.send`, no plugin code change
-should be required.
+the delivery as failed and is visible in diagnostics/ledger. The official
+notification capability is integrated at `8484b48`; its Core Host wiring owns
+`notifications.send`, while Inspiration owns only lazy resolution and its
+delivery ledger.
 
 Rollback is removal from the bundled registry/config; plugin-owned tables are
 left intact to preserve user data.
+
+## Official notification integration repair
+
+The authoritative baseline is original commit `29fe6c3`, cherry-picked on this
+branch as `8484b48`. It exports `PluginNotificationSend` and
+`PluginNotificationResult`, registers a function-valued `notifications.send`
+service, and gates it with manifest permission `notifications:send`.
+
+Inspiration must not wrap or redefine that service. It lazily resolves the SDK
+function and calls it with only `{title, message}`. Delivery `dedupeKey`,
+`inspirationId`, and `deliveryId` never cross the Core service boundary. A new
+append-only plugin migration stores the exact bounded per-channel result
+projection in the delivery ledger. One or more `sent` channels means delivered;
+all-disabled/all-failed/mixed-disabled-failed means not delivered. Thrown service
+errors remain generic in the ledger so notification content cannot be reflected.

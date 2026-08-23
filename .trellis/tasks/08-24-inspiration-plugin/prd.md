@@ -26,8 +26,9 @@ product, with independently verifiable Capture, Flow, and client deliverables.
 - Allowed Flow actions are view, continue editing, keep, later, and archive.
   Task/schedule creation and scheduling are explicitly out of scope.
 - Flow notifications use `PluginContext.service("notifications.send")` through
-  the narrow local TypeScript contract documented in `design.md`. The Core
-  notifier and Host/SDK public contract are not copied into this branch.
+  the SDK-exported `PluginNotificationSend` contract. The Core notifier is not
+  copied; Host/SDK changes are limited to the audited official capability
+  commit `29fe6c3`, cherry-picked here as `8484b48`.
 - No screenshots, prompts, replies, or model reasoning are stored.
 - Web contributions load only when the plugin is ready. CLI commands remain
   HTTP-thin and preserve global `--json` raw-response/error behavior.
@@ -56,3 +57,19 @@ product, with independently verifiable Capture, Flow, and client deliverables.
 
 The source request explicitly authorizes the full Trellis development flow,
 implementation, validation, documentation synchronization, and commit.
+
+## Notification Contract Repair
+
+- [x] Official notification capability commit `29fe6c3` is introduced with an
+  auditable cherry-pick and its SDK/Host tests remain intact.
+- [x] Inspiration declares `notifications:send` and consumes the SDK-exported
+  function contract instead of a local object-shaped service.
+- [x] Flow sends only `{ title, message }`; dedupe and entity identifiers remain
+  private delivery-ledger fields.
+- [x] Per-channel `sent|disabled|failed` results are persisted in a bounded,
+  non-sensitive ledger projection; overall delivery succeeds only when at least
+  one channel reports `sent`.
+- [x] Real PluginHost integration tests cover missing permission, function
+  invocation, channel combinations, and absence of a `.send()` assumption.
+- [x] Full test, typecheck, build, diff check, independent review, repair commit,
+  and re-archive are complete without rewriting `3ab8946`.

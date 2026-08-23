@@ -259,6 +259,10 @@ test("Inspiration Web uses canonical APIs, escapes DTOs, and delegates Flow poli
     snoozedUntil: null,
     outcomeAt: null,
     notificationChannel: null,
+    notificationChannels: {
+      mac: { status: "sent" },
+      ntfy: { status: "disabled" },
+    },
     error: null,
     createdAt: "2026-08-24T05:00:00.000Z",
     updatedAt: "2026-08-24T05:00:00.000Z",

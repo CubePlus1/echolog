@@ -13,6 +13,7 @@
   adapter at the composition point.
 - Web Shell calls contribution `load`, `loadLive`, `faces`, `renderFace`, and
   `handleAction`, and imports a module only when `/api/plugins` reports ready.
-- No current Host service named `notifications.send` exists in this branch.
-  Inspiration therefore defines only a local generic interface and resolves the
-  service lazily; the separate notifications worktree owns Host wiring.
+- At initial research time no Host service named `notifications.send` existed
+  on this branch. That finding is superseded by official commit `29fe6c3`,
+  cherry-picked here as `8484b48`: Inspiration now imports the SDK function
+  contract, resolves it lazily, and leaves Host wiring to Core.

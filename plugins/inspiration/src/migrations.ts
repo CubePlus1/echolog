@@ -131,4 +131,11 @@ export const migrations: PluginMigration[] = [
         CHECK (attempts >= 1);
     `,
   },
+  {
+    name: "005_inspiration_flow_notification_channels",
+    sql: `
+      ALTER TABLE inspiration_flow_deliveries
+        ADD COLUMN IF NOT EXISTS notification_channels JSONB;
+    `,
+  },
 ];

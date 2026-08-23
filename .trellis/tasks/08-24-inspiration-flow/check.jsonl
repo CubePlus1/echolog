@@ -1,3 +1,4 @@
 {"file":".trellis/spec/backend/database-guidelines.md","reason":"Review transaction and dedupe correctness"}
 {"file":".trellis/spec/backend/quality-guidelines.md","reason":"Review job timeout/non-reentry and failure recovery"}
 {"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Review Flow state/lifecycle separation"}
+{"file": ".trellis/spec/backend/plugin-api-guidelines.md", "reason": "Review notification permission, channel outcomes, and privacy"}

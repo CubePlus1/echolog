@@ -192,18 +192,23 @@ async function call(
 
 test("manifest and migrations define one private standalone plugin schema", () => {
   assert.equal(manifest.id, "inspiration");
-  assert.deepEqual(manifest.permissions, ["database:plugin"]);
+  assert.deepEqual(manifest.permissions, [
+    "database:plugin",
+    "notifications:send",
+  ]);
   assert.deepEqual(migrations.map((migration) => migration.name), [
     "001_inspirations",
     "002_inspiration_flow_settings",
     "003_inspiration_flow_deliveries",
     "004_inspiration_flow_delivery_attempts",
+    "005_inspiration_flow_notification_channels",
   ]);
   const sql = migrations.map((migration) => migration.sql).join("\n");
   assert.match(sql, /CREATE TABLE IF NOT EXISTS inspirations/);
   assert.match(sql, /CREATE TABLE IF NOT EXISTS inspiration_flow_settings/);
   assert.match(sql, /CREATE TABLE IF NOT EXISTS inspiration_flow_deliveries/);
   assert.match(sql, /dedupe_key[\s\S]*CREATE UNIQUE INDEX/);
+  assert.match(sql, /ADD COLUMN IF NOT EXISTS notification_channels JSONB/);
   assert.match(sql, /inspiration_id TEXT NOT NULL REFERENCES inspirations\(id\)/);
   assert.match(sql, /CHECK \(\(status = 'archived'\) = \(archived_at IS NOT NULL\)\)/);
   assert.doesNotMatch(sql, /REFERENCES\s+(records|tasks|schedule)/i);

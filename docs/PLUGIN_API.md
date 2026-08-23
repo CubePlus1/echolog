@@ -249,11 +249,14 @@ inspiration's kept/archived state. The plugin has no Schedule/Core-record API or
 table relationship.
 
 Flow resolves the named service `notifications.send` lazily through
-`PluginContext.service()`. The plugin's local interface accepts a title, body,
-dedupe key, and `{pluginId, inspirationId, deliveryId}` metadata and returns a
-delivered flag plus optional channel. The notification service is Host-owned;
-the plugin MUST NOT import or copy the Core notifier. Missing/failing delivery
-is recorded in the plugin ledger while capture remains available.
+`PluginContext.service()`, using the SDK-exported `PluginNotificationSend`
+function. It sends only `{title, message}`. Inspiration-owned dedupe keys,
+inspiration IDs, and delivery IDs never cross the Core service boundary. The
+plugin persists the bounded `mac`/`ntfy` result projection in its private
+delivery ledger and treats the delivery as sent only when at least one channel
+reports `sent`. The notification service is Host-owned; the plugin MUST NOT
+import or copy the Core notifier. Missing/failing delivery is recorded while
+capture remains available.
 
 ## Compatibility policy
 

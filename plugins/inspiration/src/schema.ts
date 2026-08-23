@@ -4,11 +4,15 @@ import {
   check,
   index,
   integer,
+  jsonb,
   pgTable,
   text,
   timestamp,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
+import type {
+  PluginNotificationResult,
+} from "@echolog/plugin-sdk";
 import type {
   FlowDeliveryStatus,
   FlowOutcome,
@@ -137,6 +141,8 @@ export const inspirationFlowDeliveries = pgTable(
     snoozedUntil: timestamp("snoozed_until", { withTimezone: true }),
     outcomeAt: timestamp("outcome_at", { withTimezone: true }),
     notificationChannel: text("notification_channel"),
+    notificationChannels: jsonb("notification_channels")
+      .$type<PluginNotificationResult["channels"]>(),
     error: text("error"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()

@@ -126,10 +126,28 @@ test(
       const sent = await flowA.finalizeNotification(
         owner.candidate.delivery.id,
         owner.candidate.delivery.version,
-        { delivered: true, channel: "integration", at: manualNow }
+        {
+          delivered: true,
+          channels: {
+            mac: { status: "sent" },
+            ntfy: { status: "disabled" },
+          },
+          at: manualNow,
+        }
       );
       assert.equal(sent.status, "sent");
       assert.equal(sent.attempts, 1);
+      assert.deepEqual(sent.notificationChannels, {
+        mac: { status: "sent" },
+        ntfy: { status: "disabled" },
+      });
+      const sentFromLedger = (await flowB.listDeliveries()).find(
+        (item) => item.id === sent.id
+      );
+      assert.deepEqual(sentFromLedger?.notificationChannels, {
+        mac: { status: "sent" },
+        ntfy: { status: "disabled" },
+      });
 
       const statusBeforeLater = owner.candidate.inspiration.status;
       const later = await flowA.applyOutcome(
@@ -175,10 +193,32 @@ test(
       const finalizedRecovery = await flowB.finalizeNotification(
         recovered.candidate.delivery.id,
         recovered.candidate.delivery.version,
-        { delivered: false, error: "notifications.send failed", at: afterBoundary }
+        {
+          delivered: false,
+          channels: {
+            mac: { status: "disabled" },
+            ntfy: {
+              status: "failed",
+              error: "ntfy notification timed out",
+            },
+          },
+          error: "notifications.send failed on all enabled channels",
+          at: afterBoundary,
+        }
       );
       assert.equal(finalizedRecovery.status, "failed");
       assert.equal(finalizedRecovery.attempts, 2);
+      assert.deepEqual(finalizedRecovery.notificationChannels, {
+        mac: { status: "disabled" },
+        ntfy: { status: "failed", error: "ntfy notification timed out" },
+      });
+      const failureFromLedger = (await flowA.listDeliveries()).find(
+        (item) => item.id === finalizedRecovery.id
+      );
+      assert.deepEqual(failureFromLedger?.notificationChannels, {
+        mac: { status: "disabled" },
+        ntfy: { status: "failed", error: "ntfy notification timed out" },
+      });
 
       const retryAfterFailure = await flowA.reserveNext(
         "scheduled",

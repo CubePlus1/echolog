@@ -14,5 +14,14 @@
 - [x] Review/update specs if a reusable bundled-plugin pattern was learned.
 - [x] Commit coherent changes on `codex/inspiration-plugin` and record session.
 
+## Notification contract repair iteration
+
+- [x] Cherry-pick official notification service commit without rewriting prior
+  Inspiration commits.
+- [x] Replace local service object/request/result types with SDK function types.
+- [x] Add manifest permission, per-channel ledger migration, and delivery logic.
+- [x] Replace mocks and add real PluginHost contract integration tests.
+- [x] Run independent check, full validation, append repair commit, and re-archive.
+
 Rollback points: before root registry integration; before docs/Issue update;
 before commit. Never merge another branch.

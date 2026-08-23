@@ -1,5 +1,6 @@
 import { nanoid } from "nanoid";
 import postgres from "postgres";
+import type { PluginNotificationResult } from "@echolog/plugin-sdk";
 import {
   isQuietMinute,
   minuteOfLocalDay,
@@ -60,6 +61,7 @@ type DeliveryRow = {
   snoozed_until: Date | string | null;
   outcome_at: Date | string | null;
   notification_channel: string | null;
+  notification_channels: PluginNotificationResult["channels"] | null;
   error: string | null;
   created_at: Date | string;
   updated_at: Date | string;
@@ -93,6 +95,19 @@ export interface FlowOutcomeResult {
   delivery: FlowDelivery;
   inspiration: Inspiration;
 }
+
+export type FlowNotificationFinalization =
+  | {
+      delivered: true;
+      channels: PluginNotificationResult["channels"];
+      at: Date;
+    }
+  | {
+      delivered: false;
+      channels: PluginNotificationResult["channels"] | null;
+      error: string;
+      at: Date;
+    };
 
 function date(value: Date | string): Date {
   return value instanceof Date ? value : new Date(value);
@@ -150,6 +165,7 @@ function mapDelivery(row: DeliveryRow): FlowDelivery {
     snoozedUntil: nullableDate(row.snoozed_until),
     outcomeAt: nullableDate(row.outcome_at),
     notificationChannel: row.notification_channel,
+    notificationChannels: row.notification_channels,
     error: row.error,
     createdAt: date(row.created_at),
     updatedAt: date(row.updated_at),
@@ -452,15 +468,15 @@ export class FlowStore {
   async finalizeNotification(
     deliveryId: string,
     expectedVersion: number,
-    result:
-      | { delivered: true; channel: string | null; at: Date }
-      | { delivered: false; error: string; at: Date }
+    result: FlowNotificationFinalization
   ): Promise<FlowDelivery> {
     const rows = result.delivered
       ? await this.sql<DeliveryRow[]>`
           UPDATE inspiration_flow_deliveries
           SET status = 'sent', notified_at = ${result.at},
-              notification_channel = ${result.channel}, error = NULL,
+              notification_channel = NULL,
+              notification_channels = ${this.sql.json(result.channels)},
+              error = NULL,
               version = version + 1, updated_at = ${result.at}
           WHERE id = ${deliveryId} AND version = ${expectedVersion}
             AND status = 'reserved'
@@ -468,7 +484,12 @@ export class FlowStore {
         `
       : await this.sql<DeliveryRow[]>`
           UPDATE inspiration_flow_deliveries
-          SET status = 'failed', error = ${result.error},
+          SET status = 'failed',
+              notification_channel = NULL,
+              notification_channels = ${result.channels === null
+                ? null
+                : this.sql.json(result.channels)},
+              error = ${result.error},
               version = version + 1, updated_at = ${result.at}
           WHERE id = ${deliveryId} AND version = ${expectedVersion}
             AND status = 'reserved'

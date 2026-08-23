@@ -1,6 +1,11 @@
 import { nanoid } from "nanoid";
-import type { PluginJob } from "@echolog/plugin-sdk";
+import {
+  PluginError,
+  type PluginJob,
+  type PluginNotificationResult,
+} from "@echolog/plugin-sdk";
 import type {
+  FlowNotificationFinalization,
   FlowOutcomeResult,
   FlowReserveResult,
 } from "./flow-store.js";
@@ -35,6 +40,29 @@ function isAbortError(error: unknown): boolean {
   return error instanceof Error && error.name === "AbortError";
 }
 
+function notificationFailureMessage(error: unknown): string {
+  return error instanceof PluginError &&
+    error.code === "PLUGIN_DEPENDENCY_MISSING"
+    ? "notifications.send unavailable (PLUGIN_DEPENDENCY_MISSING)"
+    : "notifications.send failed";
+}
+
+export function notificationWasDelivered(
+  result: PluginNotificationResult
+): boolean {
+  return Object.values(result.channels).some(
+    (channel) => channel.status === "sent"
+  );
+}
+
+function noDeliveryMessage(result: PluginNotificationResult): string {
+  return Object.values(result.channels).every(
+    (channel) => channel.status === "disabled"
+  )
+    ? "notifications.send has no enabled channels"
+    : "notifications.send failed on all enabled channels";
+}
+
 export interface FlowPersistence {
   getSettings(): Promise<FlowSettings>;
   updateSettings(input: FlowSettingsUpdate): Promise<FlowSettings | null>;
@@ -47,9 +75,7 @@ export interface FlowPersistence {
   finalizeNotification(
     deliveryId: string,
     expectedVersion: number,
-    result:
-      | { delivered: true; channel: string | null; at: Date }
-      | { delivered: false; error: string; at: Date }
+    result: FlowNotificationFinalization
   ): Promise<FlowDelivery>;
   listDeliveries(limit?: number, before?: Date): Promise<FlowDelivery[]>;
   applyOutcome(
@@ -141,10 +167,11 @@ export class FlowService {
         candidate.delivery.version,
         {
           delivered: false,
+          channels: null,
           // Do not persist exception text: provider errors may echo request
           // bodies. The ledger records a stable diagnostic without retaining
           // notification content, prompts, or replies.
-          error: "notifications.send failed",
+          error: notificationFailureMessage(error),
           at: this.clock(),
         }
       );
@@ -154,15 +181,16 @@ export class FlowService {
     candidate.delivery = await this.store.finalizeNotification(
       candidate.delivery.id,
       candidate.delivery.version,
-      notification.delivered
+      notificationWasDelivered(notification)
         ? {
             delivered: true,
-            channel: notification.channel ?? null,
+            channels: notification.channels,
             at: this.clock(),
           }
         : {
             delivered: false,
-            error: "notifications.send reported an undelivered notification",
+            channels: notification.channels,
+            error: noDeliveryMessage(notification),
             at: this.clock(),
           }
     );

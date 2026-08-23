@@ -21,8 +21,9 @@ inspiration lifecycle.
 - Outcomes are exactly `viewed`, `continued`, `kept`, `later`, `archived`.
   `later` only updates delivery snooze; `kept`/`archived` update the inspiration
   lifecycle atomically with the outcome using expected versions.
-- Notifications use the local `notifications.send` interface and failures are
-  recorded without corrupting inspiration lifecycle or preventing later jobs.
+- Notifications use the SDK-exported `PluginNotificationSend` function and
+  failures are recorded without corrupting inspiration lifecycle or preventing
+  later jobs.
 
 ## Acceptance Criteria
 
@@ -35,3 +36,14 @@ inspiration lifecycle.
 - [x] `later` never changes inspiration `status`; concurrent stale outcomes
   return a conflict.
 - [x] Job behavior remains safe under Host non-reentry and timeout/abort.
+
+## Official notification contract acceptance
+
+- [x] Manifest declares `notifications:send`; missing permission is denied by a
+  real PluginHost with `PLUGIN_DEPENDENCY_MISSING` before service invocation.
+- [x] The SDK `PluginNotificationSend` function receives exactly `{title,
+  message}` and never dedupe/entity metadata.
+- [x] At least one `sent` channel finalizes delivery as sent; all-disabled or no
+  sent channel finalizes it as failed while retaining safe per-channel status.
+- [x] Lazy service absence/failure remains ledgered and does not prevent Capture
+  or Core startup.

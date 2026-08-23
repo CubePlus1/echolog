@@ -1,54 +1,69 @@
-import type { PluginContext } from "@echolog/plugin-sdk";
+import type {
+  PluginContext,
+  PluginNotificationChannelResult,
+  PluginNotificationResult,
+  PluginNotificationSend,
+} from "@echolog/plugin-sdk";
 import type { FlowCandidate } from "./types.js";
 
-export interface NotificationsSendInput {
-  title: string;
-  body: string;
-  dedupeKey: string;
-  data: {
-    pluginId: "inspiration";
-    inspirationId: string;
-    deliveryId: string;
+const MAX_NOTIFICATION_CHANNEL_ERROR_LENGTH = 160;
+
+export type NotificationsSendProvider = () => PluginNotificationSend;
+
+function projectChannelResult(
+  channel: "mac" | "ntfy",
+  value: unknown
+): PluginNotificationChannelResult {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`notifications.send returned an invalid ${channel} result`);
+  }
+  const result = value as Record<string, unknown>;
+  if (result.status === "sent") return { status: "sent" };
+  if (result.status === "disabled") return { status: "disabled" };
+  if (result.status === "failed" && typeof result.error === "string") {
+    return {
+      status: "failed",
+      error: result.error.slice(0, MAX_NOTIFICATION_CHANNEL_ERROR_LENGTH),
+    };
+  }
+  throw new Error(`notifications.send returned an invalid ${channel} result`);
+}
+
+export function projectNotificationResult(
+  result: PluginNotificationResult
+): PluginNotificationResult {
+  const channels = (result as unknown as { channels?: unknown }).channels;
+  if (!channels || typeof channels !== "object" || Array.isArray(channels)) {
+    throw new Error("notifications.send returned invalid channels");
+  }
+  const source = channels as Record<string, unknown>;
+  return {
+    channels: {
+      mac: projectChannelResult("mac", source.mac),
+      ntfy: projectChannelResult("ntfy", source.ntfy),
+    },
   };
 }
-
-export interface NotificationsSendResult {
-  delivered: boolean;
-  channel?: string;
-}
-
-export interface NotificationsSendService {
-  send(
-    input: NotificationsSendInput,
-    signal?: AbortSignal
-  ): Promise<NotificationsSendResult>;
-}
-
-export type NotificationsSendProvider = () => NotificationsSendService;
 
 export function notificationsSendProvider(
   context: PluginContext
 ): NotificationsSendProvider {
   // Service resolution must remain lazy: capture and organization continue to
   // work when the independently shipped notification capability is absent.
-  return () =>
-    context.service<NotificationsSendService>("notifications.send");
+  return () => context.service("notifications.send");
 }
 
 export function sendFlowNotification(
   provider: NotificationsSendProvider,
   candidate: FlowCandidate,
   signal?: AbortSignal
-): Promise<NotificationsSendResult> {
+): Promise<PluginNotificationResult> {
   signal?.throwIfAborted();
-  return provider().send({
-    title: "Inspiration",
-    body: candidate.inspiration.content,
-    dedupeKey: candidate.delivery.dedupeKey,
-    data: {
-      pluginId: "inspiration",
-      inspirationId: candidate.inspiration.id,
-      deliveryId: candidate.delivery.id,
+  return provider()(
+    {
+      title: "Inspiration",
+      message: candidate.inspiration.content,
     },
-  }, signal);
+    signal
+  ).then(projectNotificationResult);
 }

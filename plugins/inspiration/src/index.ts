@@ -82,4 +82,3 @@ export const inspirationPlugin: PluginDefinition = {
 
 export default inspirationPlugin;
 export { migrations } from "./migrations.js";
-export type { NotificationsSendService } from "./notifications.js";

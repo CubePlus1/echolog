@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { PluginHttpRequest } from "@echolog/plugin-sdk";
+import type {
+  PluginHttpRequest,
+  PluginNotificationResult,
+} from "@echolog/plugin-sdk";
 import { createFlowRoutes, validateOutcome, validateSettingsUpdate } from "../plugins/inspiration/src/flow-routes.js";
 import { FlowStoreError, type FlowOutcomeResult, type FlowReserveResult } from "../plugins/inspiration/src/flow-store.js";
 import {
@@ -76,6 +79,7 @@ function delivery(overrides: Partial<FlowDelivery> = {}): FlowDelivery {
     snoozedUntil: null,
     outcomeAt: null,
     notificationChannel: null,
+    notificationChannels: null,
     error: null,
     createdAt: NOW,
     updatedAt: NOW,
@@ -134,9 +138,14 @@ function persistence(
             version: 2,
             status: "sent",
             notifiedAt: result.at,
-            notificationChannel: result.channel,
+            notificationChannels: result.channels,
           })
-        : delivery({ version: 2, status: "failed", error: result.error });
+        : delivery({
+            version: 2,
+            status: "failed",
+            notificationChannels: result.channels,
+            error: result.error,
+          });
     },
     async listDeliveries() {
       return [];
@@ -295,9 +304,10 @@ test("scheduled job is bounded and forwards the Host abort signal", async () => 
   assert.deepEqual(observed, [controller.signal]);
 });
 
-test("service sends the narrow notification contract and finalizes the ledger", async () => {
+test("service calls the function-valued notification contract with title and message only", async () => {
   const finalized: unknown[] = [];
-  const sent: unknown[] = [];
+  const sent: Array<{ input: unknown; signal: AbortSignal | undefined }> = [];
+  const controller = new AbortController();
   const store = persistence({
     async finalizeNotification(...args) {
       finalized.push(args);
@@ -306,25 +316,25 @@ test("service sends the narrow notification contract and finalizes the ledger", 
   });
   const service = new FlowService(
     store,
-    () => ({
-      async send(input) {
-        sent.push(input);
-        return { delivered: true, channel: "local" };
-      },
-    }),
+    () => async (input, signal) => {
+      sent.push({ input, signal });
+      return {
+        channels: {
+          mac: { status: "sent" },
+          ntfy: { status: "disabled" },
+        },
+      };
+    },
     () => NOW
   );
-  const result = await service.nextManual("request-a");
+  const result = await service.nextManual("request-a", controller.signal);
   assert.equal(result.candidate?.delivery.status, "sent");
   assert.deepEqual(sent, [{
-    title: "Inspiration",
-    body: "Build a deterministic inspiration flow",
-    dedupeKey: "manual:request-a",
-    data: {
-      pluginId: "inspiration",
-      inspirationId: "idea-a",
-      deliveryId: "delivery-a",
+    input: {
+      title: "Inspiration",
+      message: "Build a deterministic inspiration flow",
     },
+    signal: controller.signal,
   }]);
   assert.equal(finalized.length, 1);
   assert.deepEqual((finalized[0] as unknown[]).slice(0, 2), ["delivery-a", 1]);
@@ -345,12 +355,15 @@ test("reserved duplicate resumes after restart but sent duplicate is not re-sent
       return delivery({ version: 2, status: "sent" });
     },
   });
-  const service = new FlowService(store, () => ({
-    async send() {
+  const service = new FlowService(store, () => async () => {
       sends += 1;
-      return { delivered: true };
-    },
-  }), () => NOW);
+      return {
+        channels: {
+          mac: { status: "sent" },
+          ntfy: { status: "disabled" },
+        },
+      };
+  }, () => NOW);
 
   await service.nextManual("same-request");
   await service.nextManual("same-request");
@@ -364,19 +377,122 @@ test("notification failures are recorded without leaking provider error text", a
       finalization = result;
       return delivery({ version: 2, status: "failed", error: "notifications.send failed" });
     },
-  }), () => ({
-    async send() {
+  }), () => async () => {
       throw new Error("secret provider response and echoed notification body");
-    },
-  }), () => NOW);
+  }, () => NOW);
 
   const result = await service.nextManual("failed-request");
   assert.equal(result.candidate?.delivery.status, "failed");
   assert.deepEqual(finalization, {
     delivered: false,
+    channels: null,
     error: "notifications.send failed",
     at: NOW,
   });
+});
+
+test("channel results require at least one sent channel and remain ledgered", async () => {
+  const cases: Array<{
+    name: string;
+    result: PluginNotificationResult;
+    status: FlowDelivery["status"];
+    error: string | null;
+  }> = [
+    {
+      name: "sent plus failed",
+      result: {
+        channels: {
+          mac: { status: "sent" },
+          ntfy: { status: "failed", error: "ntfy notification failed" },
+        },
+      },
+      status: "sent",
+      error: null,
+    },
+    {
+      name: "all disabled",
+      result: {
+        channels: {
+          mac: { status: "disabled" },
+          ntfy: { status: "disabled" },
+        },
+      },
+      status: "failed",
+      error: "notifications.send has no enabled channels",
+    },
+    {
+      name: "disabled plus failed",
+      result: {
+        channels: {
+          mac: { status: "disabled" },
+          ntfy: { status: "failed", error: "ntfy notification timed out" },
+        },
+      },
+      status: "failed",
+      error: "notifications.send failed on all enabled channels",
+    },
+  ];
+
+  for (const item of cases) {
+    let finalization: Parameters<FlowPersistence["finalizeNotification"]>[2] | undefined;
+    const service = new FlowService(persistence({
+      async finalizeNotification(_id, _version, result) {
+        finalization = result;
+        return delivery({
+          version: 2,
+          status: result.delivered ? "sent" : "failed",
+          notificationChannels: result.channels,
+          error: result.delivered ? null : result.error,
+        });
+      },
+    }), () => async () => item.result, () => NOW);
+
+    const result = await service.nextManual(item.name);
+    assert.equal(result.candidate?.delivery.status, item.status, item.name);
+    assert.deepEqual(finalization?.channels, item.result.channels, item.name);
+    assert.equal(
+      finalization && !finalization.delivered ? finalization.error : null,
+      item.error,
+      item.name
+    );
+  }
+});
+
+test("notification ledger projects only bounded official channel fields", async () => {
+  let finalization: Parameters<FlowPersistence["finalizeNotification"]>[2] | undefined;
+  const oversizedError = "x".repeat(300);
+  const providerResult = {
+    channels: {
+      mac: { status: "disabled", endpoint: "must-not-be-persisted" },
+      ntfy: {
+        status: "failed",
+        error: oversizedError,
+        responseBody: "must-not-be-persisted",
+      },
+      unexpected: { status: "sent", secret: "must-not-be-persisted" },
+    },
+    data: { deliveryId: "must-not-be-persisted" },
+  } as unknown as PluginNotificationResult;
+  const service = new FlowService(persistence({
+    async finalizeNotification(_id, _version, result) {
+      finalization = result;
+      return delivery({
+        version: 2,
+        status: result.delivered ? "sent" : "failed",
+        notificationChannels: result.channels,
+        error: result.delivered ? null : result.error,
+      });
+    },
+  }), () => async () => providerResult, () => NOW);
+
+  const result = await service.nextManual("bounded-projection");
+
+  assert.equal(result.candidate?.delivery.status, "failed");
+  assert.deepEqual(finalization?.channels, {
+    mac: { status: "disabled" },
+    ntfy: { status: "failed", error: "x".repeat(160) },
+  });
+  assert.equal(JSON.stringify(finalization).includes("must-not-be-persisted"), false);
 });
 
 test("abort leaves a durable reservation for a later restart", async () => {
@@ -391,11 +507,9 @@ test("abort leaves a durable reservation for a later restart", async () => {
       finalized = true;
       return delivery();
     },
-  }), () => ({
-    async send() {
+  }), () => async () => {
       assert.fail("notification must not be attempted after abort");
-    },
-  }), () => NOW);
+  }, () => NOW);
 
   await assert.rejects(
     service.nextManual("aborted", controller.signal),
@@ -411,7 +525,12 @@ test("later calculates delivery snooze without requesting a lifecycle mutation",
       call = args;
       return outcomeResult();
     },
-  }), () => ({ async send() { return { delivered: true }; } }), () => NOW);
+  }), () => async () => ({
+    channels: {
+      mac: { status: "sent" },
+      ntfy: { status: "disabled" },
+    },
+  }), () => NOW);
 
   await service.applyOutcome("delivery-a", {
     expectedDeliveryVersion: 2,
@@ -495,6 +614,39 @@ test("settings validation normalizes tags consistently with Capture", () => {
     assert.deepEqual(result.value.tags, ["echolog", "product"]);
     assert.deepEqual(result.value.projects, ["EchoLog"]);
   }
+});
+
+test("delivery API DTO retains the projected channel ledger", async () => {
+  const projected = {
+    mac: { status: "sent" as const },
+    ntfy: { status: "failed" as const, error: "ntfy notification failed" },
+  };
+  const stored = delivery({
+    status: "sent",
+    notificationChannels: projected,
+  });
+  const service = {
+    async listDeliveries(limit: number, before?: Date) {
+      assert.equal(limit, 10);
+      assert.equal(before?.toISOString(), "2026-08-24T13:00:00.000Z");
+      return [stored];
+    },
+  } as unknown as FlowService;
+  const route = createFlowRoutes(() => service).find(
+    (item) => item.method === "GET" && item.path.endsWith("/deliveries")
+  )!;
+  const result = await route.handler({
+    params: {},
+    query: { limit: "10", before: "2026-08-24T13:00:00.000Z" },
+    body: null,
+    headers: {},
+  }, new AbortController().signal);
+
+  assert.deepEqual(result, { deliveries: [stored] });
+  assert.deepEqual(
+    (result as { deliveries: FlowDelivery[] }).deliveries[0]?.notificationChannels,
+    projected
+  );
 });
 
 test("Flow exposes only canonical inspiration plugin routes", () => {

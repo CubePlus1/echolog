@@ -12,26 +12,20 @@ registry/build files, README, shared `types.ts`, or plugin `index.ts`.
 
 ## Notification boundary
 
-The only host dependency is:
+The only host dependency is the SDK-exported function:
 
 ```ts
-export interface NotificationsSendService {
-  send(
-    input: {
-      title: string;
-      body: string;
-      dedupeKey: string;
-      data: { pluginId: "inspiration"; inspirationId: string; deliveryId: string };
-    },
-    signal?: AbortSignal
-  ): Promise<{ delivered: boolean; channel?: string }>;
-}
+type PluginNotificationSend = (
+  request: { title: string; message: string },
+  signal?: AbortSignal
+) => Promise<PluginNotificationResult>;
 ```
 
-It is resolved lazily with
-`context.service<NotificationsSendService>("notifications.send")`. Tests mock
-this service. This branch does not implement or import the Core notifier and
-does not widen the SDK.
+It is resolved lazily with `context.service("notifications.send")`; the manifest
+declares `notifications:send`. Inspiration passes no dedupe key or entity IDs to
+Core. A delivery-owned JSONB projection stores bounded `mac`/`ntfy` channel
+results. Overall success requires at least one `sent` channel. Tests use the
+real PluginHost permission gate and function service in addition to unit mocks.
 
 ## Selection and atomicity
 

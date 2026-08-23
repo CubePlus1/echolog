@@ -47,24 +47,23 @@ reply, reasoning, or terminal content.
 Flow resolves exactly one host service lazily:
 
 ```ts
-interface NotificationsSendService {
-  send(
-    input: {
-      title: string;
-      body: string;
-      dedupeKey: string;
-      data: {
-        pluginId: "inspiration";
-        inspirationId: string;
-        deliveryId: string;
-      };
-    },
-    signal?: AbortSignal
-  ): Promise<{ delivered: boolean; channel?: string }>;
-}
+type PluginNotificationSend = (
+  request: { title: string; message: string },
+  signal?: AbortSignal
+) => Promise<{
+  channels: Record<"mac" | "ntfy",
+    | { status: "sent" }
+    | { status: "disabled" }
+    | { status: "failed"; error: string }
+  >;
+}>;
 ```
 
-The service name is `notifications.send`. Host wiring belongs to the separate
-notifications implementation. This package neither imports nor copies the Core
-notifier. A missing or failed service is recorded as a failed Flow delivery;
-Capture remains available.
+The service name is `notifications.send` and the manifest declares the matching
+`notifications:send` permission. The request contains only notification text;
+dedupe keys and inspiration/delivery ids remain private to the plugin ledger.
+At least one `sent` channel marks a delivery sent. Otherwise it is failed, with
+the bounded per-channel result retained for diagnostics. Service resolution is
+lazy, so a missing or failed notification capability is recorded as a failed
+Flow delivery while Capture remains available. This package neither imports nor
+copies the Core notifier.

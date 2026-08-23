@@ -1,3 +1,5 @@
+import type { PluginNotificationResult } from "@echolog/plugin-sdk";
+
 export type InspirationStatus = "inbox" | "kept" | "archived";
 
 export interface Inspiration {
@@ -91,6 +93,7 @@ export interface FlowDelivery {
   snoozedUntil: Date | null;
   outcomeAt: Date | null;
   notificationChannel: string | null;
+  notificationChannels: PluginNotificationResult["channels"] | null;
   error: string | null;
   createdAt: Date;
   updatedAt: Date;
