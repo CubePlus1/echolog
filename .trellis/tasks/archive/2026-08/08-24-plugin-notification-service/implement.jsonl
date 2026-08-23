@@ -1,0 +1,6 @@
+{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend module and quality entry point"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Structured plugin permission and delivery errors"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Timeout, background loop, and verification rules"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "SDK-manifest-Host-Core contract synchronization"}
+{"file": ".trellis/tasks/08-24-plugin-notification-service/research/current-notification-and-plugin-boundary.md", "reason": "Audited notifier, Host, and lifecycle baseline"}

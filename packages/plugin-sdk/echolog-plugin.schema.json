@@ -46,7 +46,9 @@
     },
     "permissions": {
       "type": "array",
-      "items": { "type": "string", "minLength": 1 },
+      "items": {
+        "enum": ["process:exec", "database:plugin", "notifications:send"]
+      },
       "uniqueItems": true
     },
     "requires": {

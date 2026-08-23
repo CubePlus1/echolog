@@ -8,6 +8,7 @@ import {
   type PluginDoctorCheck,
   type PluginJob,
   type PluginLogger,
+  type PluginPermission,
   type PluginReportSection,
   type PluginRoute,
   type PluginErrorCode,
@@ -32,6 +33,11 @@ interface PluginJobRuntime {
   running: boolean;
   abortController: AbortController | null;
 }
+
+const SERVICE_PERMISSIONS: Readonly<Record<string, PluginPermission>> = {
+  "database.url": "database:plugin",
+  "notifications.send": "notifications:send",
+};
 
 export interface PluginHostOptions {
   definitions: readonly PluginDefinition[];
@@ -156,20 +162,21 @@ export class PluginHost {
           return options.commandRunner(request, signal);
         },
         service: <T>(name: string): T => {
-          if (!Object.hasOwn(options.services ?? {}, name)) {
-            throw new Error(`Plugin service is not available: ${name}`);
-          }
+          const requiredPermission = SERVICE_PERMISSIONS[name];
           if (
-            name === "database.url" &&
-            !definition.manifest.permissions.includes("database:plugin")
+            requiredPermission &&
+            !definition.manifest.permissions.includes(requiredPermission)
           ) {
             throw new PluginError(
               "PLUGIN_DEPENDENCY_MISSING",
-              `Plugin ${id} has not declared database:plugin`,
+              `Plugin ${id} has not declared ${requiredPermission}`,
               id,
               info.state,
               403
             );
+          }
+          if (!Object.hasOwn(options.services ?? {}, name)) {
+            throw new Error(`Plugin service is not available: ${name}`);
           }
           return options.services?.[name] as T;
         },

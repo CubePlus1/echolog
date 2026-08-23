@@ -20,6 +20,7 @@ This directory contains guidelines for backend development. Fill in each file wi
 | [Quality Guidelines](./quality-guidelines.md) | Code standards, forbidden patterns | Done |
 | [Logging Guidelines](./logging-guidelines.md) | Structured logging, log levels | To fill |
 | [CLI Agent Contract](./cli-agent-contract.md) | `el` CLI as the agent tool surface: --json, exit codes, help-as-spec | Done |
+| [Bundled Plugin API Guidelines](./plugin-api-guidelines.md) | Named Core services, permissions, privacy, and compatibility | Done |
 
 ---
 

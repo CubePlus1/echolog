@@ -1,0 +1,29 @@
+{
+  "id": "plugin-notification-service",
+  "name": "plugin-notification-service",
+  "title": "Bundled Plugin API v1 notification service",
+  "description": "",
+  "status": "completed",
+  "dev_type": null,
+  "scope": "backend,cross-layer",
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-08-24",
+  "completedAt": "2026-08-24",
+  "branch": "codex/plugin-notification-service",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": "29fe6c3",
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "GitHub Issue #35; shared prerequisite for #31 and #33/#34.",
+  "meta": {
+    "issue": 35,
+    "issue_url": "https://github.com/CubePlus1/echolog/issues/35"
+  }
+}
