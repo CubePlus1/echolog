@@ -20,18 +20,18 @@ delivery ledger/job, canonical HTTP API, and `el schedule` client for GitHub #31
 
 ## Acceptance Criteria
 
-- [ ] Migrations create constrained/indexed `schedule_items` and a reminder
+- [x] Migrations create constrained/indexed `schedule_items` and a reminder
       ledger with a unique dedupe key; every instant is `TIMESTAMPTZ`.
-- [ ] CRUD/list/range and all state routes validate input and preserve the
+- [x] CRUD/list/range and all state routes validate input and preserve the
       parent JSON contract including derived `awaitingConfirmation`.
-- [ ] Two concurrent confirms with the same expected version yield one active
+- [x] Two concurrent confirms with the same expected version yield one active
       item and one 409; `confirmedStartAt` reflects the winner's confirmation.
-- [ ] Due polling, repeated polling, daemon/store restart, snooze, abort, and
+- [x] Due polling, repeated polling, daemon/store restart, snooze, abort, and
       notification failure have deterministic tests.
-- [ ] Arrival/failed/ignored reminders do not start, complete, cancel, or create
+- [x] Arrival/failed/ignored reminders do not start, complete, cancel, or create
       any Core record.
-- [ ] Disabled and missing-service/degraded cases remain isolated by Host tests.
-- [ ] `el schedule` list/show/add/edit/confirm/snooze/done/cancel meets the CLI
+- [x] Disabled and missing-service/degraded cases remain isolated by Host tests.
+- [x] `el schedule` list/show/add/edit/confirm/snooze/done/cancel meets the CLI
       agent contract in human and JSON modes.
 
 ## Dependency

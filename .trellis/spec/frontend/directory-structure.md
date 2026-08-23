@@ -40,3 +40,9 @@ web/
 - 翻页手势（wheel/drag）须跳过 `INTERACTIVE` 选择器内的目标
 - 重建时加 `.no-anim` 双 rAF 移除，避免翻页动画闪烁
 - Chrome 对 `preserve-3d` 翻转背面页的按钮命中不可靠；左页按钮由 `#leftPageHitProxy` 平面透明层接收并按顺序转发给当前 `.leaf.back` 的真实按钮。新增左页按钮时须保持渲染顺序一致，代理层不得保留重复 `id` 或进入键盘焦点序列。
+- 插件可能把同一实体同时渲染到 overview/day 等多个 face，而宿主 `$`
+  是全局 `document.getElementById`。交互控件 id 与 action target 必须包含
+  face/surface 作用域（例如 `day:<encoded-item-id>`），handler 再安全还原真实
+  id；禁止仅用实体 id 生成控件 id，否则不可见页的同名控件会截获当前页输入。
+  Web 测试须同时渲染两个 face，为两个控件设置不同值，并断言点击某一 face
+  只读取该 face 的值且 API URL 只编码真实实体 id 一次。

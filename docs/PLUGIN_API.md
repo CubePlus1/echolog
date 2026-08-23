@@ -191,6 +191,46 @@ then delegates data loading, face descriptions, rendering and actions. A module
 failure removes only that contribution. Disabled plugins do not add navigation
 or pages.
 
+## Bundled Schedule plugin
+
+`schedule` owns its manifest, configuration, migrations, `schedule_items`,
+reminder delivery ledger, routes, job, CLI, and Web contribution. Its canonical
+routes use `/api/plugins/schedule/*`; `el schedule` and the month/week/day
+views are HTTP clients of those routes.
+
+Canonical routes:
+
+- `GET|POST /api/plugins/schedule/items`
+- `GET|PATCH /api/plugins/schedule/items/:id`
+- `POST /api/plugins/schedule/items/:id/confirm-start`
+- `POST /api/plugins/schedule/items/:id/snooze`
+- `POST /api/plugins/schedule/items/:id/complete`
+- `POST /api/plugins/schedule/items/:id/cancel`
+- `GET /api/plugins/schedule/reminders`
+
+`el schedule` exposes `list`, `show`, `add`, `edit`, `confirm`,
+`snooze`, `done`, and `cancel`; `--json` preserves the API response or
+structured error body.
+
+The plugin requests the exact named service `notifications.send` and declares
+`notifications:send`. Its local consumer contract sends only
+`{ title, message }` plus an optional `AbortSignal`, and receives independent
+`mac` and `ntfy` results with status `sent`, `disabled`, or `failed`.
+Notification configuration and credentials remain Core-owned.
+
+Reaching `scheduledStartAt` only attempts a notification. It never changes
+state or creates/starts a Core record. Only explicit `confirm-start` changes
+`scheduled` to `active`, recording the confirmation time as
+`confirmedStartAt`. Ignoring a reminder changes nothing; snooze changes only
+`nextReminderAt`; completion and cancellation are explicit.
+
+Persisted states are `scheduled | active | done | cancelled`.
+`awaitingConfirmation` is derived from a scheduled item whose planned start is
+not later than now. Month, week, and day views project the same
+`schedule_items` rows; there is no separate calendar event store. All state
+mutations require `expectedVersion`, and each reminder instant is claimed by a
+unique ledger dedupe key before delivery.
+
 ## Compatibility policy
 
 API v1 changes are additive. A breaking SDK, lifecycle or manifest change

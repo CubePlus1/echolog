@@ -30,6 +30,97 @@ PostgreSQL（docker compose 起在 5436 端口，容器名 echolog-db）+ drizzl
 - 主键 TEXT，`nanoid(12)`，应用侧生成
 - 时间一律 `TIMESTAMPTZ`；「一天」按服务器本地时区切（`localDateStr()`，`getRecordsByDate` 的 dayStart/dayEnd 模式）
 
+## Scenario: Plugin-owned scheduled reminders
+
+### 1. Scope / Trigger
+
+- Trigger: a bundled plugin stores scheduled work, polls due rows, calls an
+  external Host service, and must survive duplicate polls or daemon restart.
+- The plugin owns its tables and migration. It must not write Core records or
+  copy the Core notifier.
+
+### 2. Signatures
+
+- Item transitions take `(id, expectedVersion, ...input)` and perform one
+  `UPDATE ... WHERE id = ? AND version = ? AND status IN (...) RETURNING *`.
+- Reminder candidates are exact pairs `(item_id, reminder_at TIMESTAMPTZ)`.
+- The notification boundary is
+  `PluginContext.service("notifications.send")`, accepting
+  `{title, message}` plus an optional `AbortSignal`.
+
+### 3. Contracts
+
+- Store explicit IANA timezone display intent separately from absolute
+  `TIMESTAMPTZ` instants; HTTP inputs must include `Z` or a numeric offset.
+- Derived UI state such as “awaiting confirmation” is calculated from persisted
+  state + time and is never stored as another status.
+- Claim a reminder by inserting a unique ledger key before delivery. A ledger
+  row in any state (`claimed`, `sent`, or `failed`) makes that exact
+  item/reminder instant ineligible for another attempt.
+- At-most-once means a crash after claim may lose one reminder; restart must not
+  repeat a possibly delivered notification. A user action that chooses a new
+  reminder instant creates a new key.
+- Delivery never performs an implicit domain transition. Confirm/start,
+  complete, cancel, and snooze remain explicit versioned mutations.
+
+### 4. Validation & Error Matrix
+
+| Condition | Required behavior |
+|---|---|
+| Missing item | 404 `{error}` |
+| Stale version or invalid state | 409 with `currentVersion` and `currentStatus` |
+| Bare local datetime / invalid IANA zone | 400 `{error}` |
+| Duplicate or restarted poll | Existing ledger excludes the exact instant; no send |
+| Host notification failure | Record bounded failure; do not change item state |
+| Job abort/timeout | Honor the signal, release Host running state, retain claim |
+
+### 5. Good/Base/Bad Cases
+
+- Good: 105 due rows with a batch size of 100 drain as 100 then 5, and a third
+  poll sees 0; all 105 ledger keys are unique.
+- Base: one due item is claimed, notified once, and remains scheduled until an
+  explicit confirmation.
+- Bad: query the oldest 100 due items first, then dedupe in application code.
+  The same ledgered rows occupy every batch and permanently starve row 101.
+
+### 6. Tests Required
+
+- Real PostgreSQL CAS race: two confirmations with one expected version produce
+  exactly one success and one structured 409.
+- Real PostgreSQL poll-limit regression: insert more than one batch, reconstruct
+  the Store between polls, assert every item is attempted once, then assert zero
+  remaining candidates.
+- Assert `claimed`, `sent`, and `failed` ledger rows are all excluded before
+  `LIMIT`; a new snooze instant remains eligible.
+- Assert failed/ignored delivery does not modify status, confirmed timestamp, or
+  create a Core record.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```sql
+SELECT * FROM schedule_items
+WHERE next_reminder_at <= NOW()
+ORDER BY next_reminder_at
+LIMIT 100;
+-- Application code discovers these 100 already have ledger rows.
+```
+
+#### Correct
+
+```sql
+SELECT i.* FROM schedule_items i
+WHERE i.next_reminder_at <= NOW()
+  AND NOT EXISTS (
+    SELECT 1 FROM schedule_reminder_deliveries d
+    WHERE d.item_id = i.id
+      AND d.reminder_at = i.next_reminder_at
+  )
+ORDER BY i.next_reminder_at
+LIMIT 100;
+```
+
 ## Common Mistakes
 
 - 忘了迁移与 schema.ts 双写，跑起来才发现列不存在

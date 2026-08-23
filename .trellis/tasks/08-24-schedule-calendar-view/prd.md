@@ -21,13 +21,13 @@ user actions, satisfying GitHub #32 without a second calendar model.
 
 ## Acceptance Criteria
 
-- [ ] Month, week, and day faces render the same fixture items in their correct
+- [x] Month, week, and day faces render the same fixture items in their correct
       range/day positions and use item-provided timezone semantics.
-- [ ] Create/confirm/snooze/done/cancel call only canonical routes and include
+- [x] Create/confirm/snooze/done/cancel call only canonical routes and include
       the item's current `expectedVersion`.
-- [ ] Notification ignore has no Web-side write; awaiting is derived.
-- [ ] Dynamic text is escaped and stylesheet activation/unmount is tested.
-- [ ] Ready gating is covered by the existing host suite plus Schedule-specific
+- [x] Notification ignore has no Web-side write; awaiting is derived.
+- [x] Dynamic text is escaped and stylesheet activation/unmount is tested.
+- [x] Ready gating is covered by the existing host suite plus Schedule-specific
       contribution tests; no module loads for disabled/degraded.
 
 ## Dependency

@@ -42,15 +42,15 @@ cross-child contract and final integration for GitHub Issues #31 and #32.
 
 ## Acceptance Criteria
 
-- [ ] Both child acceptance suites pass and use one `plugins/schedule` package.
-- [ ] README, GitHub #31/#32, and this task tree point to the same branch,
+- [x] Both child acceptance suites pass and use one `plugins/schedule` package.
+- [x] README, GitHub #31/#32, and this task tree point to the same branch,
       package, semantics, and verification state.
-- [ ] Web loads Schedule only while the bundled plugin is enabled and `ready`.
-- [ ] Missing `notifications.send` degrades only Schedule; it does not prevent
+- [x] Web loads Schedule only while the bundled plugin is enabled and `ready`.
+- [x] Missing `notifications.send` degrades only Schedule; it does not prevent
       Core or another plugin from starting.
-- [ ] `pnpm test`, `pnpm typecheck`, and `pnpm build` pass from the repository
+- [x] `pnpm test`, `pnpm typecheck`, and `pnpm build` pass from the repository
       root after integration.
-- [ ] An independent check agent reviews the integrated diff after all three
+- [x] An independent check agent reviews the integrated diff after all three
       implementation agents finish, and verified findings are resolved.
 - [ ] Changes are committed on `codex/schedule-plugin` without merging any
       sibling branch.

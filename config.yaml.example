@@ -26,6 +26,11 @@ sync:
   auto: false
 
 plugins:
+  schedule:
+    enabled: true
+    config:
+      # 到点只提醒，不会自动开始；轮询由 Host 保证不重入。
+      reminder_poll_seconds: 30
   screen-time:
     enabled: true
     config:
