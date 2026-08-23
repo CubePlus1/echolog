@@ -1,0 +1,5 @@
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"Backend and test quality audit."}
+{"file":".trellis/spec/backend/database-guidelines.md","reason":"Concurrency, dedupe, migration, and time audit."}
+{"file":".trellis/spec/backend/error-handling.md","reason":"HTTP status/body audit."}
+{"file":".trellis/spec/backend/cli-agent-contract.md","reason":"CLI JSON/error/help audit."}
+{"file":".trellis/tasks/08-24-schedule-plugin/research/plugin-patterns.md","reason":"Contract reference for independent check."}
