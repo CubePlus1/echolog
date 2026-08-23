@@ -114,6 +114,8 @@ Before implementation:
 After implementation:
 
 - [ ] Tested with edge cases (null, empty, invalid)
+- [ ] Reused the same boundary fixture cases for client preflight and server
+      validation (especially timestamps, offsets, enums, and nullable fields)
 - [ ] Verified error handling at each boundary
 - [ ] Checked data survives round-trip
 - [ ] Checked that consumers import shared decoders / projections instead of

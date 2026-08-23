@@ -1,0 +1,4 @@
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"Atomic/query/migration regression review."}
+{"file":".trellis/spec/backend/database-guidelines.md","reason":"Verify composite index and immutable migration sequencing."}
+{"file":".trellis/spec/frontend/directory-structure.md","reason":"Verify errors target the active face."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Verify timestamp validation consistency."}

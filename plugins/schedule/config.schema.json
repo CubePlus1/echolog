@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://echolog.local/plugins/schedule/config.schema.json",
+  "title": "Schedule plugin configuration",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "reminder_poll_seconds": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 3600,
+      "default": 30,
+      "description": "How often the Host asks Schedule to claim due reminders"
+    }
+  }
+}

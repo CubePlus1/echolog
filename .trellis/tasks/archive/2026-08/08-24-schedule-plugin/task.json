@@ -1,0 +1,29 @@
+{
+  "id": "schedule-plugin",
+  "name": "schedule-plugin",
+  "title": "Schedule bundled plugin",
+  "description": "",
+  "status": "completed",
+  "dev_type": null,
+  "scope": "cross-layer",
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-08-24",
+  "completedAt": "2026-08-24",
+  "branch": "codex/schedule-plugin",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": "e2becaa266f9a6f390ea989a65d633e87fbd7a3c",
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "08-24-schedule-calendar-view",
+    "08-24-schedule-reminders"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}

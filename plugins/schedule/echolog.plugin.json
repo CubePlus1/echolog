@@ -1,0 +1,25 @@
+{
+  "manifestVersion": 1,
+  "id": "schedule",
+  "version": "1.0.0",
+  "apiVersion": "1",
+  "displayName": "Schedule",
+  "description": "Explicitly confirmed schedules, reminders, and calendar views",
+  "entries": {
+    "server": "./dist/index.js",
+    "web": "/plugins/schedule/index.js"
+  },
+  "capabilities": [
+    "schedule-items",
+    "schedule-reminders",
+    "schedule-calendar"
+  ],
+  "permissions": [
+    "database:plugin",
+    "notifications:send"
+  ],
+  "requires": {
+    "coreApi": "^1.0.0"
+  },
+  "configSchema": "./config.schema.json"
+}
