@@ -37,5 +37,5 @@ late notification continuation terminalize an uncertain reminder claim.
 - [x] Focused tests, PostgreSQL integration, `pnpm test`, `pnpm typecheck`,
       `pnpm build`, and diff-check pass.
 - [x] Independent review of the final diff reports no P0-P2.
-- [ ] Commits are appended on `codex/schedule-plugin`; no history rewrite,
+- [x] Commits are appended on `codex/schedule-plugin`; no history rewrite,
       push, or merge occurs.
