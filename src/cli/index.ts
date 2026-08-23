@@ -834,6 +834,359 @@ withJson(
   })
 );
 
+// el schedule list|show|add|edit|confirm|snooze|done|cancel
+type ScheduleCliItem = {
+  id: string;
+  title: string;
+  description: string | null;
+  scheduledStartAt: string;
+  scheduledEndAt: string | null;
+  timezone: string;
+  priority: number;
+  status: "scheduled" | "active" | "done" | "cancelled";
+  nextReminderAt: string | null;
+  confirmedStartAt: string | null;
+  completedAt: string | null;
+  cancelledAt: string | null;
+  version: number;
+  awaitingConfirmation: boolean;
+};
+
+function parseScheduleExpectedVersion(value: string): number {
+  if (!/^[1-9]\d*$/.test(value)) {
+    throw new CliUsageError("--expected-version 必须是大于或等于 1 的整数");
+  }
+  const version = Number(value);
+  if (!Number.isSafeInteger(version)) {
+    throw new CliUsageError("--expected-version 必须是安全整数");
+  }
+  return version;
+}
+
+function parseSchedulePriority(value: string): number {
+  if (!/^-?\d+$/.test(value)) {
+    throw new CliUsageError("--priority 必须是整数");
+  }
+  const priority = Number(value);
+  if (!Number.isSafeInteger(priority)) {
+    throw new CliUsageError("--priority 必须是安全整数");
+  }
+  return priority;
+}
+
+function scheduleItemPath(id: string): string {
+  return `/api/plugins/schedule/items/${encodeURIComponent(id)}`;
+}
+
+function printScheduleItem(item: ScheduleCliItem): void {
+  const icon = item.status === "done"
+    ? "✓"
+    : item.status === "active"
+      ? "▶"
+      : item.status === "cancelled"
+        ? "✗"
+        : item.awaitingConfirmation
+          ? "!"
+          : "○";
+  console.log(
+    `${icon} ${item.title} [${item.id}] ${item.status} · ${item.scheduledStartAt} (${item.timezone}) · v${item.version}`
+  );
+}
+
+const schedule = program
+  .command("schedule")
+  .description("管理 Schedule 插件日程；提醒不会自动开始任务，状态只由显式命令改变。")
+  .addHelpText(
+    "after",
+    `
+时间格式:
+  时间点必须是带 Z 或数字偏移的 ISO-8601，例如 2026-08-24T09:00:00+08:00。
+  timezone 必须是 IANA 时区，例如 Asia/Shanghai；它只保存显示意图，不替代时间点偏移。
+
+示例:
+  $ el schedule list --from 2026-08-24T00:00:00+08:00 --to 2026-08-25T00:00:00+08:00
+  $ el schedule add "设计评审" --start 2026-08-24T09:00:00+08:00 --timezone Asia/Shanghai
+  $ el schedule confirm <id> --expected-version 1 --json
+`
+  );
+
+withJson(
+  schedule
+    .command("list")
+    .description("列出日程；范围为 [from,to)，status 可为 scheduled,active,done,cancelled 的逗号列表。")
+    .option("--from <ISO>", "范围起点，带 Z 或数字偏移的 ISO-8601")
+    .option("--to <ISO>", "范围终点，带 Z 或数字偏移的 ISO-8601")
+    .option("--status <csv>", "状态列表: scheduled,active,done,cancelled")
+    .addHelpText(
+      "after",
+      `
+示例:
+  $ el schedule list
+  $ el schedule list --from 2026-08-24T00:00:00+08:00 --to 2026-08-25T00:00:00+08:00 --status scheduled,active --json
+`
+    )
+).action(
+  action(async (thisCommand, opts: { from?: string; to?: string; status?: string }) => {
+    const query = new URLSearchParams();
+    if (opts.from) query.set("from", opts.from);
+    if (opts.to) query.set("to", opts.to);
+    if (opts.status) query.set("status", opts.status);
+    const suffix = query.size > 0 ? `?${query.toString()}` : "";
+    const items = await api<ScheduleCliItem[]>(`/api/plugins/schedule/items${suffix}`);
+    printSuccess(thisCommand, items, () => {
+      if (items.length === 0) {
+        console.log("暂无日程");
+        return;
+      }
+      for (const item of items) printScheduleItem(item);
+    });
+  })
+);
+
+withJson(
+  schedule
+    .command("show <id>")
+    .description("查看一条日程；id 来自 el schedule list。")
+    .addHelpText(
+      "after",
+      `
+示例:
+  $ el schedule show <id>
+  $ el schedule show <id> --json
+`
+    )
+).action(
+  action(async (thisCommand, id: string) => {
+    const item = await api<ScheduleCliItem>(scheduleItemPath(id));
+    printSuccess(thisCommand, item, () => {
+      printScheduleItem(item);
+      console.log(`  描述: ${item.description ?? "-"}`);
+      console.log(`  计划结束: ${item.scheduledEndAt ?? "-"}`);
+      console.log(`  下次提醒: ${item.nextReminderAt ?? "-"}`);
+      console.log(`  确认开始: ${item.confirmedStartAt ?? "-"}`);
+      console.log(`  优先级: ${item.priority}`);
+    });
+  })
+);
+
+withJson(
+  schedule
+    .command("add <title>")
+    .description("新增 scheduled 日程；到达 start 只提醒，不会自动开始或创建 Core record。")
+    .requiredOption("--start <ISO>", "计划开始，带 Z 或数字偏移的 ISO-8601")
+    .requiredOption("--timezone <IANA>", "显示时区，例如 Asia/Shanghai")
+    .option("--description <text>", "日程描述")
+    .option("--end <ISO>", "计划结束，带 Z 或数字偏移的 ISO-8601")
+    .option("--priority <n>", "整数优先级；取值范围由服务端校验")
+    .option("--remind-at <ISO>", "首次提醒时间，带 Z 或数字偏移；省略时等于 start")
+    .option("--no-reminder", "创建时不设置提醒")
+    .addHelpText(
+      "after",
+      `
+示例:
+  $ el schedule add "设计评审" --start 2026-08-24T09:00:00+08:00 --end 2026-08-24T10:00:00+08:00 --timezone Asia/Shanghai
+  $ el schedule add "发布检查" --start 2026-08-24T18:00:00Z --timezone UTC --remind-at 2026-08-24T17:45:00Z --priority 2 --json
+`
+    )
+).action(
+  action(async (thisCommand, title: string, opts: {
+    start: string;
+    timezone: string;
+    description?: string;
+    end?: string;
+    priority?: string;
+    remindAt?: string;
+    reminder?: boolean;
+  }) => {
+    if (opts.reminder === false && opts.remindAt !== undefined) {
+      throw new CliUsageError("--remind-at 和 --no-reminder 不能同时使用");
+    }
+    const body: Record<string, unknown> = {
+      title,
+      scheduledStartAt: opts.start,
+      timezone: opts.timezone,
+    };
+    if (opts.description !== undefined) body.description = opts.description;
+    if (opts.end !== undefined) body.scheduledEndAt = opts.end;
+    if (opts.priority !== undefined) body.priority = parseSchedulePriority(opts.priority);
+    if (opts.remindAt !== undefined) body.nextReminderAt = opts.remindAt;
+    if (opts.reminder === false) body.nextReminderAt = null;
+
+    const item = await post<ScheduleCliItem>("/api/plugins/schedule/items", body);
+    printSuccess(thisCommand, item, () => {
+      console.log(`✓ 已添加日程: ${item.title} [${item.id}] · v${item.version}`);
+    });
+  })
+);
+
+withJson(
+  schedule
+    .command("edit <id>")
+    .description("编辑仍为 scheduled 的日程；必须携带当前 expectedVersion，冲突由服务端返回 409。")
+    .requiredOption("--expected-version <n>", "当前版本，来自 list/show 返回的 version")
+    .option("--title <title>", "新标题")
+    .option("--description <text>", "新描述")
+    .option("--clear-description", "将描述设为 null")
+    .option("--start <ISO>", "计划开始，带 Z 或数字偏移的 ISO-8601")
+    .option("--end <ISO>", "计划结束，带 Z 或数字偏移的 ISO-8601")
+    .option("--clear-end", "将计划结束设为 null")
+    .option("--timezone <IANA>", "显示时区，例如 Asia/Shanghai")
+    .option("--priority <n>", "整数优先级；取值范围由服务端校验")
+    .option("--remind-at <ISO>", "下次提醒时间，带 Z 或数字偏移")
+    .option("--clear-reminder", "将下次提醒设为 null")
+    .addHelpText(
+      "after",
+      `
+示例:
+  $ el schedule edit <id> --expected-version 1 --title "设计评审（更新）"
+  $ el schedule edit <id> --expected-version 2 --start 2026-08-24T10:00:00+08:00 --timezone Asia/Shanghai --json
+  $ el schedule edit <id> --expected-version 3 --clear-end --clear-reminder
+`
+    )
+).action(
+  action(async (thisCommand, id: string, opts: {
+    expectedVersion: string;
+    title?: string;
+    description?: string;
+    clearDescription?: boolean;
+    start?: string;
+    end?: string;
+    clearEnd?: boolean;
+    timezone?: string;
+    priority?: string;
+    remindAt?: string;
+    clearReminder?: boolean;
+  }) => {
+    if (opts.description !== undefined && opts.clearDescription) {
+      throw new CliUsageError("--description 和 --clear-description 不能同时使用");
+    }
+    if (opts.end !== undefined && opts.clearEnd) {
+      throw new CliUsageError("--end 和 --clear-end 不能同时使用");
+    }
+    if (opts.remindAt !== undefined && opts.clearReminder) {
+      throw new CliUsageError("--remind-at 和 --clear-reminder 不能同时使用");
+    }
+    const body: Record<string, unknown> = {
+      expectedVersion: parseScheduleExpectedVersion(opts.expectedVersion),
+    };
+    if (opts.title !== undefined) body.title = opts.title;
+    if (opts.description !== undefined) body.description = opts.description;
+    if (opts.clearDescription) body.description = null;
+    if (opts.start !== undefined) body.scheduledStartAt = opts.start;
+    if (opts.end !== undefined) body.scheduledEndAt = opts.end;
+    if (opts.clearEnd) body.scheduledEndAt = null;
+    if (opts.timezone !== undefined) body.timezone = opts.timezone;
+    if (opts.priority !== undefined) body.priority = parseSchedulePriority(opts.priority);
+    if (opts.remindAt !== undefined) body.nextReminderAt = opts.remindAt;
+    if (opts.clearReminder) body.nextReminderAt = null;
+
+    const item = await patch<ScheduleCliItem>(scheduleItemPath(id), body);
+    printSuccess(thisCommand, item, () => {
+      console.log(`✓ 已更新日程: ${item.title} [${item.id}] · v${item.version}`);
+    });
+  })
+);
+
+withJson(
+  schedule
+    .command("confirm <id>")
+    .description("显式确认开始：scheduled -> active；confirmedStartAt 由服务端记录为确认时刻。")
+    .requiredOption("--expected-version <n>", "当前版本，来自 list/show 返回的 version")
+    .addHelpText(
+      "after",
+      `
+示例:
+  $ el schedule confirm <id> --expected-version 1
+  $ el schedule confirm <id> --expected-version 1 --json
+`
+    )
+).action(
+  action(async (thisCommand, id: string, opts: { expectedVersion: string }) => {
+    const item = await post<ScheduleCliItem>(`${scheduleItemPath(id)}/confirm-start`, {
+      expectedVersion: parseScheduleExpectedVersion(opts.expectedVersion),
+    });
+    printSuccess(thisCommand, item, () => {
+      console.log(`▶ 已确认开始: ${item.title} [${item.id}] · v${item.version}`);
+    });
+  })
+);
+
+withJson(
+  schedule
+    .command("snooze <id>")
+    .description("仅移动 scheduled 日程的 nextReminderAt；不会改变状态或自动开始。")
+    .requiredOption("--until <ISO>", "新的提醒时间，带 Z 或数字偏移的 ISO-8601")
+    .requiredOption("--expected-version <n>", "当前版本，来自 list/show 返回的 version")
+    .addHelpText(
+      "after",
+      `
+示例:
+  $ el schedule snooze <id> --until 2026-08-24T09:15:00+08:00 --expected-version 1
+  $ el schedule snooze <id> --until 2026-08-24T01:15:00Z --expected-version 1 --json
+`
+    )
+).action(
+  action(async (thisCommand, id: string, opts: { until: string; expectedVersion: string }) => {
+    const item = await post<ScheduleCliItem>(`${scheduleItemPath(id)}/snooze`, {
+      expectedVersion: parseScheduleExpectedVersion(opts.expectedVersion),
+      nextReminderAt: opts.until,
+    });
+    printSuccess(thisCommand, item, () => {
+      console.log(`⏰ 已延后提醒: ${item.title} · ${item.nextReminderAt} · v${item.version}`);
+    });
+  })
+);
+
+withJson(
+  schedule
+    .command("done <id>")
+    .description("显式完成 scheduled 或 active 日程；不会修改任何 Core record。")
+    .requiredOption("--expected-version <n>", "当前版本，来自 list/show 返回的 version")
+    .addHelpText(
+      "after",
+      `
+示例:
+  $ el schedule done <id> --expected-version 2
+  $ el schedule done <id> --expected-version 2 --json
+`
+    )
+).action(
+  action(async (thisCommand, id: string, opts: { expectedVersion: string }) => {
+    const item = await post<ScheduleCliItem>(`${scheduleItemPath(id)}/complete`, {
+      expectedVersion: parseScheduleExpectedVersion(opts.expectedVersion),
+    });
+    printSuccess(thisCommand, item, () => {
+      console.log(`✓ 已完成日程: ${item.title} [${item.id}] · v${item.version}`);
+    });
+  })
+);
+
+withJson(
+  schedule
+    .command("cancel <id>")
+    .description("显式取消 scheduled 或 active 日程；忽略提醒本身不会取消。")
+    .requiredOption("--expected-version <n>", "当前版本，来自 list/show 返回的 version")
+    .addHelpText(
+      "after",
+      `
+示例:
+  $ el schedule cancel <id> --expected-version 1
+  $ el schedule cancel <id> --expected-version 1 --json
+`
+    )
+).action(
+  action(async (thisCommand, id: string, opts: { expectedVersion: string }) => {
+    const item = await post<ScheduleCliItem>(`${scheduleItemPath(id)}/cancel`, {
+      expectedVersion: parseScheduleExpectedVersion(opts.expectedVersion),
+    });
+    printSuccess(thisCommand, item, () => {
+      console.log(`✗ 已取消日程: ${item.title} [${item.id}] · v${item.version}`);
+    });
+  })
+);
+
+
+
 type InspirationLifecycleStatus = "inbox" | "kept" | "archived";
 type InspirationFlowOutcome =
   | "viewed"
@@ -1312,358 +1665,6 @@ withJson(
     });
   })
 );
-
-+// el schedule list|show|add|edit|confirm|snooze|done|cancel
-type ScheduleCliItem = {
-  id: string;
-  title: string;
-  description: string | null;
-  scheduledStartAt: string;
-  scheduledEndAt: string | null;
-  timezone: string;
-  priority: number;
-  status: "scheduled" | "active" | "done" | "cancelled";
-  nextReminderAt: string | null;
-  confirmedStartAt: string | null;
-  completedAt: string | null;
-  cancelledAt: string | null;
-  version: number;
-  awaitingConfirmation: boolean;
-};
-
-function parseScheduleExpectedVersion(value: string): number {
-  if (!/^[1-9]\d*$/.test(value)) {
-    throw new CliUsageError("--expected-version 必须是大于或等于 1 的整数");
-  }
-  const version = Number(value);
-  if (!Number.isSafeInteger(version)) {
-    throw new CliUsageError("--expected-version 必须是安全整数");
-  }
-  return version;
-}
-
-function parseSchedulePriority(value: string): number {
-  if (!/^-?\d+$/.test(value)) {
-    throw new CliUsageError("--priority 必须是整数");
-  }
-  const priority = Number(value);
-  if (!Number.isSafeInteger(priority)) {
-    throw new CliUsageError("--priority 必须是安全整数");
-  }
-  return priority;
-}
-
-function scheduleItemPath(id: string): string {
-  return `/api/plugins/schedule/items/${encodeURIComponent(id)}`;
-}
-
-function printScheduleItem(item: ScheduleCliItem): void {
-  const icon = item.status === "done"
-    ? "✓"
-    : item.status === "active"
-      ? "▶"
-      : item.status === "cancelled"
-        ? "✗"
-        : item.awaitingConfirmation
-          ? "!"
-          : "○";
-  console.log(
-    `${icon} ${item.title} [${item.id}] ${item.status} · ${item.scheduledStartAt} (${item.timezone}) · v${item.version}`
-  );
-}
-
-const schedule = program
-  .command("schedule")
-  .description("管理 Schedule 插件日程；提醒不会自动开始任务，状态只由显式命令改变。")
-  .addHelpText(
-    "after",
-    `
-时间格式:
-  时间点必须是带 Z 或数字偏移的 ISO-8601，例如 2026-08-24T09:00:00+08:00。
-  timezone 必须是 IANA 时区，例如 Asia/Shanghai；它只保存显示意图，不替代时间点偏移。
-
-示例:
-  $ el schedule list --from 2026-08-24T00:00:00+08:00 --to 2026-08-25T00:00:00+08:00
-  $ el schedule add "设计评审" --start 2026-08-24T09:00:00+08:00 --timezone Asia/Shanghai
-  $ el schedule confirm <id> --expected-version 1 --json
-`
-  );
-
-withJson(
-  schedule
-    .command("list")
-    .description("列出日程；范围为 [from,to)，status 可为 scheduled,active,done,cancelled 的逗号列表。")
-    .option("--from <ISO>", "范围起点，带 Z 或数字偏移的 ISO-8601")
-    .option("--to <ISO>", "范围终点，带 Z 或数字偏移的 ISO-8601")
-    .option("--status <csv>", "状态列表: scheduled,active,done,cancelled")
-    .addHelpText(
-      "after",
-      `
-示例:
-  $ el schedule list
-  $ el schedule list --from 2026-08-24T00:00:00+08:00 --to 2026-08-25T00:00:00+08:00 --status scheduled,active --json
-`
-    )
-).action(
-  action(async (thisCommand, opts: { from?: string; to?: string; status?: string }) => {
-    const query = new URLSearchParams();
-    if (opts.from) query.set("from", opts.from);
-    if (opts.to) query.set("to", opts.to);
-    if (opts.status) query.set("status", opts.status);
-    const suffix = query.size > 0 ? `?${query.toString()}` : "";
-    const items = await api<ScheduleCliItem[]>(`/api/plugins/schedule/items${suffix}`);
-    printSuccess(thisCommand, items, () => {
-      if (items.length === 0) {
-        console.log("暂无日程");
-        return;
-      }
-      for (const item of items) printScheduleItem(item);
-    });
-  })
-);
-
-withJson(
-  schedule
-    .command("show <id>")
-    .description("查看一条日程；id 来自 el schedule list。")
-    .addHelpText(
-      "after",
-      `
-示例:
-  $ el schedule show <id>
-  $ el schedule show <id> --json
-`
-    )
-).action(
-  action(async (thisCommand, id: string) => {
-    const item = await api<ScheduleCliItem>(scheduleItemPath(id));
-    printSuccess(thisCommand, item, () => {
-      printScheduleItem(item);
-      console.log(`  描述: ${item.description ?? "-"}`);
-      console.log(`  计划结束: ${item.scheduledEndAt ?? "-"}`);
-      console.log(`  下次提醒: ${item.nextReminderAt ?? "-"}`);
-      console.log(`  确认开始: ${item.confirmedStartAt ?? "-"}`);
-      console.log(`  优先级: ${item.priority}`);
-    });
-  })
-);
-
-withJson(
-  schedule
-    .command("add <title>")
-    .description("新增 scheduled 日程；到达 start 只提醒，不会自动开始或创建 Core record。")
-    .requiredOption("--start <ISO>", "计划开始，带 Z 或数字偏移的 ISO-8601")
-    .requiredOption("--timezone <IANA>", "显示时区，例如 Asia/Shanghai")
-    .option("--description <text>", "日程描述")
-    .option("--end <ISO>", "计划结束，带 Z 或数字偏移的 ISO-8601")
-    .option("--priority <n>", "整数优先级；取值范围由服务端校验")
-    .option("--remind-at <ISO>", "首次提醒时间，带 Z 或数字偏移；省略时等于 start")
-    .option("--no-reminder", "创建时不设置提醒")
-    .addHelpText(
-      "after",
-      `
-示例:
-  $ el schedule add "设计评审" --start 2026-08-24T09:00:00+08:00 --end 2026-08-24T10:00:00+08:00 --timezone Asia/Shanghai
-  $ el schedule add "发布检查" --start 2026-08-24T18:00:00Z --timezone UTC --remind-at 2026-08-24T17:45:00Z --priority 2 --json
-`
-    )
-).action(
-  action(async (thisCommand, title: string, opts: {
-    start: string;
-    timezone: string;
-    description?: string;
-    end?: string;
-    priority?: string;
-    remindAt?: string;
-    reminder?: boolean;
-  }) => {
-    if (opts.reminder === false && opts.remindAt !== undefined) {
-      throw new CliUsageError("--remind-at 和 --no-reminder 不能同时使用");
-    }
-    const body: Record<string, unknown> = {
-      title,
-      scheduledStartAt: opts.start,
-      timezone: opts.timezone,
-    };
-    if (opts.description !== undefined) body.description = opts.description;
-    if (opts.end !== undefined) body.scheduledEndAt = opts.end;
-    if (opts.priority !== undefined) body.priority = parseSchedulePriority(opts.priority);
-    if (opts.remindAt !== undefined) body.nextReminderAt = opts.remindAt;
-    if (opts.reminder === false) body.nextReminderAt = null;
-
-    const item = await post<ScheduleCliItem>("/api/plugins/schedule/items", body);
-    printSuccess(thisCommand, item, () => {
-      console.log(`✓ 已添加日程: ${item.title} [${item.id}] · v${item.version}`);
-    });
-  })
-);
-
-withJson(
-  schedule
-    .command("edit <id>")
-    .description("编辑仍为 scheduled 的日程；必须携带当前 expectedVersion，冲突由服务端返回 409。")
-    .requiredOption("--expected-version <n>", "当前版本，来自 list/show 返回的 version")
-    .option("--title <title>", "新标题")
-    .option("--description <text>", "新描述")
-    .option("--clear-description", "将描述设为 null")
-    .option("--start <ISO>", "计划开始，带 Z 或数字偏移的 ISO-8601")
-    .option("--end <ISO>", "计划结束，带 Z 或数字偏移的 ISO-8601")
-    .option("--clear-end", "将计划结束设为 null")
-    .option("--timezone <IANA>", "显示时区，例如 Asia/Shanghai")
-    .option("--priority <n>", "整数优先级；取值范围由服务端校验")
-    .option("--remind-at <ISO>", "下次提醒时间，带 Z 或数字偏移")
-    .option("--clear-reminder", "将下次提醒设为 null")
-    .addHelpText(
-      "after",
-      `
-示例:
-  $ el schedule edit <id> --expected-version 1 --title "设计评审（更新）"
-  $ el schedule edit <id> --expected-version 2 --start 2026-08-24T10:00:00+08:00 --timezone Asia/Shanghai --json
-  $ el schedule edit <id> --expected-version 3 --clear-end --clear-reminder
-`
-    )
-).action(
-  action(async (thisCommand, id: string, opts: {
-    expectedVersion: string;
-    title?: string;
-    description?: string;
-    clearDescription?: boolean;
-    start?: string;
-    end?: string;
-    clearEnd?: boolean;
-    timezone?: string;
-    priority?: string;
-    remindAt?: string;
-    clearReminder?: boolean;
-  }) => {
-    if (opts.description !== undefined && opts.clearDescription) {
-      throw new CliUsageError("--description 和 --clear-description 不能同时使用");
-    }
-    if (opts.end !== undefined && opts.clearEnd) {
-      throw new CliUsageError("--end 和 --clear-end 不能同时使用");
-    }
-    if (opts.remindAt !== undefined && opts.clearReminder) {
-      throw new CliUsageError("--remind-at 和 --clear-reminder 不能同时使用");
-    }
-    const body: Record<string, unknown> = {
-      expectedVersion: parseScheduleExpectedVersion(opts.expectedVersion),
-    };
-    if (opts.title !== undefined) body.title = opts.title;
-    if (opts.description !== undefined) body.description = opts.description;
-    if (opts.clearDescription) body.description = null;
-    if (opts.start !== undefined) body.scheduledStartAt = opts.start;
-    if (opts.end !== undefined) body.scheduledEndAt = opts.end;
-    if (opts.clearEnd) body.scheduledEndAt = null;
-    if (opts.timezone !== undefined) body.timezone = opts.timezone;
-    if (opts.priority !== undefined) body.priority = parseSchedulePriority(opts.priority);
-    if (opts.remindAt !== undefined) body.nextReminderAt = opts.remindAt;
-    if (opts.clearReminder) body.nextReminderAt = null;
-
-    const item = await patch<ScheduleCliItem>(scheduleItemPath(id), body);
-    printSuccess(thisCommand, item, () => {
-      console.log(`✓ 已更新日程: ${item.title} [${item.id}] · v${item.version}`);
-    });
-  })
-);
-
-withJson(
-  schedule
-    .command("confirm <id>")
-    .description("显式确认开始：scheduled -> active；confirmedStartAt 由服务端记录为确认时刻。")
-    .requiredOption("--expected-version <n>", "当前版本，来自 list/show 返回的 version")
-    .addHelpText(
-      "after",
-      `
-示例:
-  $ el schedule confirm <id> --expected-version 1
-  $ el schedule confirm <id> --expected-version 1 --json
-`
-    )
-).action(
-  action(async (thisCommand, id: string, opts: { expectedVersion: string }) => {
-    const item = await post<ScheduleCliItem>(`${scheduleItemPath(id)}/confirm-start`, {
-      expectedVersion: parseScheduleExpectedVersion(opts.expectedVersion),
-    });
-    printSuccess(thisCommand, item, () => {
-      console.log(`▶ 已确认开始: ${item.title} [${item.id}] · v${item.version}`);
-    });
-  })
-);
-
-withJson(
-  schedule
-    .command("snooze <id>")
-    .description("仅移动 scheduled 日程的 nextReminderAt；不会改变状态或自动开始。")
-    .requiredOption("--until <ISO>", "新的提醒时间，带 Z 或数字偏移的 ISO-8601")
-    .requiredOption("--expected-version <n>", "当前版本，来自 list/show 返回的 version")
-    .addHelpText(
-      "after",
-      `
-示例:
-  $ el schedule snooze <id> --until 2026-08-24T09:15:00+08:00 --expected-version 1
-  $ el schedule snooze <id> --until 2026-08-24T01:15:00Z --expected-version 1 --json
-`
-    )
-).action(
-  action(async (thisCommand, id: string, opts: { until: string; expectedVersion: string }) => {
-    const item = await post<ScheduleCliItem>(`${scheduleItemPath(id)}/snooze`, {
-      expectedVersion: parseScheduleExpectedVersion(opts.expectedVersion),
-      nextReminderAt: opts.until,
-    });
-    printSuccess(thisCommand, item, () => {
-      console.log(`⏰ 已延后提醒: ${item.title} · ${item.nextReminderAt} · v${item.version}`);
-    });
-  })
-);
-
-withJson(
-  schedule
-    .command("done <id>")
-    .description("显式完成 scheduled 或 active 日程；不会修改任何 Core record。")
-    .requiredOption("--expected-version <n>", "当前版本，来自 list/show 返回的 version")
-    .addHelpText(
-      "after",
-      `
-示例:
-  $ el schedule done <id> --expected-version 2
-  $ el schedule done <id> --expected-version 2 --json
-`
-    )
-).action(
-  action(async (thisCommand, id: string, opts: { expectedVersion: string }) => {
-    const item = await post<ScheduleCliItem>(`${scheduleItemPath(id)}/complete`, {
-      expectedVersion: parseScheduleExpectedVersion(opts.expectedVersion),
-    });
-    printSuccess(thisCommand, item, () => {
-      console.log(`✓ 已完成日程: ${item.title} [${item.id}] · v${item.version}`);
-    });
-  })
-);
-
-withJson(
-  schedule
-    .command("cancel <id>")
-    .description("显式取消 scheduled 或 active 日程；忽略提醒本身不会取消。")
-    .requiredOption("--expected-version <n>", "当前版本，来自 list/show 返回的 version")
-    .addHelpText(
-      "after",
-      `
-示例:
-  $ el schedule cancel <id> --expected-version 1
-  $ el schedule cancel <id> --expected-version 1 --json
-`
-    )
-).action(
-  action(async (thisCommand, id: string, opts: { expectedVersion: string }) => {
-    const item = await post<ScheduleCliItem>(`${scheduleItemPath(id)}/cancel`, {
-      expectedVersion: parseScheduleExpectedVersion(opts.expectedVersion),
-    });
-    printSuccess(thisCommand, item, () => {
-      console.log(`✗ 已取消日程: ${item.title} [${item.id}] · v${item.version}`);
-    });
-  })
-);
-
 
 // el screen [date]
 const screen = program
