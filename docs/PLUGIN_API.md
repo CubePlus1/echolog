@@ -231,6 +231,12 @@ not later than now. Month, week, and day views project the same
 mutations require `expectedVersion`, and each reminder instant is claimed by a
 unique ledger dedupe key before delivery.
 
+If a Host job timeout or daemon stop aborts the caller signal, a late
+notification continuation MUST NOT terminalize the reminder. Schedule retains
+the ledger as `claimed`; only an unaborted caller may persist `sent` or
+`failed`. Internal channel failures returned while the caller remains active
+still terminalize as `failed`.
+
 ## Compatibility policy
 
 API v1 changes are additive. A breaking SDK, lifecycle or manifest change

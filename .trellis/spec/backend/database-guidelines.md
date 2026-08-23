@@ -65,6 +65,11 @@ PostgreSQL（docker compose 起在 5436 端口，容器名 echolog-db）+ drizzl
   reminder instant creates a new key.
 - Delivery never performs an implicit domain transition. Confirm/start,
   complete, cancel, and snooze remain explicit versioned mutations.
+- An external delivery continuation may terminalize `claimed` only while its
+  caller signal is still authoritative. After every awaited send and
+  immediately before `claimed -> sent|failed`, recheck the signal. Caller
+  abort or `AbortError` retains `claimed`; ordinary channel/service failure
+  still writes `failed`.
 
 ### 4. Validation & Error Matrix
 
@@ -75,7 +80,7 @@ PostgreSQL（docker compose 起在 5436 端口，容器名 echolog-db）+ drizzl
 | Bare local datetime / invalid IANA zone | 400 `{error}` |
 | Duplicate or restarted poll | Existing ledger excludes the exact instant; no send |
 | Host notification failure | Record bounded failure; do not change item state |
-| Job abort/timeout | Honor the signal, release Host running state, retain claim |
+| Job abort/timeout/stop | Rethrow before finalization, release Host running state, retain `claimed` |
 
 ### 5. Good/Base/Bad Cases
 
@@ -85,6 +90,8 @@ PostgreSQL（docker compose 起在 5436 端口，容器名 echolog-db）+ drizzl
   explicit confirmation.
 - Bad: query the oldest 100 due items first, then dedupe in application code.
   The same ledgered rows occupy every batch and permanently starve row 101.
+- Bad: catch an aborted notification, write `failed`, and only then inspect
+  the signal. A timed-out late continuation has already corrupted diagnosis.
 
 ### 6. Tests Required
 
@@ -99,6 +106,10 @@ PostgreSQL（docker compose 起在 5436 端口，容器名 echolog-db）+ drizzl
   `(item_id, reminder_at)` lookup index.
 - Assert failed/ignored delivery does not modify status, confirmed timestamp, or
   create a Core record.
+- Through the real Host scheduler, timeout/stop an in-flight controlled send,
+  settle it late as success/AbortError/ordinary rejection, and assert the exact
+  ledger stays `claimed`, terminal counters stay zero, and later intervals
+  dedupe without another send.
 
 ### 7. Wrong vs Correct
 
@@ -127,6 +138,17 @@ LIMIT 100;
 
 CREATE INDEX idx_schedule_reminder_deliveries_item_reminder
   ON schedule_reminder_deliveries(item_id, reminder_at);
+```
+
+```typescript
+// Wrong: timeout/stop may have aborted while send was pending.
+const result = await send(request, signal);
+await finishReminder(result);
+
+// Correct: a late continuation must prove it still has write authority.
+const result = await send(request, signal);
+signal.throwIfAborted();
+await finishReminder(result);
 ```
 
 ## Common Mistakes

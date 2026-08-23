@@ -32,6 +32,11 @@
 
 - `setInterval` 回调必须防重入(`sampling` 标志)+ 整体 try-catch(单轮失败不杀循环,连败 N 次才告警)
 - 超时不能只调用 `AbortController.abort()`:数据库写入等操作可能忽略 signal。必须同时 race 一个会 reject 的 timeout,确保 `running` 在 `finally` 中释放,后续轮次可以继续。
+- Host timeout/stop 释放 `running` 后，旧 continuation 即失去 terminal-write
+  authority。每次等待外部 I/O（尤其通知发送）返回后、进入持久化前都必须复查
+  caller signal；`signal.aborted` 或 `AbortError` 直接上抛，不能记作普通
+  operational failure。测试须让受控 promise 在真实 Host timeout/stop 后迟到
+  resolve/reject，并断言无 terminal write。
 - 崩溃容忍:片段开启即 INSERT,周期 UPDATE(60s),`stopTracker` 收尾在 `lastSeenAt` 而非 `new Date()`
 - 采样断档检测(`now - lastSampleAt > 3×间隔`)兜住睡眠/合盖,在最后活跃时刻收尾
 

@@ -1,0 +1,4 @@
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"Host job timeout/non-reentry and abort boundary conventions."}
+{"file":".trellis/spec/backend/database-guidelines.md","reason":"Claimed-to-terminal persistence contract and at-most-once ledger semantics."}
+{"file":".trellis/spec/backend/error-handling.md","reason":"Differentiate caller abort from normal operational failure."}
+{"file":".trellis/tasks/archive/2026-08/08-24-schedule-plugin/research/plugin-patterns.md","reason":"Original notification dependency and Schedule ledger decisions."}
