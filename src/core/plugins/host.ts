@@ -195,7 +195,6 @@ export class PluginHost {
 
   async initialize(): Promise<void> {
     for (const runtime of this.runtimes.values()) {
-      if (!runtime.info.enabled) continue;
       try {
         this.setState(runtime, "validating");
         const manifestErrors = validatePluginManifest(runtime.definition.manifest);
@@ -207,11 +206,18 @@ export class PluginHost {
             "validating"
           );
         }
+        if (manifestErrors.length > 0) {
+          throw new Error(manifestErrors.join("; "));
+        }
+        if (!runtime.info.enabled) {
+          this.setState(runtime, "disabled");
+          continue;
+        }
+
         const configErrors = runtime.definition.validateConfig?.(
           runtime.context.config
         ) ?? [];
-        const errors = [...manifestErrors, ...configErrors];
-        if (errors.length > 0) throw new Error(errors.join("; "));
+        if (configErrors.length > 0) throw new Error(configErrors.join("; "));
 
         this.setState(runtime, "migrating");
         await this.options.migrationRunner(
@@ -233,7 +239,7 @@ export class PluginHost {
   async stop(): Promise<void> {
     const runtimes = [...this.runtimes.values()].reverse();
     for (const runtime of runtimes) {
-      if (runtime.info.state === "disabled") continue;
+      if (!runtime.info.enabled) continue;
       this.setState(runtime, "stopping");
       this.stopJobs(runtime);
       try {

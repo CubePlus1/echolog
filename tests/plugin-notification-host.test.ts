@@ -121,33 +121,151 @@ test("returns the Core-owned send function to a permitted plugin", async () => {
 });
 
 test("does not run notification lifecycle hooks for a disabled plugin", async () => {
-  let hooks = 0;
+  const lifecycle = {
+    migrations: 0,
+    register: 0,
+    start: 0,
+    jobs: 0,
+    stop: 0,
+  };
   let serviceCalls = 0;
-  const pluginHost = host(
-    [{
+  const pluginHost = new PluginHost({
+    definitions: [{
       manifest: manifest("notification-disabled", ["notifications:send"]),
       defaultEnabled: false,
       register(context) {
-        hooks++;
+        lifecycle.register++;
         context.service("notifications.send");
+        context.registerJob({
+          id: "disabled-job",
+          intervalMs: 1,
+          async run() {
+            lifecycle.jobs++;
+          },
+        });
       },
       start(context) {
-        hooks++;
+        lifecycle.start++;
         context.service("notifications.send");
       },
+      stop() {
+        lifecycle.stop++;
+      },
     }],
-    {
+    logger,
+    migrationRunner: async () => {
+      lifecycle.migrations++;
+    },
+    commandRunner: async () => ({ stdout: "", stderr: "", exitCode: 0 }),
+    services: {
       "notifications.send": async () => {
         serviceCalls++;
       },
-    }
-  );
+    },
+  });
+
+  await pluginHost.initialize();
+  await pluginHost.stop();
+
+  assert.equal(pluginHost.list()[0]?.state, "disabled");
+  assert.deepEqual(lifecycle, {
+    migrations: 0,
+    register: 0,
+    start: 0,
+    jobs: 0,
+    stop: 0,
+  });
+  assert.equal(serviceCalls, 0);
+});
+
+test("degrades an invalid disabled manifest without running lifecycle hooks", async () => {
+  const lifecycle = {
+    invalidMigrations: 0,
+    invalidRegister: 0,
+    invalidStart: 0,
+    invalidJobs: 0,
+    invalidStop: 0,
+    healthyMigrations: 0,
+    healthyStart: 0,
+    healthyStop: 0,
+  };
+  const invalidDefinition: PluginDefinition = {
+    manifest: {
+      ...manifest("notification-invalid-disabled"),
+      permissions: [
+        "notifications:unsupported" as PluginManifest["permissions"][number],
+      ],
+    },
+    defaultEnabled: false,
+    register(context) {
+      lifecycle.invalidRegister++;
+      context.registerJob({
+        id: "invalid-disabled-job",
+        intervalMs: 1,
+        async run() {
+          lifecycle.invalidJobs++;
+        },
+      });
+    },
+    start() {
+      lifecycle.invalidStart++;
+    },
+    stop() {
+      lifecycle.invalidStop++;
+    },
+  };
+  const pluginHost = new PluginHost({
+    definitions: [
+      invalidDefinition,
+      {
+        manifest: manifest("notification-healthy-after-invalid"),
+        defaultEnabled: true,
+        start() {
+          lifecycle.healthyStart++;
+        },
+        stop() {
+          lifecycle.healthyStop++;
+        },
+      },
+    ],
+    logger,
+    migrationRunner: async (pluginId) => {
+      if (pluginId === "notification-invalid-disabled") {
+        lifecycle.invalidMigrations++;
+      } else if (pluginId === "notification-healthy-after-invalid") {
+        lifecycle.healthyMigrations++;
+      }
+    },
+    commandRunner: async () => ({ stdout: "", stderr: "", exitCode: 0 }),
+  });
 
   await pluginHost.initialize();
 
-  assert.equal(pluginHost.list()[0]?.state, "disabled");
-  assert.equal(hooks, 0);
-  assert.equal(serviceCalls, 0);
+  const plugins = Object.fromEntries(
+    pluginHost.list().map((plugin) => [plugin.id, plugin])
+  );
+  const invalid = plugins["notification-invalid-disabled"];
+  assert.equal(invalid?.enabled, false);
+  assert.equal(invalid?.state, "degraded");
+  assert.equal(invalid?.error?.code, "PLUGIN_DEGRADED");
+  assert.match(invalid?.error?.message ?? "", /unsupported/);
+  assert.equal(invalid?.failureCount, 1);
+  assert.ok(invalid?.lastErrorAt);
+  assert.equal(plugins["notification-healthy-after-invalid"]?.state, "ready");
+  assert.deepEqual(lifecycle, {
+    invalidMigrations: 0,
+    invalidRegister: 0,
+    invalidStart: 0,
+    invalidJobs: 0,
+    invalidStop: 0,
+    healthyMigrations: 1,
+    healthyStart: 1,
+    healthyStop: 0,
+  });
+
+  await pluginHost.stop();
+  assert.equal(lifecycle.invalidStop, 0);
+  assert.equal(lifecycle.healthyStop, 1);
 });
 
 test("isolates an unavailable notification service from later plugins", async () => {

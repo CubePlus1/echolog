@@ -4,7 +4,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import type { Config } from "../src/core/config.js";
-import { notify, sendNotification } from "../src/core/notifier.js";
+import {
+  notify,
+  sendNotification,
+  type MacNotify,
+  type NotificationFetch,
+} from "../src/core/notifier.js";
 
 function config(
   notifications: Partial<Config["notifications"]> & {
@@ -42,6 +47,73 @@ function config(
 }
 
 const request = { title: "Reminder", message: "Private notification body" };
+
+function signalPoint(): { reached: Promise<void>; release: () => void } {
+  let release!: () => void;
+  const reached = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  return { reached, release };
+}
+
+function assertAbortError(error: unknown): boolean {
+  assert.ok(error instanceof Error);
+  assert.equal(error.name, "AbortError");
+  return true;
+}
+
+test("rejects a pre-aborted call before configuration or channel short circuits", async () => {
+  const controller = new AbortController();
+  controller.abort();
+  let configCalls = 0;
+  let macCalls = 0;
+  let fetchCalls = 0;
+
+  await assert.rejects(
+    sendNotification(request, controller.signal, {
+      loadConfig: () => {
+        configCalls++;
+        return config({ enabled: false });
+      },
+      macNotify: () => {
+        macCalls++;
+      },
+      fetch: async () => {
+        fetchCalls++;
+        return new Response(null, { status: 200 });
+      },
+    }),
+    assertAbortError
+  );
+
+  assert.equal(configCalls, 0);
+  assert.equal(macCalls, 0);
+  assert.equal(fetchCalls, 0);
+});
+
+test("does not dispatch queued transports after an immediate caller abort", async () => {
+  const controller = new AbortController();
+  let macCalls = 0;
+  let fetchCalls = 0;
+  const delivery = sendNotification(request, controller.signal, {
+    loadConfig: () => config(),
+    macNotify: () => {
+      macCalls++;
+    },
+    fetch: async () => {
+      fetchCalls++;
+      return new Response(null, { status: 200 });
+    },
+    timeoutMs: 10_000,
+  });
+  const rejected = assert.rejects(delivery, assertAbortError);
+
+  controller.abort();
+  await rejected;
+
+  assert.equal(macCalls, 0);
+  assert.equal(fetchCalls, 0);
+});
 
 test("reports both channels disabled when notifications are globally disabled", async () => {
   let macCalls = 0;
@@ -116,37 +188,43 @@ test("reports mac callback success and failure", async (t) => {
   });
 });
 
-test("bounds a non-cooperative mac delivery with an internal timeout", async () => {
-  const startedAt = Date.now();
-  const result = await sendNotification(request, undefined, {
+test("distinguishes caller abort from timeout for the same non-cooperative mac transport", async () => {
+  const starts = [signalPoint(), signalPoint()];
+  const callbacks: Array<(error: Error | null) => void> = [];
+  const macNotify: MacNotify = (_options, callback) => {
+    const callIndex = callbacks.push(callback) - 1;
+    starts[callIndex]?.release();
+  };
+  const controller = new AbortController();
+  const delivery = sendNotification(request, controller.signal, {
     loadConfig: () => config({ ntfy: { enabled: false } }),
-    macNotify: () => {},
+    macNotify,
+    timeoutMs: 10_000,
+  });
+  const rejected = assert.rejects(delivery, assertAbortError);
+
+  await starts[0].reached;
+  controller.abort();
+  await rejected;
+  assert.equal(callbacks.length, 1);
+  assert.doesNotThrow(() => callbacks[0](null));
+
+  const timedDelivery = sendNotification(request, undefined, {
+    loadConfig: () => config({ ntfy: { enabled: false } }),
+    macNotify,
     timeoutMs: 10,
   });
+  await starts[1].reached;
+  const result = await timedDelivery;
 
   assert.equal(result.channels.mac.status, "failed");
-  assert.ok(Date.now() - startedAt < 1_000, "delivery timeout must be bounded");
   assert.match(
     result.channels.mac.status === "failed" ? result.channels.mac.error : "",
     /timed out/i
   );
-});
-
-test("honors a caller-provided abort signal for mac delivery", async () => {
-  const controller = new AbortController();
-  const delivery = sendNotification(request, controller.signal, {
-    loadConfig: () => config({ ntfy: { enabled: false } }),
-    macNotify: () => {},
-    timeoutMs: 10_000,
-  });
-  controller.abort();
-
-  const result = await delivery;
-  assert.equal(result.channels.mac.status, "failed");
-  assert.match(
-    result.channels.mac.status === "failed" ? result.channels.mac.error : "",
-    /abort/i
-  );
+  assert.deepEqual(result.channels.ntfy, { status: "disabled" });
+  assert.equal(callbacks.length, 2);
+  assert.doesNotThrow(() => callbacks[1](null));
 });
 
 test("reports ntfy success, non-2xx, and network failures", async (t) => {
@@ -197,25 +275,61 @@ test("reports ntfy success, non-2xx, and network failures", async (t) => {
       );
     }
   });
+
+  await t.test("transport-supplied AbortError remains an operational failure", async () => {
+    const result = await sendNotification(request, undefined, {
+      loadConfig: ntfyOnly,
+      fetch: async () => {
+        throw new DOMException("transport cancelled itself", "AbortError");
+      },
+    });
+
+    assert.equal(result.channels.ntfy.status, "failed");
+    assert.match(
+      result.channels.ntfy.status === "failed"
+        ? result.channels.ntfy.error
+        : "",
+      /ntfy notification failed/i
+    );
+  });
 });
 
-test("aborts an in-flight ntfy transport when its delivery times out", async () => {
-  let transportSignal: AbortSignal | undefined;
-  const result = await sendNotification(request, undefined, {
+test("distinguishes caller abort from timeout for the same non-cooperative ntfy transport", async () => {
+  const starts = [signalPoint(), signalPoint()];
+  const transportSignals: Array<AbortSignal | undefined> = [];
+  const fetch: NotificationFetch = async (_input, init) => {
+    const callIndex = transportSignals.push(init?.signal ?? undefined) - 1;
+    starts[callIndex]?.release();
+    return new Promise<Pick<Response, "ok" | "status">>(() => {});
+  };
+  const controller = new AbortController();
+  const delivery = sendNotification(request, controller.signal, {
     loadConfig: () => config({ mac: false }),
-    fetch: async (_input, init) => {
-      transportSignal = init?.signal ?? undefined;
-      return new Promise<Pick<Response, "ok" | "status">>(() => {});
-    },
+    fetch,
+    timeoutMs: 10_000,
+  });
+  const rejected = assert.rejects(delivery, assertAbortError);
+
+  await starts[0].reached;
+  controller.abort();
+  await rejected;
+  assert.equal(transportSignals[0]?.aborted, true);
+
+  const timedDelivery = sendNotification(request, undefined, {
+    loadConfig: () => config({ mac: false }),
+    fetch,
     timeoutMs: 10,
   });
+  await starts[1].reached;
+  const result = await timedDelivery;
 
-  assert.equal(transportSignal?.aborted, true);
+  assert.equal(transportSignals[1]?.aborted, true);
   assert.equal(result.channels.ntfy.status, "failed");
   assert.match(
     result.channels.ntfy.status === "failed" ? result.channels.ntfy.error : "",
     /timed out/i
   );
+  assert.deepEqual(result.channels.mac, { status: "disabled" });
 });
 
 test("keeps channel results independent when one delivery fails", async () => {
