@@ -1,5 +1,6 @@
 import Foundation
 import Darwin
+import Security
 
 public let helperVersion = "0.1.0"
 public let helperBundleIdentifier = "com.cubeplus1.echolog.screen-capture"
@@ -9,8 +10,8 @@ public enum HelperCommand: Equatable, Sendable {
     case status
     case requestPermission
     case capture(output: String, maxPixelEdge: Int)
-    case keychainStatus(service: String, account: String)
-    case keychainGet(service: String, account: String)
+    case keychainStatus(service: String, account: String, noAuthUI: Bool)
+    case keychainGet(service: String, account: String, noAuthUI: Bool)
     case keychainSet(service: String, account: String)
     case keychainDelete(service: String, account: String)
     case version
@@ -106,7 +107,19 @@ public enum CommandParser {
         guard let operation = args.first, ["status", "get", "set", "delete"].contains(operation) else {
             throw HelperFailure.invalid("keychain requires status, get, set, or delete")
         }
-        let options = try parseOptions(Array(args.dropFirst()), allowed: ["--service", "--account"])
+        let rawOptions = Array(args.dropFirst())
+        let noAuthUICount = rawOptions.filter { $0 == "--no-auth-ui" }.count
+        guard noAuthUICount <= 1 else {
+            throw HelperFailure.keychainInvalid("Duplicate option: --no-auth-ui")
+        }
+        let noAuthUI = noAuthUICount == 1
+        if noAuthUI && operation != "status" && operation != "get" {
+            throw HelperFailure.keychainInvalid("--no-auth-ui is only valid for keychain status or get")
+        }
+        let options = try parseOptions(
+            rawOptions.filter { $0 != "--no-auth-ui" },
+            allowed: ["--service", "--account"]
+        )
         guard let service = options["--service"], service == screenUnderstandingKeychainService else {
             throw HelperFailure.keychainInvalid("--service must use the EchoLog screen-understanding namespace")
         }
@@ -114,8 +127,8 @@ public enum CommandParser {
             throw HelperFailure.keychainInvalid("--account must be 1-255 printable characters")
         }
         switch operation {
-        case "status": return .keychainStatus(service: service, account: account)
-        case "get": return .keychainGet(service: service, account: account)
+        case "status": return .keychainStatus(service: service, account: account, noAuthUI: noAuthUI)
+        case "get": return .keychainGet(service: service, account: account, noAuthUI: noAuthUI)
         case "set": return .keychainSet(service: service, account: account)
         default: return .keychainDelete(service: service, account: account)
         }
@@ -208,10 +221,13 @@ public struct SecretInput: Decodable, Sendable {
 }
 
 public enum KeychainStatusMapping {
-    public enum Result: Equatable { case present, missing, failure }
+    public enum Result: Equatable { case present, missing, authRequired, failure }
     public static func map(_ status: Int32) -> Result {
-        if status == 0 { return .present }
-        if status == -25300 { return .missing }
+        if status == errSecSuccess { return .present }
+        if status == errSecItemNotFound { return .missing }
+        if [errSecInteractionNotAllowed, errSecAuthFailed, errSecUserCanceled].contains(status) {
+            return .authRequired
+        }
         return .failure
     }
 }

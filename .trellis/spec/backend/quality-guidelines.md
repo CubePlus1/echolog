@@ -27,6 +27,7 @@
 - idle 收尾要**回溯**到 max(最后输入时刻, 最后媒体活跃时刻),不是收在当前时刻。
 - 多命令一次 exec 时用显式分隔符(`---ECHOLOG---`)分段解析,不要靠正则猜哪行是谁的输出(`pmset` 输出里也有裸数字)。
 - `lsappinfo info -only name -only bundleid "$(lsappinfo front)"` 无需 TCC 权限;输出形如 `"LSDisplayName"="微信"`。
+- 常驻自动任务访问 macOS Keychain 时必须使用禁止授权 UI 的 helper 模式；`KEYCHAIN_AUTH_REQUIRED` 应静默跳过并暂停该凭据的自动重试。只有显式用户操作可使用至少 60 秒的交互式读取；成功后把凭据缓存于进程内并恢复调度，避免按采样周期重复访问 Keychain 或弹系统对话框。列表/页面刷新不得为了展示状态查询 Keychain，进程停止时必须清空缓存。
 
 ### 常驻采样器模式
 
