@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import {
   chmod,
+  mkdir,
   mkdtemp,
   rm,
   stat,
@@ -26,6 +27,22 @@ import {
 import { createScreenRoutes } from "../plugins/screen-time/src/routes.js";
 
 const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
+const defaultHelperApp = dirname(dirname(dirname(DEFAULT_MACOS_HELPER_EXECUTABLE)));
+let createdDefaultHelperFixture = false;
+
+test.before(async () => {
+  if (checkMacosHelperInstall().ok) return;
+  await mkdir(dirname(DEFAULT_MACOS_HELPER_EXECUTABLE), { recursive: true });
+  await writeFile(DEFAULT_MACOS_HELPER_EXECUTABLE, "#!/bin/sh\nexit 0\n");
+  await chmod(DEFAULT_MACOS_HELPER_EXECUTABLE, 0o755);
+  createdDefaultHelperFixture = true;
+});
+
+test.after(async () => {
+  if (createdDefaultHelperFixture) {
+    await rm(defaultHelperApp, { recursive: true, force: true });
+  }
+});
 
 const PNG_1X1 = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
