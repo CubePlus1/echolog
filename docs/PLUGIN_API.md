@@ -162,6 +162,16 @@ diagnostic does not degrade passive foreground tracking.
 `pnpm smoke:launchd-helper` reads the daemon plist `WorkingDirectory` and checks
 the helper that launchd will actually load.
 
+Scheduled Keychain status/get operations MUST use the helper's non-interactive
+mode, which applies `kSecUseAuthenticationUIFail`. Authorization-required
+results MUST be structured and MUST NOT be treated as timeouts or degrade the
+plugin. Explicit local user actions MAY use interactive Keychain access with a
+timeout of at least 60 seconds. A successful read SHOULD be cached only in the
+daemon process; set/delete MUST synchronize that cache and plugin stop MUST
+clear it. Provider listing and ordinary page loads MUST NOT query Keychain.
+Secrets MUST NOT enter database rows, configuration, argv, logs, errors, smoke
+output, or test output.
+
 `GET /api/health` reports Core health. Plugin failures appear in
 `GET /api/plugins` and `GET /api/plugins/doctor`. A failed doctor request uses
 HTTP 503 and retains the normal error envelope plus diagnostics:

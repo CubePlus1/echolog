@@ -9,7 +9,11 @@ import { screenTimePlugin } from "@echolog/plugin-screen-time";
 import type { AppRule } from "../plugins/screen-time/src/schema.js";
 import { classifySegment } from "../plugins/screen-time/src/screen.js";
 import { createScreenRoutes } from "../plugins/screen-time/src/routes.js";
-import { MacKeychainClient } from "../plugins/screen-time/src/macos-keychain-client.js";
+import {
+  INTERACTIVE_KEYCHAIN_TIMEOUT_MS,
+  MacKeychainClient,
+  NON_INTERACTIVE_KEYCHAIN_TIMEOUT_MS,
+} from "../plugins/screen-time/src/macos-keychain-client.js";
 import {
   DEFAULT_MACOS_HELPER_EXECUTABLE,
   MACOS_HELPER_BUILD_COMMAND,
@@ -487,7 +491,7 @@ test("provider validators are strict and normalize safe base URLs", () => {
   assert.equal(validateProviderKey({ apiKey: "test-value" }).ok, true);
 });
 
-test("macOS Keychain client follows the write-only helper contract", async () => {
+test("macOS Keychain client follows the bounded helper and cache contract", async () => {
   const fakeRoot = await mkdtemp(join(tmpdir(), "echolog-keychain-fake-"));
   const fakeExecutable = join(
     fakeRoot,
@@ -501,23 +505,24 @@ test("macOS Keychain client follows the write-only helper contract", async () =>
   });
   await writeFile(fakeExecutable, "#!/bin/sh\nexit 0\n");
   await chmod(fakeExecutable, 0o755);
-  const requests: Array<{ args: string[]; stdin?: string }> = [];
+  const requests: Array<{ args: string[]; stdin?: string; timeoutMs?: number }> = [];
   try {
     const client = new MacKeychainClient(async (request) => {
-      requests.push({ args: request.args, stdin: request.stdin });
+      requests.push({
+        args: request.args,
+        stdin: request.stdin,
+        timeoutMs: request.timeoutMs,
+      });
       const operation = request.args[1];
       return {
-        stdout: JSON.stringify({
-          ok: true,
-          hasSecret: operation === "delete" ? false : true,
-        }),
+        stdout: JSON.stringify(operation === "get"
+          ? { ok: true, hasSecret: true, secret: "cached-credential-value" }
+          : { ok: true, hasSecret: operation !== "delete" }),
         stderr: "",
         exitCode: 0,
       };
     }, fakeExecutable);
     assert.equal(await client.has("vision-primary"), true);
-    await client.set("vision-primary", "test-credential-value");
-    await client.delete("vision-primary");
     assert.deepEqual(requests[0]?.args, [
       "keychain",
       "status",
@@ -525,13 +530,45 @@ test("macOS Keychain client follows the write-only helper contract", async () =>
       "com.cubeplus1.echolog.screen-understanding",
       "--account",
       "vision-primary",
+      "--no-auth-ui",
       "--json",
     ]);
+    assert.equal(requests[0]?.timeoutMs, NON_INTERACTIVE_KEYCHAIN_TIMEOUT_MS);
     assert.equal(requests[0]?.stdin, undefined);
-    assert.deepEqual(JSON.parse(requests[1]?.stdin ?? ""), {
+
+    assert.equal(
+      await client.get("manual-profile", undefined, "interactive"),
+      "cached-credential-value"
+    );
+    assert.equal(requests[1]?.args.includes("--no-auth-ui"), false);
+    assert.equal(requests[1]?.timeoutMs, INTERACTIVE_KEYCHAIN_TIMEOUT_MS);
+    assert.equal(
+      await client.get("manual-profile", undefined, "non-interactive"),
+      "cached-credential-value"
+    );
+    assert.equal(requests.length, 2);
+
+    await client.set("vision-primary", "test-credential-value");
+    assert.deepEqual(JSON.parse(requests[2]?.stdin ?? ""), {
       secret: "test-credential-value",
     });
-    assert.equal(requests[1]?.args.join(" ").includes("test-credential-value"), false);
+    assert.equal(requests[2]?.args.join(" ").includes("test-credential-value"), false);
+    assert.equal(requests[2]?.timeoutMs, INTERACTIVE_KEYCHAIN_TIMEOUT_MS);
+    assert.equal(await client.get("vision-primary", undefined, "non-interactive"), "test-credential-value");
+    assert.equal(requests.length, 3);
+    assert.equal(client.cachedState("vision-primary"), true);
+    assert.equal(client.hasCachedValue("vision-primary"), true);
+
+    await client.delete("vision-primary");
+    assert.equal(requests[3]?.timeoutMs, INTERACTIVE_KEYCHAIN_TIMEOUT_MS);
+    assert.equal(client.cachedState("vision-primary"), false);
+    assert.equal(client.hasCachedValue("vision-primary"), false);
+    assert.equal(await client.get("vision-primary", undefined, "non-interactive"), null);
+    assert.equal(requests.length, 4);
+
+    client.clearCache();
+    assert.equal(client.cachedState("manual-profile"), null);
+    assert.equal(client.hasCachedValue("manual-profile"), false);
 
     const failed = new MacKeychainClient(async () => {
       const error = new Error("spawn failed") as Error & { code: string };
@@ -559,6 +596,25 @@ test("macOS Keychain client follows the write-only helper contract", async () =>
         error.code === "PLUGIN_TIMEOUT" &&
         error.statusCode === 504 &&
         error.message === "Keychain helper timed out"
+    );
+
+    const authRequired = new MacKeychainClient(async () => ({
+      stdout: JSON.stringify({
+        ok: false,
+        error: "private helper detail",
+        code: "KEYCHAIN_AUTH_REQUIRED",
+        retryable: false,
+      }),
+      stderr: "test-credential-value must not escape",
+      exitCode: 10,
+    }), fakeExecutable);
+    await assert.rejects(
+      authRequired.get("vision-primary", undefined, "non-interactive"),
+      (error) => error instanceof ProviderError &&
+        error.code === "KEYCHAIN_AUTH_REQUIRED" &&
+        error.statusCode === 409 &&
+        !error.message.includes("test-credential-value") &&
+        !error.message.includes("private helper detail")
     );
   } finally {
     await rm(fakeRoot, { recursive: true, force: true });
@@ -623,13 +679,16 @@ test("provider metadata remains readable and editable when Keychain status is un
       return { id: "default", version: 1, ...DEFAULT_UNDERSTANDING_SETTINGS, updatedAt: now };
     },
   };
+  let helperQueries = 0;
   const unavailable = async () => {
+    helperQueries++;
     throw new ProviderError("KEYCHAIN_UNAVAILABLE", "Keychain helper is unavailable", 503);
   };
   const service = new ProviderProfileService(store, {
     has: unavailable,
     set: unavailable,
     delete: unavailable,
+    cachedState() { return null; },
   });
   assert.equal((await service.list())[0]?.hasApiKey, null);
   const updated = await service.update("vision-primary", 1, {
@@ -640,6 +699,7 @@ test("provider metadata remains readable and editable when Keychain status is un
   });
   assert.equal(updated.displayName, "Updated");
   assert.equal(updated.hasApiKey, null);
+  assert.equal(helperQueries, 0);
 });
 
 test("provider service enforces CAS, references, and write-only key state", async () => {
@@ -691,6 +751,8 @@ test("provider service enforces CAS, references, and write-only key state", asyn
     async has(id: string) { return keys.has(id); },
     async set(id: string) { keys.add(id); },
     async delete(id: string) { keys.delete(id); },
+    cachedState(id: string) { return keys.has(id); },
+    hasCachedValue(id: string) { return keys.has(id); },
   };
   const service = new ProviderProfileService(store, secrets);
   const created = await service.create({

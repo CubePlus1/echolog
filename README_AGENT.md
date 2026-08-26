@@ -62,9 +62,12 @@ node dist/cli/index.js plugins doctor --json
 pnpm smoke:launchd-helper
 ```
 
-若 macOS 因 helper 重签名要求重新授权 Keychain，自动识图在首次授权失败或
-超时后会暂停 Keychain 重试，避免周期性重复弹窗。处理授权后手动运行一次识图；
-凭据读取成功会恢复自动调度。
+自动识图只允许 helper 以非交互模式读取 Keychain；需要授权时会静默跳过并暂停
+该 Provider 的自动 Keychain 重试，不会周期性弹系统对话框。请在 Web 点击
+“立即识别”（或从本机执行 `el screen understanding run --json`），并在 60 秒内
+完成一次 Keychain 授权。读取成功后 API key 只进入 daemon 的进程内缓存，自动
+调度随即恢复且不再访问 Keychain；daemon 重启会清空缓存，必要时需再次执行一次
+显式识别完成授权。
 
 若已把 wrapper 放进 `PATH`，后续使用 `el` 代替 `node dist/cli/index.js`。先读 `el --help` 和目标子命令的 `--help`；它们是参数、枚举、时间格式和示例的权威工具说明。
 
@@ -124,6 +127,7 @@ Provider、Keychain、settings 和 capture test 的完整 HTTP 契约见 [`docs/
 
 - Key 写入/删除、截图测试、立即识别和历史删除只允许 loopback 请求；
 - daemon 永远不能调用 `request-permission`，权限必须由交互式用户动作触发；
+- Provider 列表和普通页面刷新只能显示内存中已知的密钥状态，不得主动查询或弹出 Keychain；
 - settings 更新是带 `expectedVersion` 的全量替换；409 时读取 `currentVersion` 后重新决策，不能盲目覆盖；
 - 启用识别前必须选择存在且已有 Keychain 密钥的 Provider；
 - 原始截图不得落盘、记录、转发或附在 Agent 回复中，除非用户明确要求处理当前预览且符合其隐私意图。

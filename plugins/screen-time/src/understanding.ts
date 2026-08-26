@@ -5,6 +5,7 @@ import type { UnderstandingSettingsService } from "./understanding-settings.js";
 import {
   ProviderError,
   type ProviderProfile,
+  type ProviderSecretAccess,
 } from "./provider-profiles.js";
 import type { CapturedPng, MacScreenCaptureService } from "./macos-screen-capture.js";
 import type { VisionCompletion, VisionProviderClient } from "./vision-provider.js";
@@ -17,7 +18,15 @@ function isKeychainAccessFailure(error: unknown): boolean {
   return error instanceof ProviderError && [
     "KEYCHAIN_UNAVAILABLE",
     "KEYCHAIN_OPERATION_FAILED",
+    "KEYCHAIN_AUTH_REQUIRED",
     "PLUGIN_TIMEOUT",
+  ].includes(error.code);
+}
+
+function isSilentScheduledCredentialFailure(error: unknown): boolean {
+  return error instanceof ProviderError && [
+    "KEYCHAIN_AUTH_REQUIRED",
+    "PROVIDER_KEY_REQUIRED",
   ].includes(error.code);
 }
 
@@ -99,8 +108,10 @@ export interface UnderstandingStore {
 export interface UnderstandingProviderResolver {
   getForInference(
     id: string,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    access?: ProviderSecretAccess
   ): Promise<{ profile: ProviderProfile; apiKey: string }>;
+  hasCachedCredential?(id: string): boolean;
 }
 
 export interface UnderstandingCapture {
@@ -249,7 +260,7 @@ function cancellationError(): Error {
 export class ScreenUnderstandingService {
   private inFlight = false;
   private lastScheduledAt = 0;
-  private scheduledKeychainBlocked = false;
+  private scheduledKeychainBlockedFor: string | null = null;
 
   constructor(
     private readonly store: UnderstandingStore,
@@ -300,9 +311,10 @@ export class ScreenUnderstandingService {
 
       const resolved = await this.providers.getForInference(
         configuration.providerProfileId,
-        signal
+        signal,
+        options.scheduled ? "non-interactive" : "interactive"
       );
-      if (!options.scheduled) this.scheduledKeychainBlocked = false;
+      if (!options.scheduled) this.scheduledKeychainBlockedFor = null;
       const captured = await this.capture.captureForInference(signal);
       const capturedAt = new Date(captured.capturedAt);
       if (!Number.isFinite(capturedAt.getTime())) {
@@ -416,9 +428,20 @@ export class ScreenUnderstandingService {
   }
 
   async runScheduled(signal?: AbortSignal): Promise<UnderstandingObservation | null> {
-    if (this.inFlight || this.scheduledKeychainBlocked) return null;
+    if (this.inFlight) return null;
     const configuration = await this.settings.get();
     if (!configuration.enabled) return null;
+    if (
+      this.scheduledKeychainBlockedFor !== null &&
+      this.scheduledKeychainBlockedFor === configuration.providerProfileId
+    ) {
+      if (!this.providers.hasCachedCredential?.(this.scheduledKeychainBlockedFor)) {
+        return null;
+      }
+      this.scheduledKeychainBlockedFor = null;
+    } else if (this.scheduledKeychainBlockedFor !== null) {
+      this.scheduledKeychainBlockedFor = null;
+    }
     const now = this.now();
     if (
       this.lastScheduledAt > 0 &&
@@ -428,9 +451,14 @@ export class ScreenUnderstandingService {
     try {
       return await this.run(signal, { scheduled: true });
     } catch (error) {
-      if (isKeychainAccessFailure(error)) {
-        this.scheduledKeychainBlocked = true;
+      if (
+        configuration.providerProfileId &&
+        (isKeychainAccessFailure(error) ||
+          (error instanceof ProviderError && error.code === "PROVIDER_KEY_REQUIRED"))
+      ) {
+        this.scheduledKeychainBlockedFor = configuration.providerProfileId;
       }
+      if (isSilentScheduledCredentialFailure(error)) return null;
       if (
         error instanceof UnderstandingError &&
         error.code === "UNDERSTANDING_DISABLED"

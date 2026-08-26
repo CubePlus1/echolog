@@ -296,6 +296,7 @@ export const screenTimePlugin: PluginDefinition = {
   },
   async stop() {
     await tracker?.stop();
+    providerProfiles?.clearCredentialCache();
     await store?.close();
     tracker = null;
     service = null;

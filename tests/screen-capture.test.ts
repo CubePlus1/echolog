@@ -27,21 +27,25 @@ import {
 import { createScreenRoutes } from "../plugins/screen-time/src/routes.js";
 
 const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
-const defaultHelperApp = dirname(dirname(dirname(DEFAULT_MACOS_HELPER_EXECUTABLE)));
-let createdDefaultHelperFixture = false;
+let fakeHelperRoot = "";
+let fakeHelperExecutable = "";
 
 test.before(async () => {
-  if (checkMacosHelperInstall().ok) return;
-  await mkdir(dirname(DEFAULT_MACOS_HELPER_EXECUTABLE), { recursive: true });
-  await writeFile(DEFAULT_MACOS_HELPER_EXECUTABLE, "#!/bin/sh\nexit 0\n");
-  await chmod(DEFAULT_MACOS_HELPER_EXECUTABLE, 0o755);
-  createdDefaultHelperFixture = true;
+  fakeHelperRoot = await mkdtemp(join(tmpdir(), "echolog-capture-helper-"));
+  fakeHelperExecutable = join(
+    fakeHelperRoot,
+    "EchoLogScreenCapture.app",
+    "Contents",
+    "MacOS",
+    "echolog-screen-capture"
+  );
+  await mkdir(dirname(fakeHelperExecutable), { recursive: true });
+  await writeFile(fakeHelperExecutable, "#!/bin/sh\nexit 0\n");
+  await chmod(fakeHelperExecutable, 0o755);
 });
 
 test.after(async () => {
-  if (createdDefaultHelperFixture) {
-    await rm(defaultHelperApp, { recursive: true, force: true });
-  }
+  await rm(fakeHelperRoot, { recursive: true, force: true });
 });
 
 const PNG_1X1 = Buffer.from(
@@ -192,14 +196,14 @@ test("capture service returns a bounded in-memory PNG preview and removes the pr
     assert.deepEqual(request.args.slice(0, 9), [
       "-W", "-n", "-o", argumentValue(request.args, "-o"),
       "--stderr", argumentValue(request.args, "--stderr"),
-      DEFAULT_MACOS_HELPER_EXECUTABLE.replace("/Contents/MacOS/echolog-screen-capture", ""),
+      fakeHelperExecutable.replace("/Contents/MacOS/echolog-screen-capture", ""),
       "--args", "capture",
     ]);
     assert.equal(request.args.indexOf("-o") < request.args.indexOf("--args"), true);
     assert.equal(request.args.indexOf("--stderr") < request.args.indexOf("--args"), true);
     await writePrivatePng(capturedPath);
     return completeLaunch(request.args, success(capturedPath));
-  });
+  }, fakeHelperExecutable);
   const result = await service.captureTest();
   assert.equal(result.preview.base64, PNG_1X1.toString("base64"));
   assert.equal(result.preview.mediaType, "image/png");
@@ -219,7 +223,7 @@ test("capture service rejects concurrent tests with a bounded busy response", as
     await gate;
     await writePrivatePng(outputPath);
     return completeLaunch(request.args, success(outputPath));
-  });
+  }, fakeHelperExecutable);
   const first = service.captureTest();
   await started;
   await assert.rejects(
@@ -304,7 +308,7 @@ test("capture service rejects malformed output, unsafe paths, symlinks, oversize
   try {
     for (const item of cases) {
       await t.test(item.name, async () => {
-        const service = new MacScreenCaptureService(item.run);
+        const service = new MacScreenCaptureService(item.run, fakeHelperExecutable);
         await assert.rejects(
           service.captureTest(),
           (error) => error instanceof CaptureError && error.code === item.code &&
@@ -329,7 +333,7 @@ test("capture service waits for an asynchronous LaunchServices result", async ()
       void writeLaunchFiles(request.args, success(outputPath).stdout);
     }, 40);
     return { stdout: "ignored", stderr: "Unable to block", exitCode: 0 };
-  });
+  }, fakeHelperExecutable);
   const result = await service.captureTest();
   assert.equal(result.preview.base64, PNG_1X1.toString("base64"));
 });
@@ -344,7 +348,7 @@ test("capture service bounds a missing LaunchServices result and cleans up", asy
     await chmod(stderrPath, 0o600);
     setTimeout(() => controller.abort(), 40);
     return { stdout: "ignored", stderr: "Unable to block", exitCode: 0 };
-  });
+  }, fakeHelperExecutable);
   await assert.rejects(
     service.captureTest(controller.signal),
     (error) => error instanceof CaptureError && error.code === "PLUGIN_TIMEOUT"
@@ -359,7 +363,7 @@ test("capture service rejects an insecure LaunchServices result and cleans up", 
     await writeLaunchFiles(request.args, JSON.stringify({ ok: true }));
     await chmod(argumentValue(request.args, "-o"), 0o644);
     return { stdout: "ignored", stderr: "Unable to block", exitCode: 0 };
-  });
+  }, fakeHelperExecutable);
   await assert.rejects(
     service.captureTest(),
     (error) => error instanceof CaptureError && error.code === "PLUGIN_OUTPUT_INVALID"
@@ -395,7 +399,7 @@ test("capture helper errors are mapped safely and permission diagnostics stay no
       "private diagnostic"
     );
     return { stdout: "ignored", stderr: "benign open diagnostic", exitCode: 0 };
-  });
+  }, fakeHelperExecutable);
   await assert.rejects(
     permission.captureTest(),
     (error) => error instanceof CaptureError &&

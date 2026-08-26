@@ -5,6 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 import {
   ProviderError,
+  ProviderProfileService,
   type ProviderProfile,
 } from "../plugins/screen-time/src/provider-profiles.js";
 import {
@@ -221,10 +222,11 @@ test("disabled understanding does not capture or call the provider", async () =>
   assert.equal(calls, 0);
 });
 
-test("scheduled understanding pauses Keychain retries until a manual read succeeds", async () => {
+test("scheduled understanding uses non-interactive credentials and resumes after a manual read", async () => {
   let current = new Date("2026-08-26T10:00:00+08:00");
   let providerResolutions = 0;
-  let keychainBlocked = true;
+  let credentialCached = false;
+  const accessModes: string[] = [];
   const settings = {
     async get() {
       return {
@@ -242,13 +244,20 @@ test("scheduled understanding pauses Keychain retries until a manual read succee
     makeStore(),
     settings as any,
     {
-      async getForInference() {
+      async getForInference(_id, _signal, access) {
         providerResolutions++;
-        if (keychainBlocked) {
-          throw new ProviderError("PLUGIN_TIMEOUT", "Keychain helper timed out", 504);
+        accessModes.push(access ?? "interactive");
+        if (access === "non-interactive" && !credentialCached) {
+          throw new ProviderError(
+            "KEYCHAIN_AUTH_REQUIRED",
+            "Keychain authorization is required",
+            409
+          );
         }
+        credentialCached = true;
         return { profile, apiKey: "secret-key" };
       },
+      hasCachedCredential() { return credentialCached; },
     },
     {
       async captureForInference() {
@@ -276,19 +285,134 @@ test("scheduled understanding pauses Keychain retries until a manual read succee
     () => current
   );
 
-  await assert.rejects(
-    service.runScheduled(),
-    (error) => error instanceof ProviderError && error.code === "PLUGIN_TIMEOUT"
-  );
+  assert.equal(await service.runScheduled(), null);
   current = new Date(current.getTime() + 60_000);
   assert.equal(await service.runScheduled(), null);
   assert.equal(providerResolutions, 1);
+  assert.deepEqual(accessModes, ["non-interactive"]);
 
-  keychainBlocked = false;
   await service.run();
   current = new Date(current.getTime() + 60_000);
   assert.ok(await service.runScheduled());
   assert.equal(providerResolutions, 3);
+  assert.deepEqual(accessModes, ["non-interactive", "interactive", "non-interactive"]);
+});
+
+test("manual Keychain authorization populates the cache used by later scheduled runs", async () => {
+  const fakeRoot = await mkdtemp(join(tmpdir(), "echolog-understanding-cache-"));
+  const fakeExecutable = join(
+    fakeRoot,
+    "EchoLogScreenCapture.app",
+    "Contents",
+    "MacOS",
+    "echolog-screen-capture"
+  );
+  await mkdir(join(fakeRoot, "EchoLogScreenCapture.app", "Contents", "MacOS"), {
+    recursive: true,
+  });
+  await writeFile(fakeExecutable, "#!/bin/sh\nexit 0\n");
+  await chmod(fakeExecutable, 0o755);
+  const helperRequests: Array<{ args: string[]; timeoutMs?: number }> = [];
+  let current = new Date("2026-08-26T11:00:00+08:00");
+  try {
+    const keychain = new MacKeychainClient(async (request) => {
+      helperRequests.push({ args: request.args, timeoutMs: request.timeoutMs });
+      if (request.args.includes("--no-auth-ui")) {
+        return {
+          stdout: JSON.stringify({
+            ok: false,
+            error: "Keychain authorization is required",
+            code: "KEYCHAIN_AUTH_REQUIRED",
+            retryable: false,
+          }),
+          stderr: "",
+          exitCode: 10,
+        };
+      }
+      return {
+        stdout: JSON.stringify({
+          ok: true,
+          hasSecret: true,
+          secret: "integration-credential-value",
+        }),
+        stderr: "",
+        exitCode: 0,
+      };
+    }, fakeExecutable);
+    const providers = new ProviderProfileService({
+      async getProviderProfile() {
+        return {
+          id: profile.id,
+          version: profile.version,
+          displayName: profile.displayName,
+          providerKind: profile.providerKind,
+          baseUrl: profile.baseUrl,
+          model: profile.model,
+          createdAt: new Date(profile.createdAt),
+          updatedAt: new Date(profile.updatedAt),
+        };
+      },
+    } as any, keychain);
+    const settings = {
+      async get() {
+        return {
+          id: "default",
+          version: 1,
+          ...DEFAULT_UNDERSTANDING_SETTINGS,
+          enabled: true,
+          providerProfileId: profile.id,
+          captureIntervalSeconds: 60,
+          updatedAt: current,
+        };
+      },
+    };
+    const service = new ScreenUnderstandingService(
+      makeStore(),
+      settings as any,
+      providers,
+      {
+        async captureForInference() {
+          return {
+            format: "png" as const,
+            displayId: 1,
+            widthPixels: 1,
+            heightPixels: 1,
+            bytes: 3,
+            capturedAt: current.toISOString(),
+            png: Buffer.from("png"),
+          };
+        },
+      },
+      {
+        async complete() {
+          return {
+            content: '{"summary":"编辑代码","activity":"编写功能","confidence":0.95,"sensitive":false,"apps":["代码编辑器"]}',
+            latencyMs: 12,
+            costMicros: null,
+          };
+        },
+      },
+      { isIdle() { return false; } },
+      () => current
+    );
+
+    assert.equal(await service.runScheduled(), null);
+    current = new Date(current.getTime() + 60_000);
+    assert.equal(await service.runScheduled(), null);
+    assert.equal(helperRequests.length, 1);
+    assert.equal(helperRequests[0]?.args.includes("--no-auth-ui"), true);
+
+    await service.run();
+    assert.equal(helperRequests.length, 2);
+    assert.equal(helperRequests[1]?.args.includes("--no-auth-ui"), false);
+    assert.equal(keychain.hasCachedValue(profile.id), true);
+
+    current = new Date(current.getTime() + 60_000);
+    assert.ok(await service.runScheduled());
+    assert.equal(helperRequests.length, 2);
+  } finally {
+    await rm(fakeRoot, { recursive: true, force: true });
+  }
 });
 
 test("understanding routes expose local run and safe history endpoints", async () => {
