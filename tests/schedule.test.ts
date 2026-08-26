@@ -451,6 +451,64 @@ test("reminder polling is at-most-once across repeat polls and store restarts", 
   assert.equal(state.deliveries.size, 2);
 });
 
+test("reminder notifications render IANA wall time across offsets, DST, and invalid zones", async () => {
+  const messageFor = async (scheduledStartAt: string, timezone: string) => {
+    const state = reminderState();
+    const scheduled = item({
+      id: `schedule_${timezone}_${scheduledStartAt}`,
+      scheduledStartAt,
+      scheduledEndAt: null,
+      timezone,
+      nextReminderAt: scheduledStartAt,
+    });
+    state.due = [{ item: scheduled, reminderAt: new Date(scheduledStartAt) }];
+    let message = "";
+    await pollDueReminders(
+      new MemoryReminderStore(state),
+      async (request) => {
+        message = request.message;
+        return {
+          channels: {
+            mac: { status: "sent" },
+            ntfy: { status: "disabled" },
+          },
+        };
+      },
+      signal
+    );
+    assert.equal(scheduled.scheduledStartAt, scheduledStartAt);
+    return message;
+  };
+
+  const shanghai = await messageFor(
+    "2026-08-24T01:00:00.000Z",
+    "Asia/Shanghai"
+  );
+  assert.match(shanghai, /^Scheduled for 2026-08-24 09:00:00 \(Asia\/Shanghai\)\./);
+  assert.equal(shanghai.includes("01:00:00.000Z (Asia/Shanghai)"), false);
+
+  const beforeDst = await messageFor(
+    "2026-03-08T06:30:00.000Z",
+    "America/New_York"
+  );
+  const afterDst = await messageFor(
+    "2026-03-08T07:30:00.000Z",
+    "America/New_York"
+  );
+  assert.match(beforeDst, /2026-03-08 01:30:00 \(America\/New_York\)/);
+  assert.match(afterDst, /2026-03-08 03:30:00 \(America\/New_York\)/);
+  assert.equal(afterDst.includes("02:30:00"), false);
+
+  const invalid = await messageFor(
+    "2026-08-24T01:00:00.000Z",
+    "Mars/Base"
+  );
+  assert.match(
+    invalid,
+    /2026-08-24 01:00:00 \(UTC; invalid timezone Mars\/Base\)/
+  );
+});
+
 test("reminder polling terminalizes operational failures but retains caller-aborted claims", async () => {
   const disabled = reminderState();
   await pollDueReminders(new MemoryReminderStore(disabled), async () => ({

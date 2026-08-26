@@ -52,6 +52,10 @@ PostgreSQL（docker compose 起在 5436 端口，容器名 echolog-db）+ drizzl
 
 - Store explicit IANA timezone display intent separately from absolute
   `TIMESTAMPTZ` instants; HTTP inputs must include `Z` or a numeric offset.
+- User-facing reminder text formats the stored instant with
+  `Intl.DateTimeFormat` in the item's IANA timezone. Never display the raw UTC
+  ISO value beside a non-UTC zone label; invalid legacy zones fall back
+  explicitly to UTC without rewriting the persisted instant.
 - Derived UI state such as “awaiting confirmation” is calculated from persisted
   state + time and is never stored as another status.
 - Claim a reminder by inserting a unique ledger key before delivery. A ledger

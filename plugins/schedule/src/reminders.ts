@@ -85,11 +85,47 @@ function resultOutcome(result: NotificationSendResult): {
   };
 }
 
+function formatWallTime(instant: string, timezone: string): string {
+  const date = new Date(instant);
+  if (Number.isNaN(date.getTime())) return String(instant);
+  const parts = new Intl.DateTimeFormat("en-US-u-ca-gregory-nu-latn", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date);
+  const value = (type: Intl.DateTimeFormatPartTypes): string | undefined =>
+    parts.find((part) => part.type === type)?.value;
+  const year = value("year");
+  const month = value("month");
+  const day = value("day");
+  const hour = value("hour");
+  const minute = value("minute");
+  const second = value("second");
+  if (!year || !month || !day || !hour || !minute || !second) {
+    return String(instant);
+  }
+  return `${year}-${month}-${day} ${hour}:${minute}:${second}`;
+}
+
+function notificationSchedule(item: DueReminder["item"]): string {
+  try {
+    return `${formatWallTime(item.scheduledStartAt, item.timezone)} (${item.timezone})`;
+  } catch (error) {
+    if (!(error instanceof RangeError)) throw error;
+    return `${formatWallTime(item.scheduledStartAt, "UTC")} (UTC; invalid timezone ${item.timezone})`;
+  }
+}
+
 function notificationMessage(reminder: DueReminder): string {
   const item = reminder.item;
   const description = item.description?.trim();
   return [
-    `Scheduled for ${item.scheduledStartAt} (${item.timezone}).`,
+    `Scheduled for ${notificationSchedule(item)}.`,
     description || null,
     "Open EchoLog or use el schedule confirm to start explicitly.",
   ].filter(Boolean).join("\n");

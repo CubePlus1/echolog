@@ -77,6 +77,10 @@ function styleRoot() {
   };
   const documentRef = {
     head,
+    activeElement: null as null | {
+      tagName: string;
+      closest(selector: string): unknown;
+    },
     createElement(tagName: string) {
       const link: Record<string, any> = {
         tagName,
@@ -89,7 +93,17 @@ function styleRoot() {
       return link;
     },
   };
-  return { root: { ownerDocument: documentRef }, links };
+  return { root: { ownerDocument: documentRef }, links, documentRef };
+}
+
+function deferred<T>() {
+  let resolvePromise!: (value: T) => void;
+  let rejectPromise!: (error: unknown) => void;
+  const promise = new Promise<T>((resolve, reject) => {
+    resolvePromise = resolve;
+    rejectPromise = reject;
+  });
+  return { promise, resolve: resolvePromise, reject: rejectPromise };
 }
 
 function sectionFor(html: string, dateKey: string) {
@@ -204,6 +218,187 @@ test("Schedule loads one canonical range and renders month/week/day placement wi
   assert.match(day, /上海早会/);
   assert.equal(day.includes("洛杉矶回顾"), false);
   assert.equal(contribution.renderFace({ type: "not-schedule" }, context), null);
+});
+
+test("Schedule live polling refreshes only changed external, awaiting, and reference snapshots", async () => {
+  let currentNow = new Date("2026-08-24T12:00:00.000Z");
+  let fixtures = [item({
+    title: "外部更新前",
+    scheduledStartAt: "2026-08-24T12:10:00.000Z",
+    timezone: "UTC",
+    awaitingConfirmation: false,
+  })];
+  const paths: string[] = [];
+  let refreshCalls = 0;
+  const contribution = await activate({
+    now: () => currentNow,
+    refresh: async () => { refreshCalls++; },
+    api: async (path: string) => {
+      paths.push(path);
+      return fixtures;
+    },
+  });
+
+  const initial = await contribution.load();
+  const initialReference = initial.scheduleCalendar.referenceKey;
+  await contribution.loadLive();
+  assert.equal(refreshCalls, 0, "an unchanged live snapshot must preserve the book DOM");
+
+  fixtures = [{ ...fixtures[0], title: "CLI 已更新", version: 2 }];
+  const external = await contribution.loadLive();
+  assert.equal(external.scheduleItems[0].title, "CLI 已更新");
+  assert.equal(refreshCalls, 1, "an external API/CLI mutation must refresh Schedule faces");
+  await contribution.loadLive();
+  assert.equal(refreshCalls, 1, "the same external snapshot must not rebuild twice");
+
+  currentNow = new Date("2026-08-24T12:10:00.000Z");
+  await contribution.loadLive();
+  assert.equal(refreshCalls, 2, "crossing scheduledStartAt must refresh derived awaiting state");
+  await contribution.loadLive();
+  assert.equal(refreshCalls, 2, "stable awaiting state must not rebuild every live tick");
+
+  currentNow = new Date("2026-08-25T12:00:00.000Z");
+  const rolled = await contribution.loadLive();
+  assert.notEqual(rolled.scheduleCalendar.referenceKey, initialReference);
+  assert.equal(refreshCalls, 3, "reference-date rollover must refresh the calendar window");
+  assert.equal(paths.length, 7, "every live tick must poll the canonical Schedule range");
+});
+
+test("Schedule coalesces overlapping live snapshot refreshes", async () => {
+  const base = item({ title: "v1", version: 1 });
+  const responses = [
+    [base],
+    [{ ...base, title: "v2", version: 2 }],
+    [{ ...base, title: "v3", version: 3 }],
+  ];
+  let apiCalls = 0;
+  let refreshCalls = 0;
+  const firstRefresh = deferred<void>();
+  const contribution = await activate({
+    now: () => NOW,
+    api: async () => responses[Math.min(apiCalls++, responses.length - 1)],
+    refresh: async () => {
+      refreshCalls++;
+      if (refreshCalls === 1) await firstRefresh.promise;
+    },
+  });
+  await contribution.load();
+
+  const firstLive = contribution.loadLive();
+  while (refreshCalls === 0) await new Promise<void>((resolve) => setImmediate(resolve));
+  const secondLive = contribution.loadLive();
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  assert.equal(refreshCalls, 1, "overlapping polls must share the active refresh");
+
+  firstRefresh.resolve();
+  const [, latest] = await Promise.all([firstLive, secondLive]);
+  assert.equal(refreshCalls, 2, "one distinct queued snapshot receives one follow-up refresh");
+  assert.equal(latest.scheduleItems[0].title, "v3");
+  await contribution.loadLive();
+  assert.equal(refreshCalls, 2, "the acknowledged queued snapshot must remain stable");
+});
+
+test("Schedule does not run a queued refresh after focus begins mid-refresh", async () => {
+  const base = item({ title: "v1", version: 1 });
+  const responses = [
+    [base],
+    [{ ...base, title: "v2", version: 2 }],
+    [{ ...base, title: "v3", version: 3 }],
+  ];
+  let apiCalls = 0;
+  let refreshCalls = 0;
+  const firstRefresh = deferred<void>();
+  const { root, documentRef } = styleRoot();
+  const contribution = await activate({
+    root,
+    now: () => NOW,
+    api: async () => responses[Math.min(apiCalls++, responses.length - 1)],
+    refresh: async () => {
+      refreshCalls++;
+      if (refreshCalls === 1) await firstRefresh.promise;
+    },
+  });
+  await contribution.load();
+
+  const firstLive = contribution.loadLive();
+  while (refreshCalls === 0) await new Promise<void>((resolve) => setImmediate(resolve));
+  documentRef.activeElement = {
+    tagName: "INPUT",
+    closest(selector: string) {
+      return selector === "#pages" ? {} : null;
+    },
+  };
+  await contribution.loadLive();
+  firstRefresh.resolve();
+  await firstLive;
+  assert.equal(
+    refreshCalls,
+    1,
+    "a queued snapshot must not rebuild after an input gains focus"
+  );
+
+  documentRef.activeElement = null;
+  await contribution.loadLive();
+  assert.equal(refreshCalls, 2, "the queued snapshot must refresh on the first post-blur poll");
+});
+
+test("Schedule defers changed live snapshots while a book input has focus", async () => {
+  const original = item({ title: "before edit", version: 1 });
+  let fixtures = [original];
+  let refreshCalls = 0;
+  const { root, documentRef } = styleRoot();
+  const contribution = await activate({
+    root,
+    now: () => NOW,
+    api: async () => fixtures,
+    refresh: async () => { refreshCalls++; },
+  });
+  await contribution.load();
+  fixtures = [{ ...original, title: "external change", version: 2 }];
+  documentRef.activeElement = {
+    tagName: "INPUT",
+    closest(selector: string) {
+      return selector === "#pages" ? {} : null;
+    },
+  };
+
+  await contribution.loadLive();
+  assert.equal(refreshCalls, 0, "live polling must not destroy a focused book input");
+  documentRef.activeElement = null;
+  await contribution.loadLive();
+  assert.equal(refreshCalls, 1, "the deferred snapshot must refresh after editing ends");
+  await contribution.loadLive();
+  assert.equal(refreshCalls, 1);
+});
+
+test("Schedule ignores late live responses and future polls after unmount", async () => {
+  const original = item({ title: "mounted", version: 1 });
+  const pending = deferred<ReturnType<typeof item>[]>();
+  let apiCalls = 0;
+  let refreshCalls = 0;
+  const { root, links } = styleRoot();
+  const contribution = await activate({
+    root,
+    now: () => NOW,
+    refresh: async () => { refreshCalls++; },
+    api: async () => {
+      apiCalls++;
+      return apiCalls === 1 ? [original] : pending.promise;
+    },
+  });
+  await contribution.load();
+  const live = contribution.loadLive();
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  await contribution.unmount();
+  assert.equal(links.length, 0);
+
+  pending.resolve([{ ...original, title: "late", version: 2 }]);
+  assert.deepEqual(await live, {});
+  assert.equal(refreshCalls, 0, "a late response after unmount must not refresh");
+  const callsAfterUnmount = apiCalls;
+  assert.deepEqual(await contribution.loadLive(), {});
+  assert.equal(apiCalls, callsAfterUnmount, "an unmounted contribution must not poll again");
+  assert.equal(refreshCalls, 0);
 });
 
 test("Schedule escapes every dynamic render value and never fabricates notification controls", async () => {

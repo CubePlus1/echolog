@@ -137,10 +137,30 @@ function normalizedStatus(item) {
 
 function displayStatus(item, now = new Date()) {
   const status = normalizedStatus(item);
-  if (status === "scheduled" && Date.parse(item.scheduledStartAt) <= now.getTime()) {
+  if (status === "scheduled" && Date.parse(item?.scheduledStartAt) <= now.getTime()) {
     return "awaiting";
   }
   return status;
+}
+
+function scheduleSnapshot(items, referenceKey, now) {
+  const entries = items.map((item) => [
+    String(item?.id ?? ""),
+    item?.title ?? null,
+    item?.description ?? null,
+    item?.scheduledStartAt ?? null,
+    item?.scheduledEndAt ?? null,
+    item?.timezone ?? null,
+    item?.priority ?? null,
+    item?.status ?? null,
+    item?.nextReminderAt ?? null,
+    item?.confirmedStartAt ?? null,
+    item?.completedAt ?? null,
+    item?.cancelledAt ?? null,
+    item?.version ?? null,
+    displayStatus(item, now),
+  ]).sort((left, right) => left[0].localeCompare(right[0]));
+  return JSON.stringify([referenceKey, entries]);
 }
 
 function actionTarget(surface, itemId) {
@@ -335,10 +355,21 @@ function validTimezone(value) {
   }
 }
 
-export async function activate({ api, root, now: nowFactory = () => new Date() }) {
+export async function activate({
+  api,
+  root,
+  refresh = async () => {},
+  now: nowFactory = () => new Date(),
+}) {
   const stylesheet = mountStylesheet(root);
   let referenceKey = localDateKey(nowFactory());
   let latestItems = [];
+  let latestCalendar = { referenceKey, ...queryWindow(referenceKey) };
+  let observedSnapshot = "";
+  let renderedSnapshot = "";
+  let fullLoadGeneration = 0;
+  let refreshPromise = null;
+  let mounted = true;
 
   const setError = ($, id, error) => {
     const element = $(id) ?? $("scheduleActionError") ?? $("scheduleActionErrorDay");
@@ -350,16 +381,89 @@ export async function activate({ api, root, now: nowFactory = () => new Date() }
     latestItems = latestItems.map((item) => item.id === updated.id ? updated : item);
   };
 
+  const currentData = () => ({
+    scheduleItems: latestItems,
+    scheduleCalendar: latestCalendar,
+  });
+
+  const isEditing = () => {
+    const documentRef = root?.ownerDocument ?? globalThis.document;
+    const element = documentRef?.activeElement;
+    return Boolean(
+      element?.closest?.("#pages") &&
+      /^(INPUT|TEXTAREA|SELECT)$/.test(element.tagName)
+    );
+  };
+
+  const fetchSnapshot = async () => {
+    const observedAt = nowFactory();
+    const nextReferenceKey = localDateKey(observedAt);
+    const window = queryWindow(nextReferenceKey);
+    const path = `/plugins/schedule/items?from=${encodeURIComponent(window.from)}&to=${encodeURIComponent(window.to)}`;
+    const result = await api(path);
+    if (!Array.isArray(result)) {
+      throw new Error("Schedule items response must be an array");
+    }
+    return {
+      items: result,
+      calendar: { referenceKey: nextReferenceKey, ...window },
+      signature: scheduleSnapshot(result, nextReferenceKey, observedAt),
+    };
+  };
+
+  const applySnapshot = (snapshot, rendered) => {
+    referenceKey = snapshot.calendar.referenceKey;
+    latestItems = snapshot.items;
+    latestCalendar = snapshot.calendar;
+    observedSnapshot = snapshot.signature;
+    if (rendered) renderedSnapshot = snapshot.signature;
+  };
+
+  const requestRefresh = async () => {
+    if (!mounted || isEditing() || observedSnapshot === renderedSnapshot) return;
+    if (refreshPromise) return refreshPromise;
+    refreshPromise = (async () => {
+      while (mounted && !isEditing() && observedSnapshot !== renderedSnapshot) {
+        const targetSnapshot = observedSnapshot;
+        const loadGeneration = fullLoadGeneration;
+        await refresh();
+        if (!mounted) return;
+        // The real Host refresh performs a full load, which installs the
+        // rendered snapshot. Tests and embedders may provide a lighter
+        // callback, so acknowledge the requested target only when no full
+        // load happened while the refresh was in flight.
+        if (fullLoadGeneration === loadGeneration) {
+          renderedSnapshot = targetSnapshot;
+        }
+      }
+    })();
+    try {
+      await refreshPromise;
+    } finally {
+      refreshPromise = null;
+    }
+  };
+
   return {
     id: "schedule",
     async load() {
-      referenceKey = localDateKey(nowFactory());
-      const window = queryWindow(referenceKey);
-      const path = `/plugins/schedule/items?from=${encodeURIComponent(window.from)}&to=${encodeURIComponent(window.to)}`;
-      const result = await api(path);
-      if (!Array.isArray(result)) throw new Error("Schedule items response must be an array");
-      latestItems = result;
-      return { scheduleItems: result, scheduleCalendar: { referenceKey, ...window } };
+      const snapshot = await fetchSnapshot();
+      if (!mounted) return {};
+      fullLoadGeneration++;
+      applySnapshot(snapshot, true);
+      return currentData();
+    },
+    async loadLive() {
+      if (!mounted) return {};
+      const snapshot = await fetchSnapshot();
+      if (!mounted) return {};
+      if (!renderedSnapshot) {
+        applySnapshot(snapshot, true);
+      } else {
+        applySnapshot(snapshot, false);
+        await requestRefresh();
+      }
+      return mounted ? currentData() : {};
     },
     faces() {
       return [...SCHEDULE_FACE_TYPES].map((type) => ({ type }));
@@ -462,6 +566,7 @@ export async function activate({ api, root, now: nowFactory = () => new Date() }
       }
     },
     async unmount() {
+      mounted = false;
       stylesheet?.remove?.();
     },
   };
@@ -475,4 +580,5 @@ export const scheduleWebTest = Object.freeze({
   itemDateSpan,
   queryWindow,
   rangeForView,
+  scheduleSnapshot,
 });

@@ -44,6 +44,13 @@ settles after that abort, Schedule retains the ledger as `claimed` for
 diagnosis and performs no late `sent`/`failed` write. Normal channel failure
 while the caller remains active is still terminalized as `failed`.
 
+Reminder text converts the stored absolute instant into the item's IANA
+timezone with `Intl.DateTimeFormat`, so non-UTC and daylight-saving wall times
+remain accurate; invalid legacy zones fall back explicitly to UTC. The Web
+contribution live-polls the canonical range and refreshes its faces only when
+item data, the reference date, or derived awaiting state changes. Unchanged
+polls preserve the current DOM, and unmounted contributions ignore late data.
+
 Canonical routes:
 
 - `GET|POST /api/plugins/schedule/items`
