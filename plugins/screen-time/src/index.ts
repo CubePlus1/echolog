@@ -7,7 +7,10 @@ import { MacKeychainClient } from "./macos-keychain-client.js";
 import {
   MacScreenCaptureService,
 } from "./macos-screen-capture.js";
-import { validateMacosHelperExecutableOverride } from "./macos-helper.js";
+import {
+  checkMacosHelperInstall,
+  validateMacosHelperExecutableOverride,
+} from "./macos-helper.js";
 import { ProviderProfileService } from "./provider-profiles.js";
 import { createScreenRoutes } from "./routes.js";
 import { ScreenService } from "./screen.js";
@@ -273,6 +276,19 @@ export const screenTimePlugin: PluginDefinition = {
     });
   },
   start(context) {
+    if (process.platform === "darwin") {
+      const helperPath = typeof context.config.macos_helper_path === "string"
+        ? context.config.macos_helper_path
+        : undefined;
+      const install = checkMacosHelperInstall(helperPath);
+      if (!install.ok) {
+        context.logger.warn({
+          appBundle: install.appBundle,
+          executable: install.executable,
+          buildCommand: install.buildCommand,
+        }, install.message);
+      }
+    }
     context.logger.info(
       { sampleSeconds: tracker?.config.sampleSeconds },
       "Screen Time plugin started"

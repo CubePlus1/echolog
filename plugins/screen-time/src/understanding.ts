@@ -2,13 +2,24 @@ import { nanoid } from "nanoid";
 import { setTimeout as delay } from "node:timers/promises";
 import type { ScreenUnderstandingObservation } from "./schema.js";
 import type { UnderstandingSettingsService } from "./understanding-settings.js";
-import type { ProviderProfile } from "./provider-profiles.js";
+import {
+  ProviderError,
+  type ProviderProfile,
+} from "./provider-profiles.js";
 import type { CapturedPng, MacScreenCaptureService } from "./macos-screen-capture.js";
 import type { VisionCompletion, VisionProviderClient } from "./vision-provider.js";
 import { VisionProviderError } from "./vision-provider.js";
 
 const MAX_HISTORY_LIMIT = 100;
 const RETRY_BASE_DELAY_MS = 250;
+
+function isKeychainAccessFailure(error: unknown): boolean {
+  return error instanceof ProviderError && [
+    "KEYCHAIN_UNAVAILABLE",
+    "KEYCHAIN_OPERATION_FAILED",
+    "PLUGIN_TIMEOUT",
+  ].includes(error.code);
+}
 
 export interface UnderstandingResult {
   summary: string;
@@ -238,6 +249,7 @@ function cancellationError(): Error {
 export class ScreenUnderstandingService {
   private inFlight = false;
   private lastScheduledAt = 0;
+  private scheduledKeychainBlocked = false;
 
   constructor(
     private readonly store: UnderstandingStore,
@@ -290,6 +302,7 @@ export class ScreenUnderstandingService {
         configuration.providerProfileId,
         signal
       );
+      if (!options.scheduled) this.scheduledKeychainBlocked = false;
       const captured = await this.capture.captureForInference(signal);
       const capturedAt = new Date(captured.capturedAt);
       if (!Number.isFinite(capturedAt.getTime())) {
@@ -403,7 +416,7 @@ export class ScreenUnderstandingService {
   }
 
   async runScheduled(signal?: AbortSignal): Promise<UnderstandingObservation | null> {
-    if (this.inFlight) return null;
+    if (this.inFlight || this.scheduledKeychainBlocked) return null;
     const configuration = await this.settings.get();
     if (!configuration.enabled) return null;
     const now = this.now();
@@ -415,6 +428,9 @@ export class ScreenUnderstandingService {
     try {
       return await this.run(signal, { scheduled: true });
     } catch (error) {
+      if (isKeychainAccessFailure(error)) {
+        this.scheduledKeychainBlocked = true;
+      }
       if (
         error instanceof UnderstandingError &&
         error.code === "UNDERSTANDING_DISABLED"

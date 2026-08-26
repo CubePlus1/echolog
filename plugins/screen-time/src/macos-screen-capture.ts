@@ -17,6 +17,8 @@ import type {
   PluginDoctorCheck,
 } from "@echolog/plugin-sdk";
 import {
+  checkMacosHelperInstall,
+  resolveMacosHelperExecutable,
   resolveMacosHelperApp,
 } from "./macos-helper.js";
 
@@ -303,6 +305,7 @@ async function validatePng(
 }
 
 export class MacScreenCaptureService {
+  private readonly executable: string;
   private readonly appBundle: string;
   private captureInFlight = false;
 
@@ -310,7 +313,8 @@ export class MacScreenCaptureService {
     private readonly exec: CaptureCommandAdapter,
     executableOverride?: string
   ) {
-    this.appBundle = resolveMacosHelperApp(executableOverride);
+    this.executable = resolveMacosHelperExecutable(executableOverride);
+    this.appBundle = resolveMacosHelperApp(this.executable);
   }
 
   private async invokeViaLaunchServices(
@@ -319,6 +323,10 @@ export class MacScreenCaptureService {
     timeoutMs: number,
     signal?: AbortSignal
   ): Promise<PluginCommandResult> {
+    const check = checkMacosHelperInstall(this.executable);
+    if (!check.ok) {
+      throw new CaptureError("PLUGIN_EXEC_FAILED", check.message, 502);
+    }
     const resultPath = resolve(directory, "helper-result.json");
     const stderrPath = resolve(directory, "helper-stderr.log");
     const deadlineMs = Date.now() + timeoutMs;
@@ -430,6 +438,20 @@ export class MacScreenCaptureService {
   async doctor(signal?: AbortSignal): Promise<PluginDoctorCheck[]> {
     let createdDirectory: string | null = null;
     try {
+      const install = checkMacosHelperInstall(this.executable);
+      if (!install.ok) {
+        return [{
+          id: "screen-understanding:helper",
+          ok: false,
+          message: install.message,
+          details: {
+            appBundle: install.appBundle,
+            executable: install.executable,
+            buildCommand: install.buildCommand,
+            launchMethod: "LaunchServices",
+          },
+        }];
+      }
       createdDirectory = await mkdtemp(join(tmpdir(), "echolog-screen-understanding-"));
       const temporaryDirectory = await realpath(createdDirectory);
       await chmod(temporaryDirectory, 0o700);

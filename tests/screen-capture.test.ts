@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
 import {
   chmod,
   mkdtemp,
@@ -10,16 +11,21 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 import {
   CaptureError,
   MacScreenCaptureService,
 } from "../plugins/screen-time/src/macos-screen-capture.js";
 import {
+  MACOS_HELPER_BUILD_COMMAND,
   DEFAULT_MACOS_HELPER_EXECUTABLE,
+  checkMacosHelperInstall,
   resolveMacosHelperExecutable,
   validateMacosHelperExecutableOverride,
 } from "../plugins/screen-time/src/macos-helper.js";
 import { createScreenRoutes } from "../plugins/screen-time/src/routes.js";
+
+const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 
 const PNG_1X1 = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
@@ -93,6 +99,70 @@ test("macOS helper resolution uses the packaged app inner executable and validat
   assert.equal(resolveMacosHelperExecutable(override), override);
   assert.match(validateMacosHelperExecutableOverride("relative/helper") ?? "", /absolute/);
   assert.throws(() => resolveMacosHelperExecutable("/tmp/wrong-helper"));
+});
+
+test("macOS helper install check reports a missing app bundle with the build command", async () => {
+  const root = await mkdtemp(join(tmpdir(), "echolog-missing-helper-"));
+  const executable = join(
+    root,
+    "EchoLogScreenCapture.app",
+    "Contents",
+    "MacOS",
+    "echolog-screen-capture"
+  );
+  try {
+    const check = checkMacosHelperInstall(executable);
+    assert.equal(check.ok, false);
+    assert.equal(check.executable, executable);
+    assert.equal(check.buildCommand, MACOS_HELPER_BUILD_COMMAND);
+    assert.match(check.message, /EchoLogScreenCapture\.app is missing/);
+    assert.match(check.message, /pnpm build:macos-capture/);
+
+    let invoked = false;
+    const service = new MacScreenCaptureService(async () => {
+      invoked = true;
+      throw new Error("must not invoke LaunchServices");
+    }, executable);
+    const checks = await service.doctor();
+    assert.equal(invoked, false);
+    assert.equal(checks[0]?.ok, false);
+    assert.equal(checks[0]?.details?.buildCommand, MACOS_HELPER_BUILD_COMMAND);
+    assert.match(checks[0]?.message ?? "", /EchoLogScreenCapture\.app is missing/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("macOS helper smoke script fails clearly when the runtime app bundle is missing", {
+  skip: process.platform !== "darwin",
+}, async () => {
+  const root = await mkdtemp(join(tmpdir(), "echolog-helper-smoke-"));
+  try {
+    const result = await new Promise<{
+      exitCode: number;
+      stdout: string;
+      stderr: string;
+    }>((resolve) => {
+      execFile(
+        join(repoRoot, "scripts/smoke-macos-helper.sh"),
+        ["--root", root],
+        (error, stdout, stderr) => {
+          resolve({
+            exitCode: typeof error?.code === "number" ? error.code : 0,
+            stdout,
+            stderr,
+          });
+        }
+      );
+    });
+    assert.equal(result.exitCode, 1);
+    assert.equal(result.stdout, "");
+    assert.match(result.stderr, /EchoLogScreenCapture\.app is missing/);
+    assert.match(result.stderr, /pnpm build:macos-capture/);
+    assert.match(result.stderr, new RegExp(root.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test("capture service returns a bounded in-memory PNG preview and removes the private directory", async () => {

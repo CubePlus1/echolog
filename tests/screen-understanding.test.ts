@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
+import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
-import type { ProviderProfile } from "../plugins/screen-time/src/provider-profiles.js";
+import {
+  ProviderError,
+  type ProviderProfile,
+} from "../plugins/screen-time/src/provider-profiles.js";
 import {
   ScreenUnderstandingService,
   UnderstandingError,
@@ -47,22 +53,39 @@ test("vision payload requires Simplified Chinese display values", () => {
 });
 
 test("Keychain client reads a secret only through the helper response", async () => {
+  const fakeRoot = await mkdtemp(join(tmpdir(), "echolog-understanding-keychain-"));
+  const fakeExecutable = join(
+    fakeRoot,
+    "EchoLogScreenCapture.app",
+    "Contents",
+    "MacOS",
+    "echolog-screen-capture"
+  );
+  await mkdir(join(fakeRoot, "EchoLogScreenCapture.app", "Contents", "MacOS"), {
+    recursive: true,
+  });
+  await writeFile(fakeExecutable, "#!/bin/sh\nexit 0\n");
+  await chmod(fakeExecutable, 0o755);
   const requests: string[][] = [];
-  const client = new MacKeychainClient(async (request) => {
-    requests.push(request.args);
-    return {
-      stdout: JSON.stringify(
-        request.args[1] === "get"
-          ? { ok: true, hasSecret: true, secret: "secret-value" }
-          : { ok: true, hasSecret: request.args[1] !== "delete" }
-      ),
-      stderr: "",
-      exitCode: 0,
-    };
-  }, "/test/EchoLogScreenCapture.app/Contents/MacOS/echolog-screen-capture");
-  assert.equal(await client.get("vision-primary"), "secret-value");
-  assert.equal(requests[0]?.includes("secret-value"), false);
-  assert.equal(requests[0]?.[1], "get");
+  try {
+    const client = new MacKeychainClient(async (request) => {
+      requests.push(request.args);
+      return {
+        stdout: JSON.stringify(
+          request.args[1] === "get"
+            ? { ok: true, hasSecret: true, secret: "secret-value" }
+            : { ok: true, hasSecret: request.args[1] !== "delete" }
+        ),
+        stderr: "",
+        exitCode: 0,
+      };
+    }, fakeExecutable);
+    assert.equal(await client.get("vision-primary"), "secret-value");
+    assert.equal(requests[0]?.includes("secret-value"), false);
+    assert.equal(requests[0]?.[1], "get");
+  } finally {
+    await rm(fakeRoot, { recursive: true, force: true });
+  }
 });
 
 test("vision client accepts OpenAI-compatible JSON and maps provider failures safely", async () => {
@@ -196,6 +219,76 @@ test("disabled understanding does not capture or call the provider", async () =>
   );
   assert.equal(captures, 0);
   assert.equal(calls, 0);
+});
+
+test("scheduled understanding pauses Keychain retries until a manual read succeeds", async () => {
+  let current = new Date("2026-08-26T10:00:00+08:00");
+  let providerResolutions = 0;
+  let keychainBlocked = true;
+  const settings = {
+    async get() {
+      return {
+        id: "default",
+        version: 1,
+        ...DEFAULT_UNDERSTANDING_SETTINGS,
+        enabled: true,
+        providerProfileId: profile.id,
+        captureIntervalSeconds: 60,
+        updatedAt: current,
+      };
+    },
+  };
+  const service = new ScreenUnderstandingService(
+    makeStore(),
+    settings as any,
+    {
+      async getForInference() {
+        providerResolutions++;
+        if (keychainBlocked) {
+          throw new ProviderError("PLUGIN_TIMEOUT", "Keychain helper timed out", 504);
+        }
+        return { profile, apiKey: "secret-key" };
+      },
+    },
+    {
+      async captureForInference() {
+        return {
+          format: "png" as const,
+          displayId: 1,
+          widthPixels: 1,
+          heightPixels: 1,
+          bytes: 3,
+          capturedAt: current.toISOString(),
+          png: Buffer.from("png"),
+        };
+      },
+    },
+    {
+      async complete() {
+        return {
+          content: '{"summary":"编辑代码","activity":"编写功能","confidence":0.95,"sensitive":false,"apps":["代码编辑器"]}',
+          latencyMs: 12,
+          costMicros: null,
+        };
+      },
+    },
+    { isIdle() { return false; } },
+    () => current
+  );
+
+  await assert.rejects(
+    service.runScheduled(),
+    (error) => error instanceof ProviderError && error.code === "PLUGIN_TIMEOUT"
+  );
+  current = new Date(current.getTime() + 60_000);
+  assert.equal(await service.runScheduled(), null);
+  assert.equal(providerResolutions, 1);
+
+  keychainBlocked = false;
+  await service.run();
+  current = new Date(current.getTime() + 60_000);
+  assert.ok(await service.runScheduled());
+  assert.equal(providerResolutions, 3);
 });
 
 test("understanding routes expose local run and safe history endpoints", async () => {

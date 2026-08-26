@@ -44,6 +44,7 @@ portable `pnpm build` 不编译 Swift helper。macOS 本机测试可显式执行
 
 ```bash
 ECHOLOG_MACOS_ADHOC_SMOKE=1 pnpm build:macos-capture
+pnpm smoke:macos-helper
 ```
 
 ## 启动后验证
@@ -54,6 +55,16 @@ node dist/cli/index.js daemon status --json
 node dist/cli/index.js plugins list --json
 node dist/cli/index.js plugins doctor --json
 ```
+
+如果使用 launchd，另跑一次真实运行目录检查：
+
+```bash
+pnpm smoke:launchd-helper
+```
+
+若 macOS 因 helper 重签名要求重新授权 Keychain，自动识图在首次授权失败或
+超时后会暂停 Keychain 重试，避免周期性重复弹窗。处理授权后手动运行一次识图；
+凭据读取成功会恢复自动调度。
 
 若已把 wrapper 放进 `PATH`，后续使用 `el` 代替 `node dist/cli/index.js`。先读 `el --help` 和目标子命令的 `--help`；它们是参数、枚举、时间格式和示例的权威工具说明。
 

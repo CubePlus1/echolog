@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
+import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 import Fastify from "fastify";
 import { screenTimePlugin } from "@echolog/plugin-screen-time";
@@ -7,7 +10,10 @@ import type { AppRule } from "../plugins/screen-time/src/schema.js";
 import { classifySegment } from "../plugins/screen-time/src/screen.js";
 import { createScreenRoutes } from "../plugins/screen-time/src/routes.js";
 import { MacKeychainClient } from "../plugins/screen-time/src/macos-keychain-client.js";
-import { DEFAULT_MACOS_HELPER_EXECUTABLE } from "../plugins/screen-time/src/macos-helper.js";
+import {
+  DEFAULT_MACOS_HELPER_EXECUTABLE,
+  MACOS_HELPER_BUILD_COMMAND,
+} from "../plugins/screen-time/src/macos-helper.js";
 import {
   ProviderError,
   ProviderProfileService,
@@ -482,63 +488,105 @@ test("provider validators are strict and normalize safe base URLs", () => {
 });
 
 test("macOS Keychain client follows the write-only helper contract", async () => {
+  const fakeRoot = await mkdtemp(join(tmpdir(), "echolog-keychain-fake-"));
+  const fakeExecutable = join(
+    fakeRoot,
+    "EchoLogScreenCapture.app",
+    "Contents",
+    "MacOS",
+    "echolog-screen-capture"
+  );
+  await mkdir(join(fakeRoot, "EchoLogScreenCapture.app", "Contents", "MacOS"), {
+    recursive: true,
+  });
+  await writeFile(fakeExecutable, "#!/bin/sh\nexit 0\n");
+  await chmod(fakeExecutable, 0o755);
   const requests: Array<{ args: string[]; stdin?: string }> = [];
-  const client = new MacKeychainClient(async (request) => {
-    requests.push({ args: request.args, stdin: request.stdin });
-    const operation = request.args[1];
-    return {
-      stdout: JSON.stringify({
-        ok: true,
-        hasSecret: operation === "delete" ? false : true,
-      }),
-      stderr: "",
-      exitCode: 0,
-    };
-  }, "/test/EchoLogScreenCapture.app/Contents/MacOS/echolog-screen-capture");
-  assert.equal(await client.has("vision-primary"), true);
-  await client.set("vision-primary", "test-credential-value");
-  await client.delete("vision-primary");
-  assert.deepEqual(requests[0]?.args, [
-    "keychain",
-    "status",
-    "--service",
-    "com.cubeplus1.echolog.screen-understanding",
-    "--account",
-    "vision-primary",
-    "--json",
-  ]);
-  assert.equal(requests[0]?.stdin, undefined);
-  assert.deepEqual(JSON.parse(requests[1]?.stdin ?? ""), {
-    secret: "test-credential-value",
-  });
-  assert.equal(requests[1]?.args.join(" ").includes("test-credential-value"), false);
-
-  const failed = new MacKeychainClient(async () => {
-    const error = new Error("spawn failed") as Error & { code: string };
-    error.code = "ENOENT";
-    throw error;
-  });
-  await assert.rejects(
-    failed.has("vision-primary"),
-    (error) => error instanceof ProviderError &&
-      error.code === "KEYCHAIN_UNAVAILABLE" &&
-      !error.message.includes("test-credential-value")
-  );
-
-  const timedOut = new MacKeychainClient(async () => {
-    throw Object.assign(new Error("command timed out"), {
-      code: null,
-      killed: true,
-      signal: "SIGTERM",
+  try {
+    const client = new MacKeychainClient(async (request) => {
+      requests.push({ args: request.args, stdin: request.stdin });
+      const operation = request.args[1];
+      return {
+        stdout: JSON.stringify({
+          ok: true,
+          hasSecret: operation === "delete" ? false : true,
+        }),
+        stderr: "",
+        exitCode: 0,
+      };
+    }, fakeExecutable);
+    assert.equal(await client.has("vision-primary"), true);
+    await client.set("vision-primary", "test-credential-value");
+    await client.delete("vision-primary");
+    assert.deepEqual(requests[0]?.args, [
+      "keychain",
+      "status",
+      "--service",
+      "com.cubeplus1.echolog.screen-understanding",
+      "--account",
+      "vision-primary",
+      "--json",
+    ]);
+    assert.equal(requests[0]?.stdin, undefined);
+    assert.deepEqual(JSON.parse(requests[1]?.stdin ?? ""), {
+      secret: "test-credential-value",
     });
-  });
-  await assert.rejects(
-    timedOut.has("vision-primary"),
-    (error) => error instanceof ProviderError &&
-      error.code === "PLUGIN_TIMEOUT" &&
-      error.statusCode === 504 &&
-      error.message === "Keychain helper timed out"
-  );
+    assert.equal(requests[1]?.args.join(" ").includes("test-credential-value"), false);
+
+    const failed = new MacKeychainClient(async () => {
+      const error = new Error("spawn failed") as Error & { code: string };
+      error.code = "ENOENT";
+      throw error;
+    }, fakeExecutable);
+    await assert.rejects(
+      failed.has("vision-primary"),
+      (error) => error instanceof ProviderError &&
+        error.code === "KEYCHAIN_UNAVAILABLE" &&
+        error.message.includes("could not be launched") &&
+        !error.message.includes("test-credential-value")
+    );
+
+    const timedOut = new MacKeychainClient(async () => {
+      throw Object.assign(new Error("command timed out"), {
+        code: null,
+        killed: true,
+        signal: "SIGTERM",
+      });
+    }, fakeExecutable);
+    await assert.rejects(
+      timedOut.has("vision-primary"),
+      (error) => error instanceof ProviderError &&
+        error.code === "PLUGIN_TIMEOUT" &&
+        error.statusCode === 504 &&
+        error.message === "Keychain helper timed out"
+    );
+  } finally {
+    await rm(fakeRoot, { recursive: true, force: true });
+  }
+
+  const missingRoot = await mkdtemp(join(tmpdir(), "echolog-keychain-helper-"));
+  try {
+    const missingExecutable = join(
+      missingRoot,
+      "EchoLogScreenCapture.app",
+      "Contents",
+      "MacOS",
+      "echolog-screen-capture"
+    );
+    const missing = new MacKeychainClient(async () => {
+      throw new Error("must not spawn a missing helper");
+    }, missingExecutable);
+    await assert.rejects(
+      missing.has("vision-primary"),
+      (error) => error instanceof ProviderError &&
+        error.code === "KEYCHAIN_UNAVAILABLE" &&
+        error.statusCode === 503 &&
+        error.message.includes("EchoLogScreenCapture.app is missing") &&
+        error.message.includes(MACOS_HELPER_BUILD_COMMAND)
+    );
+  } finally {
+    await rm(missingRoot, { recursive: true, force: true });
+  }
 });
 
 test("macOS Keychain client matches the real Swift helper contract", {

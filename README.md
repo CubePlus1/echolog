@@ -141,7 +141,9 @@ launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.echolog.daemon.plist
 ```
 
 screen-understanding helper 不属于 portable build。本机 smoke 组装使用
-`ECHOLOG_MACOS_ADHOC_SMOKE=1 pnpm build:macos-capture`；正式签名使用
+`ECHOLOG_MACOS_ADHOC_SMOKE=1 pnpm build:macos-capture && pnpm smoke:macos-helper`；
+launchd 安装后使用 `pnpm smoke:launchd-helper` 检查实际 `WorkingDirectory`；
+正式签名使用
 `ECHOLOG_MACOS_SIGNING_IDENTITY=... pnpm build:macos-release`。启用识图后，截图只在
 单次请求内存中存在；数据库只保存结构化理解结果，不保存图片或 API key。
 

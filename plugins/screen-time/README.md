@@ -33,8 +33,13 @@ explicitly:
 
 ```bash
 ECHOLOG_MACOS_ADHOC_SMOKE=1 pnpm build:macos-capture
+pnpm smoke:macos-helper
 ECHOLOG_MACOS_SIGNING_IDENTITY='Developer ID Application: ...' pnpm build:macos-release
 ```
+
+An automatic understanding run that cannot complete Keychain authorization
+pauses further scheduled Keychain reads. A manual run that successfully reads
+the credential clears the pause after authorization is repaired.
 
 The artifact is `native/macos-capture/build/EchoLogScreenCapture.app`. The Web
 “测试截图” and “立即识别” actions invoke that app identity through macOS

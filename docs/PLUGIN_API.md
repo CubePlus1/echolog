@@ -158,6 +158,9 @@ screen-time packages
 `native/macos-capture/build/EchoLogScreenCapture.app/Contents/MacOS/echolog-screen-capture`.
 Permission inspection never prompts, and a missing Screen Recording permission
 diagnostic does not degrade passive foreground tracking.
+`pnpm smoke:macos-helper` verifies the source or release tree runtime path;
+`pnpm smoke:launchd-helper` reads the daemon plist `WorkingDirectory` and checks
+the helper that launchd will actually load.
 
 `GET /api/health` reports Core health. Plugin failures appear in
 `GET /api/plugins` and `GET /api/plugins/doctor`. A failed doctor request uses
