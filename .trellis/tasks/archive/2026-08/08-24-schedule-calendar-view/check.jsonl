@@ -1,0 +1,4 @@
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Web correctness, security, and regression audit."}
+{"file":".trellis/spec/frontend/directory-structure.md","reason":"Host lifecycle and interaction audit."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Verify the calendar is a projection, not a second model."}
+{"file":".trellis/tasks/08-24-schedule-plugin/research/plugin-patterns.md","reason":"Reference patterns for independent check."}

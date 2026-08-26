@@ -1,0 +1,6 @@
+{"file":".trellis/spec/backend/index.md","reason":"Backend pre-development and quality entry point"}
+{"file":".trellis/spec/frontend/index.md","reason":"Frontend pre-development and quality entry point"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Plugin spans persistence, HTTP, CLI, Web, jobs, and reports"}
+{"file":".trellis/tasks/08-24-inspiration-plugin/research/plugin-patterns.md","reason":"Repository-specific bundled-plugin research"}
+{"file": ".trellis/spec/backend/plugin-api-guidelines.md", "reason": "Official notifications.send SDK, permission, and Host contract"}
+{"file": ".trellis/tasks/08-24-inspiration-plugin/research/pr36-review.md", "reason": "PR #36 P1/P2 source findings and required resolutions"}

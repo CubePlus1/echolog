@@ -8,6 +8,7 @@ import {
   type PluginDoctorCheck,
   type PluginJob,
   type PluginLogger,
+  type PluginPermission,
   type PluginReportSection,
   type PluginRoute,
   type PluginErrorCode,
@@ -20,6 +21,7 @@ import type { PluginCommandRunner } from "./command-runner.js";
 interface Runtime {
   definition: PluginDefinition;
   context: PluginContext;
+  setConfig(config: Readonly<Record<string, unknown>>): void;
   info: PluginRuntimeInfo;
   routes: PluginRoute[];
   jobs: Map<string, PluginJobRuntime>;
@@ -32,6 +34,11 @@ interface PluginJobRuntime {
   running: boolean;
   abortController: AbortController | null;
 }
+
+const SERVICE_PERMISSIONS: Readonly<Record<string, PluginPermission>> = {
+  "database.url": "database:plugin",
+  "notifications.send": "notifications:send",
+};
 
 export interface PluginHostOptions {
   definitions: readonly PluginDefinition[];
@@ -87,41 +94,38 @@ export class PluginHost {
   private readonly runtimes = new Map<string, Runtime>();
 
   constructor(private readonly options: PluginHostOptions) {
-    for (const definition of options.definitions) {
-      const id = definition.manifest.id;
+    for (const [index, definition] of options.definitions.entries()) {
+      const manifest = definition.manifest as Partial<PluginDefinition["manifest"]>;
+      const id = typeof manifest?.id === "string"
+        ? manifest.id
+        : `invalid-plugin-${index + 1}`;
       if (this.runtimes.has(id)) throw new Error(`Duplicate plugin id: ${id}`);
 
       const configured = Object.hasOwn(options.configuration ?? {}, id);
       const settings = options.configuration?.[id];
       const enabled = settings?.enabled ?? definition.defaultEnabled ?? false;
-      const mergedConfig = definition.normalizeConfig?.({
-        ...(definition.defaultConfig ?? {}),
-        ...(settings?.config ?? {}),
-      }) ?? {
-        ...(definition.defaultConfig ?? {}),
-        ...(settings?.config ?? {}),
-      };
-      const routes: PluginRoute[] = [...(definition.routes ?? [])];
-      for (const route of routes) validateRoute(id, route);
+      const routes: PluginRoute[] = [];
       const reportSections: PluginReportSection[] = [];
       const jobs = new Map<string, PluginJobRuntime>();
       const info: PluginRuntimeInfo = {
         id,
-        displayName: definition.manifest.displayName,
-        version: definition.manifest.version,
-        apiVersion: definition.manifest.apiVersion,
+        displayName: id,
+        version: "",
+        apiVersion: "",
         configured,
         enabled,
         state: enabled ? "validating" : "disabled",
-        capabilities: [...definition.manifest.capabilities],
-        permissions: [...definition.manifest.permissions],
-        webEntry: definition.manifest.entries.web,
+        capabilities: [],
+        permissions: [],
         failureCount: 0,
       };
 
+      let contextConfig = freezeConfig({});
       const context: PluginContext = {
         pluginId: id,
-        config: freezeConfig(mergedConfig),
+        get config() {
+          return contextConfig;
+        },
         logger: options.logger,
         registerRoute: (route) => {
           validateRoute(id, route);
@@ -144,7 +148,7 @@ export class PluginHost {
           reportSections.push(section);
         },
         exec: (request: PluginCommandRequest, signal?: AbortSignal) => {
-          if (!definition.manifest.permissions.includes("process:exec")) {
+          if (!info.permissions.includes("process:exec")) {
             throw new PluginError(
               "PLUGIN_DEPENDENCY_MISSING",
               `Plugin ${id} has not declared process:exec`,
@@ -156,20 +160,21 @@ export class PluginHost {
           return options.commandRunner(request, signal);
         },
         service: <T>(name: string): T => {
-          if (!Object.hasOwn(options.services ?? {}, name)) {
-            throw new Error(`Plugin service is not available: ${name}`);
-          }
+          const requiredPermission = SERVICE_PERMISSIONS[name];
           if (
-            name === "database.url" &&
-            !definition.manifest.permissions.includes("database:plugin")
+            requiredPermission &&
+            !info.permissions.includes(requiredPermission)
           ) {
             throw new PluginError(
               "PLUGIN_DEPENDENCY_MISSING",
-              `Plugin ${id} has not declared database:plugin`,
+              `Plugin ${id} has not declared ${requiredPermission}`,
               id,
               info.state,
               403
             );
+          }
+          if (!Object.hasOwn(options.services ?? {}, name)) {
+            throw new Error(`Plugin service is not available: ${name}`);
           }
           return options.services?.[name] as T;
         },
@@ -178,6 +183,9 @@ export class PluginHost {
       this.runtimes.set(id, {
         definition,
         context,
+        setConfig(config) {
+          contextConfig = config;
+        },
         info,
         routes,
         jobs,
@@ -188,7 +196,6 @@ export class PluginHost {
 
   async initialize(): Promise<void> {
     for (const runtime of this.runtimes.values()) {
-      if (!runtime.info.enabled) continue;
       try {
         this.setState(runtime, "validating");
         const manifestErrors = validatePluginManifest(runtime.definition.manifest);
@@ -200,11 +207,42 @@ export class PluginHost {
             "validating"
           );
         }
+        if (manifestErrors.length > 0) {
+          throw new Error(manifestErrors.join("; "));
+        }
+        const manifest = runtime.definition.manifest;
+        runtime.info.displayName = manifest.displayName;
+        runtime.info.version = manifest.version;
+        runtime.info.apiVersion = manifest.apiVersion;
+        runtime.info.capabilities = [...manifest.capabilities];
+        runtime.info.permissions = [...manifest.permissions];
+        runtime.info.webEntry = manifest.entries.web;
+
+        // Static compatibility routes remain installed for a valid disabled
+        // plugin so callers receive the Host's structured disabled response.
+        // Invalid manifests never reach this point, keeping their definitions
+        // inert inside the per-plugin isolation boundary.
+        const routes = [...(runtime.definition.routes ?? [])];
+        for (const route of routes) validateRoute(runtime.info.id, route);
+        runtime.routes.push(...routes);
+        if (!runtime.info.enabled) {
+          this.setState(runtime, "disabled");
+          continue;
+        }
+
+        const settings = this.options.configuration?.[runtime.info.id];
+        const rawConfig = {
+          ...(runtime.definition.defaultConfig ?? {}),
+          ...(settings?.config ?? {}),
+        };
+        const mergedConfig = runtime.definition.normalizeConfig?.(rawConfig)
+          ?? rawConfig;
+        runtime.setConfig(freezeConfig(mergedConfig));
+
         const configErrors = runtime.definition.validateConfig?.(
           runtime.context.config
         ) ?? [];
-        const errors = [...manifestErrors, ...configErrors];
-        if (errors.length > 0) throw new Error(errors.join("; "));
+        if (configErrors.length > 0) throw new Error(configErrors.join("; "));
 
         this.setState(runtime, "migrating");
         await this.options.migrationRunner(
@@ -226,7 +264,7 @@ export class PluginHost {
   async stop(): Promise<void> {
     const runtimes = [...this.runtimes.values()].reverse();
     for (const runtime of runtimes) {
-      if (runtime.info.state === "disabled") continue;
+      if (!runtime.info.enabled) continue;
       this.setState(runtime, "stopping");
       this.stopJobs(runtime);
       try {

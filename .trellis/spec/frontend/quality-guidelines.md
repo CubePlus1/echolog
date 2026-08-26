@@ -32,7 +32,16 @@ Questions to answer:
 
 <!-- Patterns that must always be used -->
 
-(To be filled by the team)
+- Plugin contributions using `loadLive()` must explicitly bridge changed live
+  data to rendered plugin faces; Core live DOM patching does not imply plugin
+  face rendering.
+- Live refresh must be change-sensitive, preserve active input state, and make
+  late asynchronous work inert after contribution unmount.
+- A contribution that extends a cursor-paginated view in memory must not let a
+  later first-page full/live snapshot truncate the visible window. Track the
+  authoritative first-page signature separately, merge refreshed DTOs without
+  duplicates, and preserve the expanded window's continuation cursor (including
+  an exhausted `null`) until the contribution is reset.
 
 ---
 
@@ -40,7 +49,10 @@ Questions to answer:
 
 <!-- What level of testing is expected -->
 
-(To be filled by the team)
+- Live contribution tests cover changed snapshots, unchanged polling, editing
+  deferral, and unmount during an in-flight request.
+- Paginated live-view tests cover action-triggered Host rebuilds, later first-page
+  changes, DTO replacement/order, cursor exhaustion, and fresh-mount reset.
 
 ---
 

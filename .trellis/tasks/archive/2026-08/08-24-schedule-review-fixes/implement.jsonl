@@ -1,0 +1,4 @@
+{"file":".trellis/spec/backend/database-guidelines.md","reason":"Immutable plugin migrations and reminder ledger query/index contract."}
+{"file":".trellis/spec/backend/error-handling.md","reason":"Structured API errors and boundary validation behavior."}
+{"file":".trellis/spec/frontend/directory-structure.md","reason":"Multi-face surface-scoped controls and global host lookup behavior."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Keep Web and API timestamp contracts aligned."}

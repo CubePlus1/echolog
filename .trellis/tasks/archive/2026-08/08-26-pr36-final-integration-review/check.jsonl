@@ -1,0 +1,5 @@
+{"file":".trellis/spec/backend/plugin-api-guidelines.md","reason":"Review final Plugin API service and permission compliance."}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"Review Abort, timeout, ledger and integration-test coverage."}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Review live refresh, focus and unmount behavior."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Check final cross-layer consistency and public contracts."}
+{"file":".trellis/tasks/08-26-pr36-final-integration-review/research/branch-state.md","reason":"Compare final ancestry and content with the captured baseline."}

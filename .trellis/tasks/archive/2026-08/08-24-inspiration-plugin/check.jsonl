@@ -1,0 +1,6 @@
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"Atomic transitions, jobs, and server validation review"}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Web contribution quality review"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Full-stack contract consistency review"}
+{"file":".trellis/tasks/08-24-inspiration-plugin/research/plugin-patterns.md","reason":"Compare implementation with established plugin patterns"}
+{"file": ".trellis/spec/backend/plugin-api-guidelines.md", "reason": "Verify exact named-service contract and permission gate"}
+{"file": ".trellis/tasks/08-24-inspiration-plugin/research/pr36-review.md", "reason": "Verify every PR #36 finding is closed"}

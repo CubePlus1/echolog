@@ -1,0 +1,8 @@
+{"file":".trellis/spec/backend/index.md","reason":"Backend entry checklist for a new bundled plugin."}
+{"file":".trellis/spec/backend/database-guidelines.md","reason":"Plugin migrations, TIMESTAMPTZ, transactions, and atomic state updates."}
+{"file":".trellis/spec/backend/error-handling.md","reason":"Canonical API error envelopes and conflict semantics."}
+{"file":".trellis/spec/backend/cli-agent-contract.md","reason":"HTTP thin-client, --json, help, and exit-code requirements."}
+{"file":".trellis/spec/frontend/index.md","reason":"Frontend entry checklist for the ready-gated Web contribution."}
+{"file":".trellis/spec/frontend/directory-structure.md","reason":"Native Web shell, escaping, and delegated interaction conventions."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"One item contract across DB/API/CLI/Web/calendar views."}
+{"file":".trellis/tasks/08-24-schedule-plugin/research/plugin-patterns.md","reason":"Reference plugin patterns and exact notification dependency contract."}

@@ -1,0 +1,4 @@
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"Audit timeout/stop/late continuation behavior."}
+{"file":".trellis/spec/backend/database-guidelines.md","reason":"Audit retained-claim and terminal ledger invariants."}
+{"file":".trellis/spec/backend/error-handling.md","reason":"Audit AbortError versus normal failure classification."}
+{"file":".trellis/tasks/archive/2026-08/08-24-schedule-plugin/research/plugin-patterns.md","reason":"Verify the fix preserves original plugin boundaries."}

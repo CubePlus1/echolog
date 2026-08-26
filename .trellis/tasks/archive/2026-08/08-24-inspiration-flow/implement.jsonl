@@ -1,0 +1,6 @@
+{"file":".trellis/spec/backend/database-guidelines.md","reason":"Transactional delivery reservation and expected-version outcomes"}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"Non-reentry, timeout, and durable job conventions"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Selector, delivery, notification, and API boundary design"}
+{"file":".trellis/tasks/08-24-inspiration-plugin/research/plugin-patterns.md","reason":"Host job/service and plugin persistence research"}
+{"file": ".trellis/spec/backend/plugin-api-guidelines.md", "reason": "Implement official function-valued notification service"}
+{"file": ".trellis/tasks/08-24-inspiration-plugin/research/pr36-review.md", "reason": "Flow state/race findings"}

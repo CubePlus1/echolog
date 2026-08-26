@@ -1,5 +1,6 @@
-import type { PluginLogger } from "@echolog/plugin-sdk";
+import type { PluginLogger, PluginNotificationSend } from "@echolog/plugin-sdk";
 import { getDbUrl, type Config } from "../config.js";
+import { sendNotification } from "../notifier.js";
 import { runPluginCommand } from "./command-runner.js";
 import { PluginHost } from "./host.js";
 import { runPluginMigrations } from "./migrations.js";
@@ -12,6 +13,9 @@ export function createPluginHost(config: Config, logger: PluginLogger): PluginHo
       "config.tracker is deprecated; migrate it to plugins.screen-time.config"
     );
   }
+  const sendPluginNotification: PluginNotificationSend = (request, signal) =>
+    sendNotification(request, signal, { loadConfig: () => config });
+
   return new PluginHost({
     definitions: bundledPlugins,
     configuration: config.plugins,
@@ -20,6 +24,7 @@ export function createPluginHost(config: Config, logger: PluginLogger): PluginHo
     commandRunner: runPluginCommand,
     services: {
       "database.url": getDbUrl(config),
+      "notifications.send": sendPluginNotification,
     },
   });
 }

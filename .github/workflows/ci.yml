@@ -13,6 +13,20 @@ jobs:
   verify:
     name: verify
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: echolog_test
+          POSTGRES_USER: echolog
+          POSTGRES_PASSWORD: echolog
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U echolog -d echolog_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - name: Check out EchoLog
         uses: actions/checkout@v5
@@ -47,6 +61,11 @@ jobs:
 
       - name: Test
         run: pnpm test
+
+      - name: Test PostgreSQL integrations
+        env:
+          ECHOLOG_TEST_DATABASE_URL: postgres://echolog:echolog@localhost:5432/echolog_test
+        run: pnpm exec tsx --test tests/**/*.integration.ts
 
       - name: Typecheck
         run: pnpm typecheck

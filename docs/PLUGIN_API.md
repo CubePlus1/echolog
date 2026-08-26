@@ -59,10 +59,12 @@ restrict Host APIs and make review scope explicit:
 | --- | --- |
 | `process:exec` | Bounded `execFile` command runner; no shell |
 | `database:plugin` | Database URL for plugin-owned tables |
+| `notifications:send` | Core-owned `notifications.send` delivery service |
 
 A plugin without the corresponding declaration receives a structured
 `PLUGIN_DEPENDENCY_MISSING` error. Plugins MUST NOT import Core table schemas or
-write Core records directly.
+write Core records directly. Manifests that declare any permission outside this
+fixed vocabulary are invalid.
 
 ## Lifecycle
 
@@ -81,6 +83,12 @@ Disabled plugins MUST NOT migrate, register jobs, or start. One plugin's
 validation, migration or startup failure changes that plugin to `degraded` and
 MUST NOT prevent later plugins or Core from starting. Shutdown occurs in reverse
 registry order with a five-second timeout.
+
+Manifest and API-version validation runs for every bundled definition before
+the enabled gate. A valid disabled plugin remains `disabled`; a malformed
+disabled plugin is reported as `enabled: false`, `degraded`, with structured
+diagnostic metadata. It still MUST NOT run migration, registration, start, jobs,
+or stop, and its failure MUST NOT block later plugins or Core startup.
 
 Configuration changes take effect after daemon restart. Runtime hot install,
 enable, disable and unload are not supported in v1.
@@ -108,6 +116,65 @@ ignores `AbortSignal` cannot leave the job permanently marked as running.
 `PluginCommandRequest.stdin` is an optional bounded UTF-8 payload (host ceiling
 64 KiB). It is written directly to child stdin and MUST NOT be copied into
 argv, environment variables, logs, or errors. Execution remains no-shell.
+
+### Notification service
+
+A plugin that declares `notifications:send` obtains the exact named service
+from its context:
+
+```ts
+const sendNotification = context.service("notifications.send");
+const result = await sendNotification(
+  {
+    title: "Reminder",
+    message: "Stand-up starts in five minutes",
+    dedupeKey: "my-plugin:delivery-01",
+  },
+  signal
+);
+```
+
+The request requires `title` and `message` and may include an opaque,
+caller-namespaced `dedupeKey`. Existing providers may ignore this additive
+field, so plugins must still make their own ledger transitions safe; when it is
+provided it must remain stable for one logical delivery. The optional second
+argument is the caller's `AbortSignal`. Caller cancellation rejects the service
+call with an error named `AbortError`; it MUST NOT resolve a channel result,
+because a Host timeout or shutdown cannot know whether an in-flight transport
+accepted the notification. Plugins MUST leave durable delivery state retryable
+when they receive this cancellation.
+
+Core-owned transport timeouts and operational channel errors are different:
+they resolve the normal result with that channel marked `failed`. Without caller
+cancellation, the result reports the Core channels independently:
+
+```ts
+{
+  channels: {
+    mac: { status: "sent" },
+    ntfy: { status: "failed", error: "Delivery failed" },
+  },
+}
+```
+
+Each `mac` and `ntfy` result is exactly one of `sent`, `disabled`, or `failed`.
+Only `failed` includes a bounded, non-sensitive `error` string. One channel's
+failure does not erase the other channel's outcome.
+
+Notification configuration is a Core privacy boundary. Global and per-channel
+enablement, ntfy server and topic, credentials, delivery timeouts, and
+deployment details MUST NOT cross into plugin code. Plugins can observe only
+the two channel outcomes above, never configuration or endpoint values. The
+notification content itself is passed to the configured delivery channels and
+MAY leave the local machine when ntfy is enabled, so a plugin MUST send only
+content appropriate for that configured destination.
+
+The downstream schedule plugin tracked by GitHub Issue #31 declares
+`notifications:send` and calls this service when a reminder becomes due. In the
+inspiration recording/push flow tracked by Issues #33 and #34, recording and
+storage remain plugin-owned and the push path calls this service only when a
+stored inspiration is selected for delivery. Those plugins are downstream of
+this API and are not implemented by the v1 service contract itself.
 
 ## Routes and errors
 
@@ -141,7 +208,7 @@ Stable error codes:
 | `PLUGIN_DISABLED` | 503 |
 | `PLUGIN_DEGRADED` | 503 |
 | `PLUGIN_API_INCOMPATIBLE` | 503 |
-| `PLUGIN_DEPENDENCY_MISSING` | 503 |
+| `PLUGIN_DEPENDENCY_MISSING` | 403 |
 | `PLUGIN_EXEC_FAILED` | 502 |
 | `PLUGIN_TIMEOUT` | 504 |
 | `PLUGIN_OUTPUT_INVALID` | 502 |
@@ -190,6 +257,90 @@ The Web Shell loads `/api/plugins`, imports only `ready` bundled Web modules,
 then delegates data loading, face descriptions, rendering and actions. A module
 failure removes only that contribution. Disabled plugins do not add navigation
 or pages.
+
+## Inspiration notification dependency
+
+The bundled `inspiration` plugin owns capture, organization, and deterministic
+Flow resurfacing under `/api/plugins/inspiration/*`. Its inspiration lifecycle
+and Flow delivery ledger are separate; snoozing a delivery MUST NOT change the
+inspiration's kept/archived state. The plugin has no Schedule/Core-record API or
+table relationship.
+
+Flow resolves the named service `notifications.send` lazily through
+`PluginContext.service()`, using the SDK-exported `PluginNotificationSend`
+function. It sends `{title,message}` plus a stable, namespaced delivery
+`dedupeKey`; inspiration and delivery IDs otherwise remain private to the
+plugin ledger. The ledger remains authoritative because providers may ignore
+the additive key. The plugin persists the bounded `mac`/`ntfy` result
+projection in its private delivery ledger and treats the delivery as sent only
+when at least one channel reports `sent`. The notification service is
+Host-owned; the plugin MUST NOT import or copy the Core notifier.
+Missing/failing delivery is recorded while capture remains available.
+
+## Bundled Schedule plugin
+
+`schedule` owns its manifest, configuration, migrations, `schedule_items`,
+reminder delivery ledger, routes, job, CLI, and Web contribution. Its canonical
+routes use `/api/plugins/schedule/*`; `el schedule` and the month/week/day
+views are HTTP clients of those routes.
+
+Canonical routes:
+
+- `GET|POST /api/plugins/schedule/items`
+- `GET|PATCH /api/plugins/schedule/items/:id`
+- `POST /api/plugins/schedule/items/:id/confirm-start`
+- `POST /api/plugins/schedule/items/:id/snooze`
+- `POST /api/plugins/schedule/items/:id/complete`
+- `POST /api/plugins/schedule/items/:id/cancel`
+- `GET /api/plugins/schedule/reminders`
+
+`el schedule` exposes `list`, `show`, `add`, `edit`, `confirm`,
+`snooze`, `done`, and `cancel`; `--json` preserves the API response or
+structured error body.
+
+The plugin requests the exact named service `notifications.send` and declares
+`notifications:send`. Its local consumer contract sends only
+`{ title, message }` plus an optional `AbortSignal`, and receives independent
+`mac` and `ntfy` results with status `sent`, `disabled`, or `failed`.
+Notification configuration and credentials remain Core-owned.
+
+Reaching `scheduledStartAt` only attempts a notification. It never changes
+state or creates/starts a Core record. Only explicit `confirm-start` changes
+`scheduled` to `active`, recording the confirmation time as
+`confirmedStartAt`. Ignoring a reminder changes nothing; snooze changes only
+`nextReminderAt`; completion and cancellation are explicit.
+
+Persisted states are `scheduled | active | done | cancelled`.
+`awaitingConfirmation` is derived from a scheduled item whose planned start is
+not later than now. Month, week, and day views project the same
+`schedule_items` rows; there is no separate calendar event store. All state
+mutations require `expectedVersion`, and each reminder instant is claimed by a
+unique ledger dedupe key before delivery.
+
+The ready Web contribution implements both initial and five-second live loads.
+It compares a stable snapshot of item data, the reference calendar date, and
+derived awaiting state; only a changed snapshot requests a Host book refresh.
+Identical polls preserve the current DOM/focus, concurrent refreshes coalesce,
+and an unmounted contribution ignores late responses.
+
+Reminder messages format the stored absolute instant with
+`Intl.DateTimeFormat` in the item's IANA timezone, including runtime DST rules.
+An invalid legacy timezone falls back visibly to UTC. This is presentation
+only: the persisted/HTTP instant remains `TIMESTAMPTZ`/ISO with an explicit
+offset.
+
+Claim acquisition forwards the Host caller `AbortSignal` through the
+lock-and-insert transaction and uses a separate bounded transport timeout. A
+caller abort or Host timeout/stop cannot produce a late ledger insert after a
+blocked row lock resumes; the internal timeout is exposed as the distinct
+`SCHEDULE_CLAIM_TIMEOUT` error and does not abort the caller signal. Timer and
+abort-listener resources are cleaned up on success, caller abort, and timeout.
+
+If a Host job timeout or daemon stop aborts the caller signal, a late
+notification continuation MUST NOT terminalize the reminder. Schedule retains
+the ledger as `claimed`; only an unaborted caller may persist `sent` or
+`failed`. Internal channel failures returned while the caller remains active
+still terminalize as `failed`.
 
 ## Compatibility policy
 

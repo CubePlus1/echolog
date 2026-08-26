@@ -1,0 +1,5 @@
+{"file":".trellis/spec/backend/cli-agent-contract.md","reason":"Verify CLI agent-facing compatibility"}
+{"file":".trellis/spec/frontend/directory-structure.md","reason":"Verify ready-only native Web contribution and escaping"}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Frontend quality gate"}
+{"file": ".trellis/tasks/08-24-inspiration-plugin/research/pr36-review.md", "reason": "Check composite cursor and shared ISO validation"}
+{"file": ".trellis/tasks/08-24-inspiration-clients/research/chronosprout-reference.md", "reason": "Verify adaptation preserves EchoLog boundaries and avoids copied product semantics"}

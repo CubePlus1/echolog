@@ -1,0 +1,7 @@
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"Backend full-scope correctness and test review."}
+{"file":".trellis/spec/backend/database-guidelines.md","reason":"Audit atomic transitions, migrations, and timezone storage."}
+{"file":".trellis/spec/backend/cli-agent-contract.md","reason":"Audit raw JSON, stderr, exit codes, and help."}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Frontend regression and interaction review."}
+{"file":".trellis/spec/frontend/directory-structure.md","reason":"Audit Web host integration, escaping, and event delegation."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Audit contract consistency across all layers."}
+{"file":".trellis/tasks/08-24-schedule-plugin/research/plugin-patterns.md","reason":"Verify behavior against researched plugin and notification contracts."}
