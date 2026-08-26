@@ -34,6 +34,12 @@ that plugin.
 typed send function. Core retains global/channel enablement, ntfy server/topic,
 credentials, delivery timeouts, and transport dependencies.
 
+`PluginNotificationRequest` may carry an optional opaque `dedupeKey`. This is
+an additive compatibility field: legacy callers/providers need not set or use
+it. A plugin that sends it must namespace it and keep it stable for one logical
+delivery, while retaining its own durable ledger because a provider is allowed
+to ignore the hint.
+
 Operational delivery outcomes are data, not swallowed exceptions: return both
 `mac` and `ntfy` with `sent`, `disabled`, or `failed`. Failed results contain a
 bounded, non-sensitive error and never include endpoint URLs, topics, response

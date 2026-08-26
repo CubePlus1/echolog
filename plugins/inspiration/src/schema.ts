@@ -160,7 +160,7 @@ export const inspirationFlowDeliveries = pgTable(
     ),
     check(
       "inspiration_flow_deliveries_status_check",
-      sql`${table.status} IN ('reserved', 'sent', 'failed', 'acted')`
+      sql`${table.status} IN ('reserved', 'dispatching', 'sent', 'failed', 'acted')`
     ),
     check(
       "inspiration_flow_deliveries_outcome_check",

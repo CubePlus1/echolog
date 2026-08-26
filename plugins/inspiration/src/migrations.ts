@@ -138,4 +138,14 @@ export const migrations: PluginMigration[] = [
         ADD COLUMN IF NOT EXISTS notification_channels JSONB;
     `,
   },
+  {
+    name: "006_inspiration_flow_dispatching_status",
+    sql: `
+      ALTER TABLE inspiration_flow_deliveries
+        DROP CONSTRAINT IF EXISTS inspiration_flow_deliveries_status_check;
+      ALTER TABLE inspiration_flow_deliveries
+        ADD CONSTRAINT inspiration_flow_deliveries_status_check
+        CHECK (status IN ('reserved', 'dispatching', 'sent', 'failed', 'acted'));
+    `,
+  },
 ];

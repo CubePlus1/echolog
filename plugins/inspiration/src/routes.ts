@@ -9,6 +9,7 @@ import {
   type InspirationPage,
   type InspirationStoreListFilter,
 } from "./store.js";
+import { parseOffsetAwareIso } from "./http-validation.js";
 import type {
   CreateInspirationInput,
   Inspiration,
@@ -284,13 +285,13 @@ function repeatedQueryStrings(
 }
 
 function isoDate(value: string, name: string): ValidationResult<Date> {
-  if (!value.includes("T")) {
-    return { ok: false, error: `${name} must be an ISO 8601 timestamp` };
-  }
-  const date = new Date(value);
-  return Number.isFinite(date.getTime())
+  const date = parseOffsetAwareIso(value);
+  return date
     ? { ok: true, value: date }
-    : { ok: false, error: `${name} must be an ISO 8601 timestamp` };
+    : {
+        ok: false,
+        error: `${name} must be an ISO 8601 timestamp with Z or ±HH:mm offset`,
+      };
 }
 
 function validateList(query: unknown): ValidationResult<InspirationStoreListFilter> {

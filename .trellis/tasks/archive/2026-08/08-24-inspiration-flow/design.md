@@ -16,14 +16,16 @@ The only host dependency is the SDK-exported function:
 
 ```ts
 type PluginNotificationSend = (
-  request: { title: string; message: string },
+  request: { title: string; message: string; dedupeKey?: string },
   signal?: AbortSignal
 ) => Promise<PluginNotificationResult>;
 ```
 
 It is resolved lazily with `context.service("notifications.send")`; the manifest
-declares `notifications:send`. Inspiration passes no dedupe key or entity IDs to
-Core. A delivery-owned JSONB projection stores bounded `mac`/`ntfy` channel
+declares `notifications:send`. Inspiration passes a stable
+`inspiration:${delivery.dedupeKey}` hint but no other entity metadata. Providers
+may ignore this additive field, so the delivery ledger still enforces the state
+machine. A delivery-owned JSONB projection stores bounded `mac`/`ntfy` channel
 results. Overall success requires at least one `sent` channel. Tests use the
 real PluginHost permission gate and function service in addition to unit mocks.
 
@@ -41,10 +43,22 @@ bypass only those two gates, never cooldown, snooze, filters, or daily cap.
 
 ## Restart/failure semantics
 
-The ledger is source of truth. A reserved row survives daemon restart. A send
-failure is finalized as `failed`; a later dedupe bucket can retry the same
-inspiration if still eligible. Before selecting for a new scheduled bucket, the
-store claims the oldest stale `reserved` delivery with a short lease and
-increments its durable attempt count. This recovers work even when restart
-crosses an interval boundary without letting an immediate repeated poll send
-twice. No prompt/reply/screenshot body is stored.
+The ledger is source of truth. Before an external call the row transitions to
+`dispatching`. A stale `reserved` or `dispatching` row becomes a terminal
+unknown failure and is never sent again from that row. A clearly failed send
+may be retried only through a later policy-selected bucket and a new delivery.
+No prompt/reply/screenshot body is stored.
+
+### PR #36 correction
+
+The earlier stale-reservation retry is superseded by at-most-once semantics.
+Before the external call, the Store atomically claims the row into an in-flight
+state. Any stale reserved/in-flight row is terminally failed with an unknown
+outcome and `shouldNotify=false`; it is never reclaimed for another external
+send. Explicit notification failure remains a normal failed row, and a future
+bucket can retry only by creating a new delivery after normal policy selection.
+
+Scheduled dedupe keys are generated inside `reserveNext` after locking settings,
+using that row's version and interval. This removes transaction-outside races.
+Failed rows are diagnostic and never accept outcomes, regardless of source.
+Only sent deliveries represent a successful user-visible surfacing.

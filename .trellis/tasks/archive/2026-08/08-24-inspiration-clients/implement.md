@@ -6,6 +6,8 @@
 - [x] Add client/Web tests for paths, JSON/error behavior, actions, and absence
   of schedule semantics.
 - [x] Add a report renderer/helper or contract consumed by parent integration.
+- [x] Add snapshot-sensitive live invalidation with focus preservation and
+  unmount/overlap guards, plus changed/unchanged/unmount tests.
 - [x] Run focused tests and typecheck; report changed files only.
 
 Validation: `pnpm exec tsx --test tests/inspiration-clients.test.ts`,

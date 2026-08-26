@@ -86,7 +86,11 @@ test("denies notifications.send without its declared permission", async () => {
 });
 
 test("returns the Core-owned send function to a permitted plugin", async () => {
-  const requests: Array<{ title: string; message: string }> = [];
+  const requests: Array<{
+    title: string;
+    message: string;
+    dedupeKey?: string;
+  }> = [];
   const expected = {
     channels: {
       mac: { status: "sent" as const },
@@ -95,7 +99,11 @@ test("returns the Core-owned send function to a permitted plugin", async () => {
   };
   let received: unknown;
   let receivedService: unknown;
-  const send = async (request: { title: string; message: string }) => {
+  const send = async (request: {
+    title: string;
+    message: string;
+    dedupeKey?: string;
+  }) => {
     requests.push(request);
     return expected;
   };
@@ -106,7 +114,11 @@ test("returns the Core-owned send function to a permitted plugin", async () => {
       async start(context) {
         const service = context.service<typeof send>("notifications.send");
         receivedService = service;
-        received = await service({ title: "Reminder", message: "Stand up" });
+        received = await service({
+          title: "Reminder",
+          message: "Stand up",
+          dedupeKey: "test-plugin:delivery-01",
+        });
       },
     }],
     { "notifications.send": send }
@@ -116,7 +128,11 @@ test("returns the Core-owned send function to a permitted plugin", async () => {
 
   assert.equal(pluginHost.list()[0]?.state, "ready");
   assert.equal(receivedService, send);
-  assert.deepEqual(requests, [{ title: "Reminder", message: "Stand up" }]);
+  assert.deepEqual(requests, [{
+    title: "Reminder",
+    message: "Stand up",
+    dedupeKey: "test-plugin:delivery-01",
+  }]);
   assert.equal(received, expected);
 });
 

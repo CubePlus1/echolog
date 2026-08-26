@@ -202,6 +202,7 @@ test("manifest and migrations define one private standalone plugin schema", () =
     "003_inspiration_flow_deliveries",
     "004_inspiration_flow_delivery_attempts",
     "005_inspiration_flow_notification_channels",
+    "006_inspiration_flow_dispatching_status",
   ]);
   const sql = migrations.map((migration) => migration.sql).join("\n");
   assert.match(sql, /CREATE TABLE IF NOT EXISTS inspirations/);
@@ -301,6 +302,40 @@ test("list normalizes filters and preserves deterministic history contract", asy
     before: new Date("2026-08-25T00:00:00.000Z"),
     after: new Date("2026-08-24T00:00:00.000Z"),
   });
+});
+
+test("capture date filters require explicit offsets and preserve DST instants", async () => {
+  const store = new MemoryCaptureStore();
+  const handler = route(
+    createInspirationRoutes(() => store),
+    "GET",
+    "/api/plugins/inspiration/inspirations"
+  ).handler;
+
+  const accepted = await call(handler, {
+    query: {
+      createdAfter: "2026-11-01T01:30:00-04:00",
+      createdBefore: "2026-11-01T01:30:00-05:00",
+    },
+  });
+  assert.deepEqual(accepted, { items: [], nextCursor: null });
+  assert.equal(store.lastFilter?.after?.toISOString(), "2026-11-01T05:30:00.000Z");
+  assert.equal(store.lastFilter?.before?.toISOString(), "2026-11-01T06:30:00.000Z");
+
+  for (const createdAfter of [
+    "2026-11-01T01:30:00",
+    "2026-11-01T01:30:00+24:00",
+  ]) {
+    const rejected = await call(handler, { query: { createdAfter } });
+    assert.equal(rejected.statusCode, 400);
+    assert.match(rejected.body.error, /Z or ±HH:mm offset/);
+  }
+
+  const unknown = await call(handler, {
+    query: { createdAfter: "2026-11-01T01:30:00-04:00", timezone: "local" },
+  });
+  assert.equal(unknown.statusCode, 400);
+  assert.equal(unknown.body.error, "unknown field: timezone");
 });
 
 test("opaque cursor preserves timestamp and id tie-break boundary", async () => {

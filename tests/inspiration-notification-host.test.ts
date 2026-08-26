@@ -132,10 +132,13 @@ function persistence(
         shouldNotify: true,
       };
     },
+    async claimNotification() {
+      return delivery({ version: 2, status: "dispatching" });
+    },
     async finalizeNotification(_id, _version, result) {
       onFinalize(result);
       return delivery({
-        version: 2,
+        version: 3,
         status: result.delivered ? "sent" : "failed",
         notifiedAt: result.delivered ? result.at : null,
         notificationChannels: result.channels,
@@ -143,7 +146,7 @@ function persistence(
       });
     },
     async listDeliveries() {
-      return [];
+      return { deliveries: [], nextCursor: null };
     },
     async applyOutcome() {
       return { delivery: delivery(), inspiration: inspiration() };
@@ -198,7 +201,7 @@ test("real PluginHost denies the actual Inspiration provider without permission"
   assert.equal(serviceCalls, 0);
 });
 
-test("actual Inspiration provider passes a bare Host function only title/message", async () => {
+test("actual Inspiration provider passes a bare Host function with a stable dedupe key", async () => {
   const requests: unknown[] = [];
   const finalizations: FlowNotificationFinalization[] = [];
   const send: PluginNotificationSend = async (request) => {
@@ -230,6 +233,7 @@ test("actual Inspiration provider passes a bare Host function only title/message
   assert.deepEqual(requests, [{
     title: "Inspiration",
     message: "A Host-integrated inspiration",
+    dedupeKey: "inspiration:manual:host",
   }]);
   assert.deepEqual(finalizations, [{
     delivered: true,

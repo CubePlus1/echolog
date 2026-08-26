@@ -28,3 +28,17 @@ and a concise daily-report section without duplicating backend policy.
   through CLI/API.
 - [x] Dynamic Web text is escaped and no schedule UI/action exists.
 - [x] Daily report contribution is covered by tests.
+
+## PR #36 HTTP/client repair
+
+- [x] Delivery history uses an opaque composite cursor returned by the API and
+  accepted by CLI/Web without timestamp-only pagination.
+- [x] Capture date filters reject timezone-less input in both HTTP and CLI and
+  accept explicit DST-era offsets.
+- [x] Flow UI presents outcomes only for successful sent manual deliveries;
+  failed deliveries are visibly marked as not shown and cannot submit actions.
+- [x] Inbox and Flow adapt the user-provided Chronosprout card/rail hierarchy
+  with scoped responsive styles while preserving EchoLog fields, actions,
+  escaping, ready-only loading, and canonical HTTP behavior.
+- [x] Live Inbox/Flow snapshot changes request one Host refresh, unchanged polls
+  request none, editing defers refresh, and unmount cancels late invalidation.

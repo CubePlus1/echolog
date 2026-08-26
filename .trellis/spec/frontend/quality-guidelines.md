@@ -32,7 +32,11 @@ Questions to answer:
 
 <!-- Patterns that must always be used -->
 
-(To be filled by the team)
+- Plugin contributions using `loadLive()` must explicitly bridge changed live
+  data to rendered plugin faces; Core live DOM patching does not imply plugin
+  face rendering.
+- Live refresh must be change-sensitive, preserve active input state, and make
+  late asynchronous work inert after contribution unmount.
 
 ---
 
@@ -40,7 +44,8 @@ Questions to answer:
 
 <!-- What level of testing is expected -->
 
-(To be filled by the team)
+- Live contribution tests cover changed snapshots, unchanged polling, editing
+  deferral, and unmount during an in-flight request.
 
 ---
 

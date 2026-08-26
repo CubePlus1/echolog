@@ -165,6 +165,42 @@ test("Inspiration CLI is HTTP-thin and preserves raw JSON success and errors", a
       body: { idempotencyKey: "manual-test" },
     });
 
+    const filtered = await runCli(configPath, [
+      "inspiration",
+      "list",
+      "--created-after",
+      "2026-11-01T01:30:00-04:00",
+      "--json",
+    ]);
+    assert.equal(filtered.exitCode, 0);
+    assert.match(
+      calls.at(-1)?.url ?? "",
+      /createdAfter=2026-11-01T01%3A30%3A00-04%3A00/
+    );
+
+    const callCount = calls.length;
+    const timezoneLess = await runCli(configPath, [
+      "inspiration",
+      "list",
+      "--created-before",
+      "2026-11-01T01:30:00",
+      "--json",
+    ]);
+    assert.equal(timezoneLess.exitCode, 1);
+    assert.equal(calls.length, callCount);
+    assert.match(JSON.parse(timezoneLess.stderr).error, /Z.*HH:mm/);
+
+    const history = await runCli(configPath, [
+      "inspiration",
+      "flow",
+      "deliveries",
+      "--cursor",
+      "opaque_page_2",
+      "--json",
+    ]);
+    assert.equal(history.exitCode, 0);
+    assert.match(calls.at(-1)?.url ?? "", /cursor=opaque_page_2/);
+
     const failed = await runCli(configPath, [
       "inspiration",
       "show",
@@ -190,6 +226,14 @@ test("Inspiration CLI is HTTP-thin and preserves raw JSON success and errors", a
     assert.match(help.stdout, /viewed \| continued \| kept \| later \| archived/);
     assert.match(help.stdout, /--delivery-version/);
     assert.match(help.stdout, /--inspiration-version/);
+    const deliveriesHelp = await runCli(configPath, [
+      "inspiration",
+      "flow",
+      "deliveries",
+      "--help",
+    ]);
+    assert.match(deliveriesHelp.stdout, /--cursor/);
+    assert.doesNotMatch(deliveriesHelp.stdout, /--before/);
   } finally {
     await new Promise<void>((resolve, reject) => server.close((error) =>
       error ? reject(error) : resolve()
@@ -230,6 +274,180 @@ test("Inspiration Web contributes only while ready", async () => {
   await host.stop();
 });
 
+test("Inspiration Web invalidates changed live snapshots without polling rebuilds", async () => {
+  const { activate } = await import(webModulePath);
+  let inspirationVersion = 1;
+  let deliveryStatus = "sent";
+  let refreshes = 0;
+  let activeElement: null | { tagName: string; closest(selector: string): object | null } = null;
+  const root = {
+    ownerDocument: {
+      get activeElement() {
+        return activeElement;
+      },
+    },
+  };
+  const api = async (path: string) => {
+    if (path.includes("/inspirations?")) {
+      return {
+        items: [{
+          id: "inspiration-live",
+          version: inspirationVersion,
+          content: `live idea v${inspirationVersion}`,
+          tags: [],
+          project: null,
+          status: "inbox",
+        }],
+        nextCursor: null,
+      };
+    }
+    if (path.endsWith("/flow/settings")) {
+      return { id: "default", version: 1, defaultSnoozeMinutes: 120 };
+    }
+    if (path.includes("/flow/deliveries?")) {
+      return {
+        deliveries: [{
+          id: "delivery-live",
+          version: 1,
+          source: "scheduled",
+          status: deliveryStatus,
+          outcome: null,
+          surfacedAt: "2026-08-26T08:00:00.000Z",
+        }],
+        nextCursor: "opaque-live-cursor",
+      };
+    }
+    throw new Error(`Unexpected API path: ${path}`);
+  };
+  const contribution = await activate({
+    api,
+    root,
+    refresh: async () => {
+      refreshes += 1;
+    },
+  });
+
+  await contribution.load();
+  await contribution.loadLive();
+  assert.equal(refreshes, 0);
+
+  inspirationVersion = 2;
+  await contribution.loadLive();
+  assert.equal(refreshes, 1);
+  await contribution.loadLive();
+  assert.equal(refreshes, 1);
+
+  deliveryStatus = "failed";
+  await contribution.loadLive();
+  assert.equal(refreshes, 2);
+  await contribution.loadLive();
+  assert.equal(refreshes, 2);
+
+  activeElement = {
+    tagName: "TEXTAREA",
+    closest: (selector) => selector === "#pages" ? {} : null,
+  };
+  inspirationVersion = 3;
+  await contribution.loadLive();
+  assert.equal(refreshes, 2);
+
+  activeElement = null;
+  await contribution.loadLive();
+  assert.equal(refreshes, 3);
+  await contribution.unmount();
+});
+
+test("Inspiration Web ignores in-flight live snapshots after unmount", async () => {
+  const { activate } = await import(webModulePath);
+  let releaseList: ((value: unknown) => void) | undefined;
+  let releaseLedger: ((value: unknown) => void) | undefined;
+  let apiCalls = 0;
+  let refreshes = 0;
+  const api = (path: string) => {
+    apiCalls += 1;
+    if (path.includes("/inspirations?")) {
+      return new Promise((resolve) => {
+        releaseList = resolve;
+      });
+    }
+    if (path.includes("/flow/deliveries?")) {
+      return new Promise((resolve) => {
+        releaseLedger = resolve;
+      });
+    }
+    throw new Error(`Unexpected API path: ${path}`);
+  };
+  const contribution = await activate({
+    api,
+    root: { ownerDocument: { activeElement: null } },
+    refresh: async () => {
+      refreshes += 1;
+    },
+  });
+
+  const pending = contribution.loadLive();
+  await contribution.unmount();
+  releaseList?.({ items: [{ id: "late", version: 1 }], nextCursor: null });
+  releaseLedger?.({ deliveries: [{ id: "late-delivery" }], nextCursor: null });
+  assert.deepEqual(await pending, {});
+  assert.equal(refreshes, 0);
+
+  const callsAfterUnmount = apiCalls;
+  assert.deepEqual(await contribution.loadLive(), {});
+  assert.equal(apiCalls, callsAfterUnmount);
+  assert.equal(refreshes, 0);
+});
+
+test("Inspiration Web coalesces overlapping live polls behind one Host refresh", async () => {
+  const { activate } = await import(webModulePath);
+  let inspirationVersion = 1;
+  let refreshes = 0;
+  let releaseRefresh: (() => void) | undefined;
+  let signalRefreshStarted: (() => void) | undefined;
+  const refreshStarted = new Promise<void>((resolve) => {
+    signalRefreshStarted = resolve;
+  });
+  const api = async (path: string) => {
+    if (path.includes("/inspirations?")) {
+      return {
+        items: [{ id: "overlap", version: inspirationVersion }],
+        nextCursor: null,
+      };
+    }
+    if (path.endsWith("/flow/settings")) return { id: "default", version: 1 };
+    if (path.includes("/flow/deliveries?")) {
+      return { deliveries: [], nextCursor: null };
+    }
+    throw new Error(`Unexpected API path: ${path}`);
+  };
+  const contribution = await activate({
+    api,
+    root: { ownerDocument: { activeElement: null } },
+    refresh: async () => {
+      refreshes += 1;
+      signalRefreshStarted?.();
+      await new Promise<void>((resolve) => {
+        releaseRefresh = resolve;
+      });
+    },
+  });
+
+  await contribution.load();
+  inspirationVersion = 2;
+  const firstPoll = contribution.loadLive();
+  await refreshStarted;
+  const overlappingPoll = contribution.loadLive();
+  await Promise.resolve();
+  assert.equal(refreshes, 1);
+
+  releaseRefresh?.();
+  await Promise.all([firstPoll, overlappingPoll]);
+  assert.equal(refreshes, 1);
+  await contribution.loadLive();
+  assert.equal(refreshes, 1);
+  await contribution.unmount();
+});
+
 test("Inspiration Web uses canonical APIs, escapes DTOs, and delegates Flow policy", async () => {
   const { activate } = await import(webModulePath);
   const malicious = '<img src=x onerror="alert(1)">';
@@ -267,6 +485,14 @@ test("Inspiration Web uses canonical APIs, escapes DTOs, and delegates Flow poli
     createdAt: "2026-08-24T05:00:00.000Z",
     updatedAt: "2026-08-24T05:00:00.000Z",
   };
+  const scheduledFailure = {
+    ...delivery,
+    id: "delivery-2",
+    source: "scheduled",
+    status: "failed",
+    dedupeKey: "scheduled:2:180:123",
+    error: "notifications.send failed",
+  };
   const settings = {
     id: "default",
     version: 2,
@@ -289,7 +515,11 @@ test("Inspiration Web uses canonical APIs, escapes DTOs, and delegates Flow poli
       return { items: [inspiration], nextCursor: null };
     }
     if (path.endsWith("/flow/settings") && !options) return settings;
-    if (path.includes("/flow/deliveries?") && !options) return { deliveries: [delivery] };
+    if (path.includes("/flow/deliveries?") && !options) {
+      return path.includes("cursor=opaque_page_2")
+        ? { deliveries: [scheduledFailure], nextCursor: null }
+        : { deliveries: [delivery], nextCursor: "opaque_page_2" };
+    }
     if (path.endsWith("/flow/next")) {
       return {
         candidate: {
@@ -324,6 +554,13 @@ test("Inspiration Web uses canonical APIs, escapes DTOs, and delegates Flow poli
   assert.equal(inboxHtml.includes("<script>alert(2)</script>"), false);
   assert.match(inboxHtml, /&lt;img src=x onerror=&quot;alert\(1\)&quot;&gt;/);
   assert.match(inboxHtml, /&lt;script&gt;alert\(2\)&lt;\/script&gt;/);
+  assert.match(inboxHtml, /inspiration-shell inspiration-inbox-face/);
+  assert.match(inboxHtml, /inspiration-composer/);
+  assert.match(inboxHtml, /inspiration-card" data-status="inbox"/);
+  assert.match(inboxHtml, /<details class="inspiration-filter-panel"/);
+  assert.match(inboxHtml, /aria-label="新灵感正文"/);
+  assert.match(inboxHtml, /@container \(max-width: 34rem\)/);
+  assert.match(inboxHtml, /prefers-reduced-motion/);
 
   const elements: Record<string, { value?: string; checked?: boolean; textContent?: string }> = {
     inspirationNewContent: { value: "new idea" },
@@ -428,6 +665,7 @@ test("Inspiration Web uses canonical APIs, escapes DTOs, and delegates Flow poli
     },
   });
 
+  delivery.status = "failed";
   await contribution.handleAction("next-inspiration", { id: undefined, $ });
   const flowHtml = contribution.renderFace(
     { type: "inspiration-flow" },
@@ -435,8 +673,33 @@ test("Inspiration Web uses canonical APIs, escapes DTOs, and delegates Flow poli
   );
   assert.equal(flowHtml.includes(malicious), false);
   assert.match(flowHtml, /&lt;img src=x onerror=&quot;alert\(1\)&quot;&gt;/);
+  assert.match(flowHtml, /inspiration-flow-layout/);
+  assert.match(flowHtml, /inspiration-flow-candidate/);
+  assert.match(flowHtml, /inspiration-history-list" role="log"/);
+  assert.match(flowHtml, /手动投递失败（未展示）/);
+  assert.match(flowHtml, /通知投递失败，未记录为已展示/);
+  assert.match(flowHtml, /这条失败投递不可操作/);
+  assert.doesNotMatch(flowHtml, /inspiration-outcome-later/);
   elements.inspirationSnooze = { value: "90" };
   elements.inspirationFlowError = { textContent: "" };
+  const callsBeforeRejectedOutcome = calls.length;
+  const rejectedOutcome = await contribution.handleAction("inspiration-outcome-later", {
+    id: delivery.id,
+    $,
+  });
+  assert.deepEqual(rejectedOutcome, { handled: true, refresh: false });
+  assert.equal(calls.length, callsBeforeRejectedOutcome);
+  assert.match(elements.inspirationFlowError.textContent ?? "", /只有成功展示/);
+
+  delivery.status = "sent";
+  await contribution.handleAction("next-inspiration", { id: undefined, $ });
+  const actionableFlowHtml = contribution.renderFace(
+    { type: "inspiration-flow" },
+    { data, esc: escapeText, escA: escapeAttribute }
+  );
+  assert.match(actionableFlowHtml, /inspiration-outcome-later/);
+  assert.match(actionableFlowHtml, /inspiration-outcomes/);
+  assert.match(actionableFlowHtml, /class="inspiration-primary"[^>]+inspiration-outcome-continued/);
   const outcomeResult = await contribution.handleAction("inspiration-outcome-later", {
     id: delivery.id,
     $,
@@ -454,6 +717,21 @@ test("Inspiration Web uses canonical APIs, escapes DTOs, and delegates Flow poli
       }),
     },
   });
+  const more = await contribution.handleAction(
+    "load-more-inspiration-deliveries",
+    { id: undefined, $ }
+  );
+  assert.equal(more.handled, true);
+  assert.equal(
+    calls.at(-1)?.path,
+    "/plugins/inspiration/flow/deliveries?limit=20&cursor=opaque_page_2"
+  );
+  const paginatedHtml = contribution.renderFace(
+    { type: "inspiration-flow" },
+    { data, esc: escapeText, escA: escapeAttribute }
+  );
+  assert.match(paginatedHtml, /定时投递失败（未展示）/);
+  assert.doesNotMatch(paginatedHtml, /load-more-inspiration-deliveries/);
   assert.equal(calls.every((call) => call.path.startsWith("/plugins/inspiration")), true);
 });
 

@@ -64,8 +64,9 @@ implementation, validation, documentation synchronization, and commit.
   auditable cherry-pick and its SDK/Host tests remain intact.
 - [x] Inspiration declares `notifications:send` and consumes the SDK-exported
   function contract instead of a local object-shaped service.
-- [x] Flow sends only `{ title, message }`; dedupe and entity identifiers remain
-  private delivery-ledger fields.
+- [x] Flow sends notification text plus an optional stable, namespaced delivery
+  `dedupeKey`; providers remain backward compatible and the private ledger stays
+  authoritative.
 - [x] Per-channel `sent|disabled|failed` results are persisted in a bounded,
   non-sensitive ledger projection; overall delivery succeeds only when at least
   one channel reports `sent`.
@@ -73,3 +74,38 @@ implementation, validation, documentation synchronization, and commit.
   invocation, channel combinations, and absence of a `.send()` assumption.
 - [x] Full test, typecheck, build, diff check, independent review, repair commit,
   and re-archive are complete without rewriting `3ab8946`.
+
+## PR #36 Reliability Repair
+
+- [x] Notification dispatch is at-most-once: after an external call begins, an
+  interrupted/stale delivery is terminally diagnosed as unknown/failed and is
+  never re-sent from that ledger row.
+- [x] A clearly failed delivery may become eligible in a later dedupe bucket
+  according to normal Flow cooldown/filter/daily-limit rules.
+- [x] Scheduled dedupe keys are derived from the same locked settings/version
+  snapshot used by selection, including concurrent interval updates.
+- [x] Delivery pagination uses an opaque `{surfacedAt,id}` composite cursor and
+  cannot skip equal-timestamp rows.
+- [x] All user-provided date-times require `Z` or `±HH:mm` through one pure
+  validator shared by plugin HTTP and CLI validation.
+- [x] Failed deliveries are terminal diagnostics for both sources; only sent
+  deliveries accept user outcomes, and retry creates a distinct later delivery.
+- [x] `notifications.send` receives the same namespaced key for one delivery and
+  a different key for a distinct retry delivery without weakening lazy service
+  resolution, permission, timeout, or degraded-plugin isolation.
+- [x] Real PostgreSQL regressions cover crash-after-send-before-finalize,
+  settings interval race, composite pagination, and are callable by
+  `test:integration`.
+- [x] Three implementation agents plus an independent check complete with no
+  remaining P0/P1/P2; full verification and an additive fix commit land without
+  rewriting prior history.
+
+## PR #36 Web live-refresh repair
+
+- [x] Inspiration live polling invalidates the Host only when the Inbox or Flow
+  snapshot actually changes; unchanged five-second polls never rebuild faces.
+- [x] Live invalidation defers while a Host page input is active, retries after
+  editing ends, and reconciles the current Flow candidate from the refreshed
+  delivery snapshot.
+- [x] In-flight or later `loadLive` work becomes inert after contribution
+  unmount, with automated change/no-change/unmount coverage.

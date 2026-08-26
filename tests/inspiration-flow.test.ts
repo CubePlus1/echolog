@@ -5,7 +5,12 @@ import type {
   PluginNotificationResult,
 } from "@echolog/plugin-sdk";
 import { createFlowRoutes, validateOutcome, validateSettingsUpdate } from "../plugins/inspiration/src/flow-routes.js";
-import { FlowStoreError, type FlowOutcomeResult, type FlowReserveResult } from "../plugins/inspiration/src/flow-store.js";
+import {
+  canApplyFlowOutcome,
+  FlowStoreError,
+  type FlowOutcomeResult,
+  type FlowReserveResult,
+} from "../plugins/inspiration/src/flow-store.js";
 import {
   createFlowJob,
   FlowService,
@@ -18,6 +23,7 @@ import {
   selectFlowCandidate,
   type SelectableInspiration,
 } from "../plugins/inspiration/src/selector.js";
+import { encodeDeliveryCursor } from "../plugins/inspiration/src/pagination.js";
 import type {
   FlowCandidate,
   FlowDelivery,
@@ -132,23 +138,31 @@ function persistence(
     async reserveNext() {
       return reserveResult();
     },
+    async claimNotification(_id, _version, at, signal) {
+      signal?.throwIfAborted();
+      return delivery({
+        version: 2,
+        status: "dispatching",
+        updatedAt: at ?? NOW,
+      });
+    },
     async finalizeNotification(_id, _version, result) {
       return result.delivered
         ? delivery({
-            version: 2,
+            version: 3,
             status: "sent",
             notifiedAt: result.at,
             notificationChannels: result.channels,
           })
         : delivery({
-            version: 2,
+            version: 3,
             status: "failed",
             notificationChannels: result.channels,
             error: result.error,
           });
     },
     async listDeliveries() {
-      return [];
+      return { deliveries: [], nextCursor: null };
     },
     async applyOutcome() {
       return outcomeResult();
@@ -275,16 +289,41 @@ test("selector explains lifecycle, filter, snooze, and cooldown exclusions", () 
   ]);
 });
 
-test("scheduled bucket keys are stable across repeated polls and vary by interval", () => {
+test("scheduled bucket keys include the locked settings version and interval", () => {
   const withinBucket = new Date(NOW.getTime() + 30_000);
   assert.equal(
-    scheduledFlowDedupeKey(NOW, 60),
-    scheduledFlowDedupeKey(withinBucket, 60)
+    scheduledFlowDedupeKey(NOW, 4, 60),
+    scheduledFlowDedupeKey(withinBucket, 4, 60)
   );
   assert.notEqual(
-    scheduledFlowDedupeKey(NOW, 60),
-    scheduledFlowDedupeKey(NOW, 30)
+    scheduledFlowDedupeKey(NOW, 4, 60),
+    scheduledFlowDedupeKey(NOW, 5, 60)
   );
+  assert.notEqual(
+    scheduledFlowDedupeKey(NOW, 5, 60),
+    scheduledFlowDedupeKey(NOW, 5, 30)
+  );
+});
+
+test("scheduled service delegates key generation to the locked Store snapshot", async () => {
+  const calls: unknown[][] = [];
+  let settingsReads = 0;
+  const service = new FlowService(persistence({
+    async getSettings() {
+      settingsReads += 1;
+      return settings();
+    },
+    async reserveNext(...args) {
+      calls.push(args);
+      return { candidate: null, explanation: [], shouldNotify: false };
+    },
+  }), () => async () => assert.fail("no candidate should not notify"), () => NOW);
+
+  const controller = new AbortController();
+  await service.runScheduled(controller.signal);
+
+  assert.equal(settingsReads, 0);
+  assert.deepEqual(calls, [["scheduled", undefined, NOW, controller.signal]]);
 });
 
 test("scheduled job is bounded and forwards the Host abort signal", async () => {
@@ -304,7 +343,7 @@ test("scheduled job is bounded and forwards the Host abort signal", async () => 
   assert.deepEqual(observed, [controller.signal]);
 });
 
-test("service calls the function-valued notification contract with title and message only", async () => {
+test("service calls notifications.send with text and the stable delivery dedupe key", async () => {
   const finalized: unknown[] = [];
   const sent: Array<{ input: unknown; signal: AbortSignal | undefined }> = [];
   const controller = new AbortController();
@@ -333,14 +372,15 @@ test("service calls the function-valued notification contract with title and mes
     input: {
       title: "Inspiration",
       message: "Build a deterministic inspiration flow",
+      dedupeKey: "inspiration:manual:request-a",
     },
     signal: controller.signal,
   }]);
   assert.equal(finalized.length, 1);
-  assert.deepEqual((finalized[0] as unknown[]).slice(0, 2), ["delivery-a", 1]);
+  assert.deepEqual((finalized[0] as unknown[]).slice(0, 2), ["delivery-a", 2]);
 });
 
-test("reserved duplicate resumes after restart but sent duplicate is not re-sent", async () => {
+test("sent duplicate is not re-sent after the pre-send claim", async () => {
   let sends = 0;
   let state: "reserved" | "sent" = "reserved";
   const store = persistence({
@@ -370,6 +410,179 @@ test("reserved duplicate resumes after restart but sent duplicate is not re-sent
   assert.equal(sends, 1);
 });
 
+test("an interrupted dispatch is terminalized without another notification", async () => {
+  let state: FlowDelivery["status"] = "reserved";
+  let version = 1;
+  let reserveCalls = 0;
+  let sends = 0;
+  const controller = new AbortController();
+  const store = persistence({
+    async reserveNext() {
+      reserveCalls += 1;
+      if (state === "dispatching") {
+        state = "failed";
+        version += 1;
+      }
+      const value = candidate({
+        duplicate: reserveCalls > 1,
+        delivery: delivery({ status: state, version }),
+      });
+      return {
+        candidate: value,
+        explanation: state === "failed"
+          ? ["recovery:interrupted-dispatch-unknown"]
+          : value.explanation,
+        shouldNotify: state === "reserved",
+      };
+    },
+    async claimNotification() {
+      assert.equal(state, "reserved");
+      state = "dispatching";
+      version += 1;
+      return delivery({ status: state, version });
+    },
+  });
+  const service = new FlowService(store, () => async () => {
+    sends += 1;
+    controller.abort();
+    return {
+      channels: {
+        mac: { status: "sent" },
+        ntfy: { status: "disabled" },
+      },
+    };
+  }, () => NOW);
+
+  await assert.rejects(
+    service.nextManual("same-request", controller.signal),
+    (error) => error instanceof Error && error.name === "AbortError"
+  );
+  const recovered = await service.nextManual("same-request");
+
+  assert.equal(sends, 1);
+  assert.equal(recovered.shouldNotify, false);
+  assert.equal(recovered.candidate?.delivery.status, "failed");
+  assert.deepEqual(recovered.explanation, [
+    "recovery:interrupted-dispatch-unknown",
+    "delivery:failed",
+  ]);
+});
+
+test("an explicitly failed delivery can retry only as a distinct later bucket", async () => {
+  let sends = 0;
+  let nextDelivery = 0;
+  const ids: string[] = [];
+  const notificationKeys: Array<string | undefined> = [];
+  let activeDedupeKey = "";
+  const store = persistence({
+    async reserveNext() {
+      nextDelivery += 1;
+      const id = `delivery-${nextDelivery}`;
+      activeDedupeKey = `manual:bucket-${nextDelivery}`;
+      ids.push(id);
+      return reserveResult(candidate({
+        delivery: delivery({ id, dedupeKey: activeDedupeKey }),
+      }));
+    },
+    async claimNotification(id) {
+      return delivery({
+        id,
+        version: 2,
+        status: "dispatching",
+        dedupeKey: activeDedupeKey,
+      });
+    },
+    async finalizeNotification(id, _version, result) {
+      return delivery({
+        id,
+        version: 3,
+        status: result.delivered ? "sent" : "failed",
+        error: result.delivered ? null : result.error,
+      });
+    },
+  });
+  const service = new FlowService(store, () => async (request) => {
+    sends += 1;
+    notificationKeys.push(request.dedupeKey);
+    if (sends === 1) throw new Error("explicit transport failure");
+    return {
+      channels: {
+        mac: { status: "sent" },
+        ntfy: { status: "disabled" },
+      },
+    };
+  }, () => NOW);
+
+  const failed = await service.nextManual("bucket-1");
+  const retried = await service.nextManual("bucket-2");
+
+  assert.equal(failed.candidate?.delivery.status, "failed");
+  assert.equal(retried.candidate?.delivery.status, "sent");
+  assert.equal(sends, 2);
+  assert.deepEqual(ids, ["delivery-1", "delivery-2"]);
+  assert.deepEqual(notificationKeys, [
+    "inspiration:manual:bucket-1",
+    "inspiration:manual:bucket-2",
+  ]);
+});
+
+test("failed deliveries are terminal and non-actionable for every source", () => {
+  assert.equal(canApplyFlowOutcome({ status: "sent", source: "scheduled" }), true);
+  assert.equal(canApplyFlowOutcome({ status: "failed", source: "manual" }), false);
+  assert.equal(canApplyFlowOutcome({ status: "failed", source: "scheduled" }), false);
+  assert.equal(canApplyFlowOutcome({ status: "dispatching", source: "manual" }), false);
+});
+
+test("a failed delivery is diagnostic only and the same key never sends twice", async () => {
+  let sends = 0;
+  let state: FlowDelivery["status"] = "reserved";
+  let version = 1;
+  const store = persistence({
+    async reserveNext() {
+      const value = candidate({
+        duplicate: state === "failed",
+        delivery: delivery({
+          version,
+          status: state,
+          error: state === "failed" ? "notifications.send failed" : null,
+        }),
+      });
+      return reserveResult(value);
+    },
+    async claimNotification() {
+      state = "dispatching";
+      version += 1;
+      return delivery({ version, status: state });
+    },
+    async finalizeNotification(_id, _version, result) {
+      state = "failed";
+      version += 1;
+      return delivery({
+        version,
+        status: state,
+        error: result.delivered ? null : result.error,
+      });
+    },
+  });
+  const service = new FlowService(store, () => async () => {
+    sends += 1;
+    throw new Error("provider failed");
+  }, () => NOW);
+
+  const first = await service.nextManual("same-failed-key");
+  const duplicate = await service.nextManual("same-failed-key");
+
+  assert.equal(sends, 1);
+  assert.equal(first.candidate?.delivery.status, "failed");
+  assert.equal(duplicate.candidate?.delivery.status, "failed");
+  assert.equal(duplicate.shouldNotify, false);
+  assert.equal(duplicate.candidate?.delivery.error, "notifications.send failed");
+  assert.deepEqual(duplicate.explanation, [
+    "selection:never-surfaced-first",
+    "delivery:failed",
+  ]);
+});
+
 test("notification failures are recorded without leaking provider error text", async () => {
   let finalization: unknown;
   const service = new FlowService(persistence({
@@ -383,6 +596,7 @@ test("notification failures are recorded without leaking provider error text", a
 
   const result = await service.nextManual("failed-request");
   assert.equal(result.candidate?.delivery.status, "failed");
+  assert.equal(result.explanation.includes("delivery:failed"), true);
   assert.deepEqual(finalization, {
     delivered: false,
     channels: null,
@@ -495,7 +709,7 @@ test("notification ledger projects only bounded official channel fields", async 
   assert.equal(JSON.stringify(finalization).includes("must-not-be-persisted"), false);
 });
 
-test("abort leaves a durable reservation for a later restart", async () => {
+test("abort before the pre-send claim never calls notifier or finalizer", async () => {
   let finalized = false;
   const controller = new AbortController();
   controller.abort();
@@ -625,11 +839,15 @@ test("delivery API DTO retains the projected channel ledger", async () => {
     status: "sent",
     notificationChannels: projected,
   });
+  const cursor = {
+    surfacedAt: new Date("2026-08-24T13:00:00.000Z"),
+    id: "delivery-z",
+  };
   const service = {
-    async listDeliveries(limit: number, before?: Date) {
+    async listDeliveries(limit: number, receivedCursor?: typeof cursor) {
       assert.equal(limit, 10);
-      assert.equal(before?.toISOString(), "2026-08-24T13:00:00.000Z");
-      return [stored];
+      assert.deepEqual(receivedCursor, cursor);
+      return { deliveries: [stored], nextCursor: null };
     },
   } as unknown as FlowService;
   const route = createFlowRoutes(() => service).find(
@@ -637,12 +855,12 @@ test("delivery API DTO retains the projected channel ledger", async () => {
   )!;
   const result = await route.handler({
     params: {},
-    query: { limit: "10", before: "2026-08-24T13:00:00.000Z" },
+    query: { limit: "10", cursor: encodeDeliveryCursor(cursor) },
     body: null,
     headers: {},
   }, new AbortController().signal);
 
-  assert.deepEqual(result, { deliveries: [stored] });
+  assert.deepEqual(result, { deliveries: [stored], nextCursor: null });
   assert.deepEqual(
     (result as { deliveries: FlowDelivery[] }).deliveries[0]?.notificationChannels,
     projected

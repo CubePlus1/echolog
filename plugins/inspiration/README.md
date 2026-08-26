@@ -33,11 +33,16 @@ Manual `next` and the scheduled job use the same deterministic selector:
 never-surfaced inspirations first, then oldest `lastSurfacedAt`, creation time,
 and id. Settings control lifecycle/tag/project filters, cooldown, quiet hours,
 daily cap, and default snooze. The delivery ledger and unique dedupe keys make
-repeated polling and daemon restarts observable and idempotent. Each delivery
-tracks its notification attempt count. A short reservation lease prevents an
-immediate duplicate poll from sending twice, while the scheduler claims the
-oldest stale `reserved` delivery before selecting a new candidate, including
-after restart into a different interval bucket.
+repeated polling and daemon restarts observable. Before calling the external
+notification service, a delivery crosses a durable `dispatching` boundary.
+Stale reserved/dispatching rows are terminally diagnosed as an unknown failure
+and are never sent again from the same ledger row; an explicit failure may be
+retried only through a distinct later bucket and delivery. Failed deliveries
+are diagnostic, not actionable; user outcomes apply only to sent deliveries.
+
+Delivery history is ordered by `(surfacedAt DESC, id DESC)` and uses an opaque
+composite cursor. All date-time filters and cursor timestamps must include `Z`
+or an explicit `\u00b1HH:mm` offset.
 
 The first version uses no AI or embeddings and stores no screenshots, prompt,
 reply, reasoning, or terminal content.
@@ -48,7 +53,7 @@ Flow resolves exactly one host service lazily:
 
 ```ts
 type PluginNotificationSend = (
-  request: { title: string; message: string },
+  request: { title: string; message: string; dedupeKey?: string },
   signal?: AbortSignal
 ) => Promise<{
   channels: Record<"mac" | "ntfy",
@@ -60,8 +65,10 @@ type PluginNotificationSend = (
 ```
 
 The service name is `notifications.send` and the manifest declares the matching
-`notifications:send` permission. The request contains only notification text;
-dedupe keys and inspiration/delivery ids remain private to the plugin ledger.
+`notifications:send` permission. The request contains notification text plus a
+stable `inspiration:`-namespaced delivery dedupe key. The private ledger remains
+authoritative because a compatible provider may ignore this additive hint;
+inspiration and raw delivery ids are not otherwise exposed.
 At least one `sent` channel marks a delivery sent. Otherwise it is failed, with
 the bounded per-channel result retained for diagnostics. Service resolution is
 lazy, so a missing or failed notification capability is recorded as a failed

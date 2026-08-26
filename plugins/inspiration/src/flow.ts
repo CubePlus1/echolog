@@ -5,10 +5,13 @@ import {
   type PluginNotificationResult,
 } from "@echolog/plugin-sdk";
 import type {
+  FlowDeliveryPage,
   FlowNotificationFinalization,
   FlowOutcomeResult,
   FlowReserveResult,
 } from "./flow-store.js";
+export { scheduledFlowDedupeKey } from "./flow-store.js";
+import type { DeliveryCursor } from "./pagination.js";
 import {
   sendFlowNotification,
   type NotificationsSendProvider,
@@ -23,14 +26,6 @@ import type {
 
 export const FLOW_JOB_POLL_MS = 60_000;
 export const FLOW_JOB_TIMEOUT_MS = 30_000;
-
-export function scheduledFlowDedupeKey(
-  now: Date,
-  intervalMinutes: number
-): string {
-  const intervalMs = intervalMinutes * 60_000;
-  return `scheduled:${intervalMinutes}:${Math.floor(now.getTime() / intervalMs)}`;
-}
 
 function manualFlowDedupeKey(idempotencyKey?: string): string {
   return `manual:${idempotencyKey ?? nanoid(20)}`;
@@ -63,21 +58,42 @@ function noDeliveryMessage(result: PluginNotificationResult): string {
     : "notifications.send failed on all enabled channels";
 }
 
+function explainFailedDelivery(result: FlowReserveResult): void {
+  const reason = "delivery:failed";
+  if (!result.explanation.includes(reason)) result.explanation.push(reason);
+  if (
+    result.candidate &&
+    result.candidate.explanation !== result.explanation &&
+    !result.candidate.explanation.includes(reason)
+  ) {
+    result.candidate.explanation.push(reason);
+  }
+}
+
 export interface FlowPersistence {
   getSettings(): Promise<FlowSettings>;
   updateSettings(input: FlowSettingsUpdate): Promise<FlowSettings | null>;
   reserveNext(
     source: "manual" | "scheduled",
-    dedupeKey: string,
+    dedupeKey: string | undefined,
     now?: Date,
     signal?: AbortSignal
   ): Promise<FlowReserveResult>;
+  claimNotification(
+    deliveryId: string,
+    expectedVersion: number,
+    now?: Date,
+    signal?: AbortSignal
+  ): Promise<FlowDelivery>;
   finalizeNotification(
     deliveryId: string,
     expectedVersion: number,
     result: FlowNotificationFinalization
   ): Promise<FlowDelivery>;
-  listDeliveries(limit?: number, before?: Date): Promise<FlowDelivery[]>;
+  listDeliveries(
+    limit?: number,
+    cursor?: DeliveryCursor
+  ): Promise<FlowDeliveryPage>;
   applyOutcome(
     deliveryId: string,
     expectedDeliveryVersion: number,
@@ -119,18 +135,12 @@ export class FlowService {
   async runScheduled(signal: AbortSignal): Promise<FlowReserveResult> {
     signal.throwIfAborted();
     const now = this.clock();
-    const settings = await this.store.getSettings();
-    return this.deliver(
-      "scheduled",
-      scheduledFlowDedupeKey(now, settings.intervalMinutes),
-      now,
-      signal
-    );
+    return this.deliver("scheduled", undefined, now, signal);
   }
 
   private async deliver(
     source: "manual" | "scheduled",
-    dedupeKey: string,
+    dedupeKey: string | undefined,
     now: Date,
     signal?: AbortSignal
   ): Promise<FlowReserveResult> {
@@ -143,10 +153,25 @@ export class FlowService {
     const candidate = reserved.candidate;
     if (!candidate) return reserved;
 
-    // The store atomically decides whether this caller owns the notification
-    // attempt. Existing/freshly in-flight duplicates remain observable without
-    // causing another send; stale reservations are claimed across restarts.
-    if (!reserved.shouldNotify) return reserved;
+    // The store atomically decides whether this caller owns a new reservation.
+    // Existing or stale pending rows remain observable without another send.
+    if (!reserved.shouldNotify) {
+      if (candidate.delivery.status === "failed") {
+        explainFailedDelivery(reserved);
+      }
+      return reserved;
+    }
+
+    // Cross an explicit durable boundary before invoking Core. A row that is
+    // left dispatching has an unknown external outcome and is never reclaimed
+    // for another send. The request carries a stable dedupe hint, but providers
+    // may ignore it, so the ledger still enforces same-row at-most-once.
+    candidate.delivery = await this.store.claimNotification(
+      candidate.delivery.id,
+      candidate.delivery.version,
+      this.clock(),
+      signal
+    );
 
     let notification;
     try {
@@ -158,9 +183,9 @@ export class FlowService {
       );
       signal?.throwIfAborted();
     } catch (error) {
-      // Preserve a reserved row on cancellation. The Host's rejecting timeout
-      // releases its non-reentry guard, and the next identical bucket can
-      // safely resume with the notification dedupe key after restart/timeout.
+      // Preserve dispatching on cancellation. The call may already have
+      // reached an external channel, so restart recovery must diagnose the row
+      // as unknown rather than invoke notifications.send again.
       if (signal?.aborted || isAbortError(error)) throw error;
       candidate.delivery = await this.store.finalizeNotification(
         candidate.delivery.id,
@@ -175,6 +200,7 @@ export class FlowService {
           at: this.clock(),
         }
       );
+      explainFailedDelivery(reserved);
       return reserved;
     }
 
@@ -194,11 +220,14 @@ export class FlowService {
             at: this.clock(),
           }
     );
+    if (candidate.delivery.status === "failed") {
+      explainFailedDelivery(reserved);
+    }
     return reserved;
   }
 
-  listDeliveries(limit?: number, before?: Date) {
-    return this.store.listDeliveries(limit, before);
+  listDeliveries(limit?: number, cursor?: DeliveryCursor) {
+    return this.store.listDeliveries(limit, cursor);
   }
 
   async applyOutcome(

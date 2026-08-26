@@ -41,9 +41,22 @@ inspiration lifecycle.
 
 - [x] Manifest declares `notifications:send`; missing permission is denied by a
   real PluginHost with `PLUGIN_DEPENDENCY_MISSING` before service invocation.
-- [x] The SDK `PluginNotificationSend` function receives exactly `{title,
-  message}` and never dedupe/entity metadata.
+- [x] The SDK `PluginNotificationSend` function receives `{title,message}` plus
+  an optional stable `inspiration:`-namespaced delivery dedupe key; old callers
+  and providers remain compatible.
 - [x] At least one `sent` channel finalizes delivery as sent; all-disabled or no
   sent channel finalizes it as failed while retaining safe per-channel status.
 - [x] Lazy service absence/failure remains ledgered and does not prevent Capture
   or Core startup.
+
+## PR #36 state and race acceptance
+
+- [x] A delivery transitions to a pre-send state before calling Core; stale
+  pre-send/in-flight rows are failed as unknown without another send.
+- [x] Failed deliveries from either source are terminal diagnostics and reject
+  outcomes; only sent deliveries are actionable.
+- [x] Duplicate calls for one delivery use one notification key without another
+  send, while a distinct retry delivery uses a different namespaced key.
+- [x] Scheduled key generation and selection share one locked FlowSettings
+  version/interval snapshot.
+- [x] Delivery page boundaries include surfaced timestamp and id.

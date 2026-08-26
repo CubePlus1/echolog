@@ -128,17 +128,21 @@ const result = await sendNotification(
   {
     title: "Reminder",
     message: "Stand-up starts in five minutes",
+    dedupeKey: "my-plugin:delivery-01",
   },
   signal
 );
 ```
 
-The request contains only `title` and `message`; the optional second argument
-is the caller's `AbortSignal`. Caller cancellation rejects the service call with
-an error named `AbortError`; it MUST NOT resolve a channel result, because a
-Host timeout or shutdown cannot know whether an in-flight transport accepted
-the notification. Plugins MUST leave durable delivery state retryable when they
-receive this cancellation.
+The request requires `title` and `message` and may include an opaque,
+caller-namespaced `dedupeKey`. Existing providers may ignore this additive
+field, so plugins must still make their own ledger transitions safe; when it is
+provided it must remain stable for one logical delivery. The optional second
+argument is the caller's `AbortSignal`. Caller cancellation rejects the service
+call with an error named `AbortError`; it MUST NOT resolve a channel result,
+because a Host timeout or shutdown cannot know whether an in-flight transport
+accepted the notification. Plugins MUST leave durable delivery state retryable
+when they receive this cancellation.
 
 Core-owned transport timeouts and operational channel errors are different:
 they resolve the normal result with that channel marked `failed`. Without caller
@@ -264,13 +268,14 @@ table relationship.
 
 Flow resolves the named service `notifications.send` lazily through
 `PluginContext.service()`, using the SDK-exported `PluginNotificationSend`
-function. It sends only `{title, message}`. Inspiration-owned dedupe keys,
-inspiration IDs, and delivery IDs never cross the Core service boundary. The
-plugin persists the bounded `mac`/`ntfy` result projection in its private
-delivery ledger and treats the delivery as sent only when at least one channel
-reports `sent`. The notification service is Host-owned; the plugin MUST NOT
-import or copy the Core notifier. Missing/failing delivery is recorded while
-capture remains available.
+function. It sends `{title,message}` plus a stable, namespaced delivery
+`dedupeKey`; inspiration and delivery IDs otherwise remain private to the
+plugin ledger. The ledger remains authoritative because providers may ignore
+the additive key. The plugin persists the bounded `mac`/`ntfy` result
+projection in its private delivery ledger and treats the delivery as sent only
+when at least one channel reports `sent`. The notification service is
+Host-owned; the plugin MUST NOT import or copy the Core notifier.
+Missing/failing delivery is recorded while capture remains available.
 
 ## Bundled Schedule plugin
 

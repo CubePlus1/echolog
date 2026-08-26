@@ -41,7 +41,12 @@ export interface InspirationListFilter {
 }
 
 export type FlowSource = "manual" | "scheduled";
-export type FlowDeliveryStatus = "reserved" | "sent" | "failed" | "acted";
+export type FlowDeliveryStatus =
+  | "reserved"
+  | "dispatching"
+  | "sent"
+  | "failed"
+  | "acted";
 export type FlowOutcome =
   | "viewed"
   | "continued"

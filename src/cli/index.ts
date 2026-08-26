@@ -1,5 +1,6 @@
 import { execSync } from "child_process";
 import { Command } from "commander";
+import { parseOffsetAwareIso } from "@echolog/plugin-inspiration/http-validation";
 import { ApiError, ConnectionError, api, post, patch, del } from "./api.js";
 import { runStdioMcpServer } from "../mcp/index.js";
 
@@ -1254,6 +1255,15 @@ function inspirationMinute(value: string, option: string): number {
   return hour * 60 + minute;
 }
 
+function inspirationTimestamp(value: string, option: string): string {
+  if (!parseOffsetAwareIso(value)) {
+    throw new CliUsageError(
+      `${option} 必须是带 Z 或 ±HH:mm 时区偏移的 ISO 8601 时间`
+    );
+  }
+  return value;
+}
+
 function inspirationItems(result: any): any[] {
   if (Array.isArray(result)) return result;
   if (Array.isArray(result?.items)) return result.items;
@@ -1367,8 +1377,18 @@ withJson(
     }
     if (opts.includeArchived) params.set("includeArchived", "true");
     params.set("limit", String(inspirationLimit(opts.limit, "--limit")));
-    if (opts.createdBefore) params.set("createdBefore", opts.createdBefore);
-    if (opts.createdAfter) params.set("createdAfter", opts.createdAfter);
+    if (opts.createdBefore) {
+      params.set(
+        "createdBefore",
+        inspirationTimestamp(opts.createdBefore, "--created-before")
+      );
+    }
+    if (opts.createdAfter) {
+      params.set(
+        "createdAfter",
+        inspirationTimestamp(opts.createdAfter, "--created-after")
+      );
+    }
     if (opts.cursor) params.set("cursor", opts.cursor);
     const result = await api(`${inspirationApiPrefix}/inspirations?${params}`);
     printSuccess(thisCommand, result, () => printInspirations(result));
@@ -1637,17 +1657,17 @@ withJson(
     .command("deliveries")
     .description("查看 Flow 投递 ledger；不包含灵感正文。")
     .option("--limit <n>", "返回数量，范围 1–100", "20")
-    .option("--before <iso>", "surfacedAt 游标，ISO 8601 且包含时区")
+    .option("--cursor <cursor>", "上一页响应的 opaque nextCursor；原样传回服务端")
     .addHelpText(
       "after",
-      `\n示例:\n  $ el inspiration flow deliveries --limit 20\n  $ el inspiration flow deliveries --before 2026-08-24T12:00:00+08:00 --json\n`
+      `\n示例:\n  $ el inspiration flow deliveries --limit 20\n  $ el inspiration flow deliveries --cursor <nextCursor> --json\n`
     )
 ).action(
-  action(async (thisCommand, opts: { limit: string; before?: string }) => {
+  action(async (thisCommand, opts: { limit: string; cursor?: string }) => {
     const params = new URLSearchParams({
       limit: String(inspirationLimit(opts.limit, "--limit")),
     });
-    if (opts.before) params.set("before", opts.before);
+    if (opts.cursor) params.set("cursor", opts.cursor);
     const result = await api(`${inspirationApiPrefix}/flow/deliveries?${params}`);
     printSuccess(thisCommand, result, () => {
       const deliveries = Array.isArray((result as any).deliveries)

@@ -64,9 +64,50 @@ branch as `8484b48`. It exports `PluginNotificationSend` and
 service, and gates it with manifest permission `notifications:send`.
 
 Inspiration must not wrap or redefine that service. It lazily resolves the SDK
-function and calls it with only `{title, message}`. Delivery `dedupeKey`,
-`inspirationId`, and `deliveryId` never cross the Core service boundary. A new
-append-only plugin migration stores the exact bounded per-channel result
-projection in the delivery ledger. One or more `sent` channels means delivered;
-all-disabled/all-failed/mixed-disabled-failed means not delivered. Thrown service
-errors remain generic in the ledger so notification content cannot be reflected.
+function and calls it with notification text plus the additive optional
+`dedupeKey` `inspiration:${delivery.dedupeKey}`. The key is stable for a ledger
+row and namespaced across plugins; the private ledger remains authoritative
+because an existing provider may ignore the hint. Inspiration and raw delivery
+IDs do not otherwise cross the service boundary. A new append-only plugin
+migration stores the exact bounded per-channel result projection in the
+delivery ledger. One or more `sent` channels means delivered; all-disabled,
+all-failed, or mixed-disabled-failed means not delivered. Thrown service errors
+remain generic in the ledger so notification content cannot be reflected.
+
+## PR #36 reliability contracts
+
+Delivery dispatch has an explicit pre-send transition. Once a row has crossed
+that boundary, timeout/crash recovery may observe or terminally mark an unknown
+outcome but MUST NOT call `notifications.send` again for that row. This favors
+at-most-once delivery because the official Core request has no dedupe key. A new
+later bucket may select the inspiration again only through normal policy.
+
+Scheduled reservation owns its dedupe key: it locks the singleton settings row,
+then derives a key containing the locked version and interval before selection.
+No caller computes a scheduled key from a pre-transaction settings read.
+
+Delivery pagination order is `(surfaced_at DESC, id DESC)`. The opaque cursor
+encodes both fields; the next-page predicate is `surfaced_at < t OR
+(surfaced_at = t AND id < id)`. A pure package subpath validator accepts only
+offset-aware ISO strings (`Z` or `±HH:mm`) and is shared by HTTP and CLI without
+importing persistence/business modules.
+
+The Web Host passes each ready contribution `refresh` and `root`, while its
+five-second `loadLive` merge does not render plugin faces. Inspiration therefore
+keeps separate presented signatures for the Inbox list and Flow ledger. A
+changed signature requests the existing Host refresh once; an unchanged poll
+does nothing. Refresh is deferred while a page input is active so typed values
+and optimistic versions remain intact. Lifecycle/request generations discard
+late responses after unmount and older overlapping live requests. A single
+in-flight refresh gate serializes later polls behind the current Host rebuild,
+so the same changed snapshot cannot launch concurrent `refreshBook()` calls.
+
+## Parallel file ownership
+
+- Store/Flow agent: `flow-store.ts`, `flow.ts`, `types.ts`, `schema.ts`,
+  `migrations.ts`, `tests/inspiration-flow.test.ts`.
+- HTTP/pagination agent: `http-validation.ts`, `pagination.ts`, capture/Flow
+  routes, package export/build metadata, root Inspiration CLI block, Web module,
+  and client tests.
+- PostgreSQL agent: `tests/inspiration.integration.ts` only.
+- Main: Trellis/docs, cross-agent interface resolution, full validation/commit.

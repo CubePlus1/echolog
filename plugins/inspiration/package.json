@@ -9,6 +9,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./http-validation": {
+      "types": "./dist/http-validation.d.ts",
+      "import": "./dist/http-validation.js"
     }
   },
   "files": [

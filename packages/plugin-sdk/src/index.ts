@@ -113,6 +113,12 @@ export type PluginNotificationChannel = "mac" | "ntfy";
 export interface PluginNotificationRequest {
   title: string;
   message: string;
+  /**
+   * Optional caller-scoped idempotency key. Existing notification providers
+   * may ignore it; callers that set it must keep it stable for one logical
+   * delivery and namespace it to avoid collisions with other plugins.
+   */
+  dedupeKey?: string;
 }
 
 export type PluginNotificationChannelResult =

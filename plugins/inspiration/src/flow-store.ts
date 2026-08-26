@@ -1,11 +1,8 @@
 import { nanoid } from "nanoid";
 import postgres from "postgres";
 import type { PluginNotificationResult } from "@echolog/plugin-sdk";
-import {
-  isQuietMinute,
-  minuteOfLocalDay,
-  selectFlowCandidate,
-} from "./selector.js";
+import { selectFlowCandidate } from "./selector.js";
+import type { DeliveryCursor } from "./pagination.js";
 import type {
   DailyInspirationSummary,
   FlowCandidate,
@@ -96,6 +93,11 @@ export interface FlowOutcomeResult {
   inspiration: Inspiration;
 }
 
+export interface FlowDeliveryPage {
+  deliveries: FlowDelivery[];
+  nextCursor: DeliveryCursor | null;
+}
+
 export type FlowNotificationFinalization =
   | {
       delivered: true;
@@ -173,6 +175,25 @@ function mapDelivery(row: DeliveryRow): FlowDelivery {
 }
 
 export const FLOW_RESERVATION_LEASE_MS = 30_000;
+export const FLOW_UNKNOWN_DISPATCH_ERROR =
+  "notification outcome unknown after interrupted dispatch";
+
+export function scheduledFlowDedupeKey(
+  now: Date,
+  settingsVersion: number,
+  intervalMinutes: number
+): string {
+  const intervalMs = intervalMinutes * 60_000;
+  return `scheduled:${settingsVersion}:${intervalMinutes}:${Math.floor(
+    now.getTime() / intervalMs
+  )}`;
+}
+
+export function canApplyFlowOutcome(
+  delivery: Pick<FlowDelivery, "status">
+): boolean {
+  return delivery.status === "sent";
+}
 
 function startOfLocalDay(value: Date): Date {
   return new Date(
@@ -236,21 +257,44 @@ export class FlowStore {
 
   async reserveNext(
     source: FlowSource,
-    dedupeKey: string,
+    dedupeKey: string | undefined,
     now = new Date(),
     signal?: AbortSignal
   ): Promise<FlowReserveResult> {
     signal?.throwIfAborted();
     return this.sql.begin(async (transaction) => {
+      // Scheduled identity is part of the settings snapshot. Locking first
+      // ensures a concurrent interval update either wholly precedes or wholly
+      // follows both key generation and candidate selection.
+      const settingsRows = await transaction<SettingsRow[]>`
+        SELECT * FROM inspiration_flow_settings WHERE id = 'default' FOR UPDATE
+      `;
+      signal?.throwIfAborted();
+      const settingsRow = settingsRows[0];
+      if (!settingsRow) throw new Error("inspiration Flow settings are unavailable");
+      const settings = mapSettings(settingsRow);
+      const resolvedDedupeKey = source === "scheduled"
+        ? scheduledFlowDedupeKey(
+            now,
+            settings.version,
+            settings.intervalMinutes
+          )
+        : dedupeKey;
+      if (!resolvedDedupeKey) {
+        throw new Error("manual Flow reservation requires a dedupe key");
+      }
+
       // The advisory lock turns a concurrent unique-key race into a normal
       // idempotent lookup, without leaving the losing transaction aborted.
       await transaction`
-        SELECT pg_advisory_xact_lock(hashtextextended(${dedupeKey}, 0))
+        SELECT pg_advisory_xact_lock(hashtextextended(${resolvedDedupeKey}, 0))
       `;
       signal?.throwIfAborted();
 
       const duplicateRows = await transaction<DeliveryRow[]>`
-        SELECT * FROM inspiration_flow_deliveries WHERE dedupe_key = ${dedupeKey}
+        SELECT * FROM inspiration_flow_deliveries
+        WHERE dedupe_key = ${resolvedDedupeKey}
+        FOR UPDATE
       `;
       signal?.throwIfAborted();
 
@@ -281,85 +325,92 @@ export class FlowStore {
       };
 
       const duplicate = duplicateRows[0];
-      if (duplicate && duplicate.status !== "reserved") {
+      const retryCutoff = new Date(now.getTime() - FLOW_RESERVATION_LEASE_MS);
+      const isPending = (delivery: DeliveryRow): boolean =>
+        delivery.status === "reserved" || delivery.status === "dispatching";
+      const isStale = (delivery: DeliveryRow): boolean =>
+        date(delivery.updated_at).getTime() <= retryCutoff.getTime();
+      const failUnknown = async (delivery: DeliveryRow): Promise<DeliveryRow> => {
+        signal?.throwIfAborted();
+        const failedRows = await transaction<DeliveryRow[]>`
+          UPDATE inspiration_flow_deliveries
+          SET status = 'failed',
+              notification_channel = NULL,
+              notification_channels = NULL,
+              error = ${FLOW_UNKNOWN_DISPATCH_ERROR},
+              version = version + 1,
+              updated_at = ${now}
+          WHERE id = ${delivery.id}
+            AND version = ${delivery.version}
+            AND status IN ('reserved', 'dispatching')
+          RETURNING *
+        `;
+        signal?.throwIfAborted();
+        const failed = failedRows[0];
+        if (!failed) {
+          throw new FlowStoreError(
+            "VERSION_CONFLICT",
+            `delivery ${delivery.id} changed during interrupted dispatch recovery`,
+            409,
+            delivery.version
+          );
+        }
+        return failed;
+      };
+
+      if (duplicate) {
+        if (!isPending(duplicate)) {
+          return resultForDelivery(
+            duplicate,
+            ["dedupe:existing-delivery"],
+            false
+          );
+        }
+        if (!isStale(duplicate)) {
+          return resultForDelivery(
+            duplicate,
+            ["dedupe:delivery-in-flight"],
+            false
+          );
+        }
+        const failed = await failUnknown(duplicate);
         return resultForDelivery(
-          duplicate,
-          ["dedupe:existing-delivery"],
+          failed,
+          ["recovery:interrupted-dispatch-unknown"],
           false
         );
       }
 
-      const settingsRows = await transaction<SettingsRow[]>`
-        SELECT * FROM inspiration_flow_settings WHERE id = 'default' FOR UPDATE
-      `;
-      signal?.throwIfAborted();
-      const settingsRow = settingsRows[0];
-      if (!settingsRow) throw new Error("inspiration Flow settings are unavailable");
-      const settings = mapSettings(settingsRow);
-
-      let pending = duplicate;
-      if (!pending && source === "scheduled") {
+      if (source === "scheduled") {
         const pendingRows = await transaction<DeliveryRow[]>`
           SELECT * FROM inspiration_flow_deliveries
-          WHERE source = 'scheduled' AND status = 'reserved'
+          WHERE source = 'scheduled'
+            AND status IN ('reserved', 'dispatching')
           ORDER BY created_at, id
           LIMIT 1
           FOR UPDATE
         `;
         signal?.throwIfAborted();
-        pending = pendingRows[0];
-      }
-
-      if (pending) {
-        if (source === "scheduled") {
-          const gateReasons = [
-            ...(!settings.enabled ? ["policy:disabled"] : []),
-            ...(isQuietMinute(
-              minuteOfLocalDay(now),
-              settings.quietStartMinute,
-              settings.quietEndMinute
-            ) ? ["policy:quiet-hours"] : []),
-          ];
-          if (gateReasons.length > 0) {
-            return resultForDelivery(pending, gateReasons, false);
-          }
-        }
-
-        const retryCutoff = new Date(now.getTime() - FLOW_RESERVATION_LEASE_MS);
-        if (date(pending.updated_at).getTime() > retryCutoff.getTime()) {
+        const pending = pendingRows[0];
+        if (pending && !isStale(pending)) {
           return resultForDelivery(
             pending,
             ["dedupe:delivery-in-flight"],
             false
           );
         }
-
-        signal?.throwIfAborted();
-        const claimedRows = await transaction<DeliveryRow[]>`
-          UPDATE inspiration_flow_deliveries
-          SET attempts = attempts + 1,
-              version = version + 1,
-              updated_at = ${now}
-          WHERE id = ${pending.id}
-            AND version = ${pending.version}
-            AND status = 'reserved'
-          RETURNING *
-        `;
-        signal?.throwIfAborted();
-        const claimed = claimedRows[0];
-        if (!claimed) {
-          throw new FlowStoreError(
-            "VERSION_CONFLICT",
-            `delivery ${pending.id} changed during recovery`,
-            409,
-            pending.version
+        if (pending) {
+          // This row may already have crossed the external-send boundary.
+          // Terminalize it and stop this poll. A later poll may create a new
+          // bucket delivery through normal policy, but recovery itself never
+          // cascades into a second external send.
+          const failed = await failUnknown(pending);
+          return resultForDelivery(
+            failed,
+            ["recovery:interrupted-dispatch-unknown"],
+            false
           );
         }
-        return resultForDelivery(
-          claimed,
-          ["recovery:pending-delivery"],
-          true
-        );
       }
 
       // Lock the complete local candidate set. This personal-data plugin is
@@ -444,7 +495,7 @@ export class FlowStore {
           id, inspiration_id, source, dedupe_key, status, surfaced_at,
           created_at, updated_at
         ) VALUES (
-          ${nanoid(12)}, ${current.id}, ${source}, ${dedupeKey}, 'reserved',
+          ${nanoid(12)}, ${current.id}, ${source}, ${resolvedDedupeKey}, 'reserved',
           ${now}, ${now}, ${now}
         )
         RETURNING *
@@ -465,6 +516,48 @@ export class FlowStore {
     });
   }
 
+  async claimNotification(
+    deliveryId: string,
+    expectedVersion: number,
+    now = new Date(),
+    signal?: AbortSignal
+  ): Promise<FlowDelivery> {
+    signal?.throwIfAborted();
+    return this.sql.begin(async (transaction) => {
+      const rows = await transaction<DeliveryRow[]>`
+        UPDATE inspiration_flow_deliveries
+        SET status = 'dispatching',
+            version = version + 1,
+            updated_at = ${now}
+        WHERE id = ${deliveryId}
+          AND version = ${expectedVersion}
+          AND status = 'reserved'
+        RETURNING *
+      `;
+      signal?.throwIfAborted();
+      if (rows[0]) return mapDelivery(rows[0]);
+
+      const currentRows = await transaction<DeliveryRow[]>`
+        SELECT * FROM inspiration_flow_deliveries WHERE id = ${deliveryId}
+      `;
+      signal?.throwIfAborted();
+      const current = currentRows[0];
+      if (!current) {
+        throw new FlowStoreError(
+          "NOT_FOUND",
+          `delivery ${deliveryId} not found`,
+          404
+        );
+      }
+      throw new FlowStoreError(
+        current.version === expectedVersion ? "INVALID_STATE" : "VERSION_CONFLICT",
+        `delivery ${deliveryId} cannot begin notification dispatch from ${current.status}`,
+        409,
+        current.version
+      );
+    });
+  }
+
   async finalizeNotification(
     deliveryId: string,
     expectedVersion: number,
@@ -479,7 +572,7 @@ export class FlowStore {
               error = NULL,
               version = version + 1, updated_at = ${result.at}
           WHERE id = ${deliveryId} AND version = ${expectedVersion}
-            AND status = 'reserved'
+            AND status = 'dispatching'
           RETURNING *
         `
       : await this.sql<DeliveryRow[]>`
@@ -492,7 +585,7 @@ export class FlowStore {
               error = ${result.error},
               version = version + 1, updated_at = ${result.at}
           WHERE id = ${deliveryId} AND version = ${expectedVersion}
-            AND status = 'reserved'
+            AND status = 'dispatching'
           RETURNING *
         `;
     if (rows[0]) return mapDelivery(rows[0]);
@@ -514,21 +607,31 @@ export class FlowStore {
 
   async listDeliveries(
     limit = 50,
-    before?: Date
-  ): Promise<FlowDelivery[]> {
-    const rows = before
+    cursor?: DeliveryCursor
+  ): Promise<FlowDeliveryPage> {
+    const queryLimit = limit + 1;
+    const rows = cursor
       ? await this.sql<DeliveryRow[]>`
           SELECT * FROM inspiration_flow_deliveries
-          WHERE surfaced_at < ${before}
+          WHERE (surfaced_at < ${cursor.surfacedAt})
+             OR (surfaced_at = ${cursor.surfacedAt} AND id < ${cursor.id})
           ORDER BY surfaced_at DESC, id DESC
-          LIMIT ${limit}
+          LIMIT ${queryLimit}
         `
       : await this.sql<DeliveryRow[]>`
           SELECT * FROM inspiration_flow_deliveries
           ORDER BY surfaced_at DESC, id DESC
-          LIMIT ${limit}
+          LIMIT ${queryLimit}
         `;
-    return rows.map(mapDelivery);
+    const hasMore = rows.length > limit;
+    const deliveries = rows.slice(0, limit).map(mapDelivery);
+    const last = hasMore ? deliveries.at(-1) : undefined;
+    return {
+      deliveries,
+      nextCursor: last
+        ? { surfacedAt: last.surfacedAt, id: last.id }
+        : null,
+    };
   }
 
   async applyOutcome(
@@ -578,10 +681,10 @@ export class FlowStore {
           inspiration.version
         );
       }
-      if (delivery.status !== "sent") {
+      if (!canApplyFlowOutcome(delivery)) {
         throw new FlowStoreError(
           "INVALID_STATE",
-          `delivery ${deliveryId} is ${delivery.status}, not sent`,
+          `delivery ${deliveryId} is not actionable from ${delivery.status}/${delivery.source}`,
           409,
           delivery.version,
           inspiration.version

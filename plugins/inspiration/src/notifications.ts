@@ -59,10 +59,13 @@ export function sendFlowNotification(
   signal?: AbortSignal
 ): Promise<PluginNotificationResult> {
   signal?.throwIfAborted();
+  // The ledger key is stable and unique per delivery. Prefix it to keep Core's
+  // transport-level dedupe namespace independent from other bundled plugins.
   return provider()(
     {
       title: "Inspiration",
       message: candidate.inspiration.content,
+      dedupeKey: `inspiration:${candidate.delivery.dedupeKey}`,
     },
     signal
   ).then(projectNotificationResult);

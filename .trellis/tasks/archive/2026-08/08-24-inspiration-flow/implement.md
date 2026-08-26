@@ -16,5 +16,15 @@
 - [x] Update manifest, units/mocks, Web/CLI DTO fixtures, PostgreSQL integration,
   and real PluginHost contract tests.
 
+## PR #36 reliability repair
+
+- [x] Add pre-send at-most-once state and terminal stale recovery.
+- [x] Move scheduled key generation into the locked settings transaction.
+- [x] Make all failed deliveries terminal/non-actionable and preserve explicit
+  diagnostics plus distinct-delivery retry behavior.
+- [x] Pass one stable namespaced notification key per delivery and test duplicate
+  and retry identities.
+- [x] Replace delivery time-only pagination with composite cursor contract.
+
 Validation: `pnpm --filter @echolog/plugin-inspiration typecheck` and
 `pnpm exec tsx --test tests/inspiration-flow.test.ts`.

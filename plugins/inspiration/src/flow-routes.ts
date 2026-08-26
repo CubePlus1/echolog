@@ -5,6 +5,11 @@ import type {
 } from "@echolog/plugin-sdk";
 import { FlowStoreError } from "./flow-store.js";
 import type { FlowService } from "./flow.js";
+import {
+  decodeDeliveryCursor,
+  encodeDeliveryCursor,
+} from "./pagination.js";
+import type { DeliveryCursor } from "./pagination.js";
 import type {
   FlowOutcome,
   FlowOutcomeInput,
@@ -339,23 +344,30 @@ export function createFlowRoutes(service: () => FlowService): PluginRoute[] {
           return response(400, { error: "query must be an object" });
         }
         const value = query as Record<string, unknown>;
-        if (!hasExactKeys(value, ["limit", "before"])) {
+        if (!hasExactKeys(value, ["limit", "cursor"])) {
           return response(400, { error: "deliveries query contains unknown fields" });
         }
         const rawLimit = value.limit === undefined ? 50 : Number(value.limit);
         const limit = integer(rawLimit, "limit", 1, 100);
         if (!limit.ok) return response(400, { error: limit.error });
-        let before: Date | undefined;
-        if (value.before !== undefined) {
-          if (typeof value.before !== "string") {
-            return response(400, { error: "before must be an ISO 8601 timestamp" });
+        let cursor: DeliveryCursor | undefined;
+        if (value.cursor !== undefined) {
+          if (typeof value.cursor !== "string") {
+            return response(400, { error: "cursor must be specified once" });
           }
-          before = new Date(value.before);
-          if (!value.before.includes("T") || Number.isNaN(before.getTime())) {
-            return response(400, { error: "before must be an ISO 8601 timestamp" });
+          const decoded = decodeDeliveryCursor(value.cursor);
+          if (!decoded) {
+            return response(400, { error: "cursor is invalid" });
           }
+          cursor = decoded;
         }
-        return { deliveries: await service().listDeliveries(limit.value, before) };
+        const page = await service().listDeliveries(limit.value, cursor);
+        return {
+          deliveries: page.deliveries,
+          nextCursor: page.nextCursor
+            ? encodeDeliveryCursor(page.nextCursor)
+            : null,
+        };
       },
     },
     {

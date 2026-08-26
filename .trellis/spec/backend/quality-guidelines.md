@@ -45,8 +45,9 @@
 
 ### 持久化插件投递任务
 
-- 时间 bucket 的唯一 dedupe key 只能防当前 bucket 重复，不能单独承担崩溃恢复：daemon 可能在写入 `reserved` 后、完成外部投递前退出，并在下一 bucket 才重启。创建新投递前必须先认领最旧的 stale `reserved` 行，保留原 dedupe key，并记录 attempt 次数。
-- 恢复认领要在事务中使用短租约、版本/状态前置条件和 `.returning()`；租约内的重复轮询只观察既有投递，不再次调用外部服务。外部服务仍须消费同一个 dedupe key，兜住超出租约的非协作超时。
+- 时间 bucket 的唯一 dedupe key 只能防当前 bucket 重复，不能单独承担崩溃恢复：daemon 可能在外部投递已经成功、数据库 finalize 前退出。没有强一致外部幂等保证时，调用前必须先把 ledger 原子迁移到显式 in-flight 状态；stale `reserved`/in-flight 行只能终结为 unknown/failed 并停止本轮，绝不能从同一行再次真实发送。
+- 明确失败可以按产品规则在新 bucket、新 delivery 上重试；原 delivery 保留失败诊断。若外部服务支持可选 dedupe hint，使用稳定、带插件命名空间的 delivery key，但仍不能假设 provider 一定执行幂等，插件 ledger 必须独立保证同一行 at-most-once。
+- in-flight/终结迁移要使用事务、版本/状态前置条件和 `.returning()`；重复轮询只能观察或终结既有行。分页 ledger 时使用与排序完全一致的复合 cursor，避免相同时间戳漏行。
 - `AbortSignal` 检查不能只放在事务入口。每个可能等待行锁/ advisory lock 的语句返回后、以及任何持久状态变更前后都要再次检查，使 Host 超时释放 non-reentry 后，迟到的事务能回滚而不是继续写入。
 
 ### 结构化诊断端点

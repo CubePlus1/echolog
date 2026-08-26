@@ -2,3 +2,4 @@
 {"file":".trellis/spec/backend/quality-guidelines.md","reason":"Review job timeout/non-reentry and failure recovery"}
 {"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Review Flow state/lifecycle separation"}
 {"file": ".trellis/spec/backend/plugin-api-guidelines.md", "reason": "Review notification permission, channel outcomes, and privacy"}
+{"file": ".trellis/tasks/08-24-inspiration-plugin/research/pr36-review.md", "reason": "Check at-most-once and settings race"}
