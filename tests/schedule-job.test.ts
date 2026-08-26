@@ -119,6 +119,10 @@ async function waitFor(
 }
 
 class ObservedReminderStore implements ReminderStore {
+  constructor(
+    private readonly claimPending?: Deferred<ReminderDelivery | null>
+  ) {}
+
   readonly item = scheduleItem();
   readonly reminderAt = new Date(this.item.nextReminderAt!);
   readonly deliveries = new Map<string, ReminderDelivery>();
@@ -131,6 +135,8 @@ class ObservedReminderStore implements ReminderStore {
   readonly terminalCounters = { sent: 0, failed: 0 };
   dueCalls = 0;
   claimCalls = 0;
+  readonly claimSignals: AbortSignal[] = [];
+  private claimPendingUsed = false;
 
   async dueReminders(): Promise<DueReminder[]> {
     this.dueCalls++;
@@ -139,9 +145,18 @@ class ObservedReminderStore implements ReminderStore {
 
   async claimReminder(
     itemId: string,
-    reminderAt: Date
+    reminderAt: Date,
+    _attemptedAt?: Date,
+    signal?: AbortSignal
   ): Promise<ReminderDelivery | null> {
+    signal?.throwIfAborted();
     this.claimCalls++;
+    if (signal) this.claimSignals.push(signal);
+    if (this.claimPending) {
+      if (this.claimPendingUsed) return null;
+      this.claimPendingUsed = true;
+      return this.claimPending.promise;
+    }
     const dedupeKey = reminderDedupeKey(itemId, reminderAt);
     if (this.deliveries.has(dedupeKey)) return null;
     const delivery: ReminderDelivery = {
@@ -195,9 +210,13 @@ interface JobHarness {
 function jobHarness(
   id: string,
   send: NotificationSend,
-  options: { intervalMs: number; timeoutMs: number }
+  options: {
+    intervalMs: number;
+    timeoutMs: number;
+    claimPending?: Deferred<ReminderDelivery | null>;
+  }
 ): JobHarness {
-  const store = new ObservedReminderStore();
+  const store = new ObservedReminderStore(options.claimPending);
   let runs = 0;
   const completedRunIds: number[] = [];
   const summaries: Array<{ runId: number; result: ReminderPollResult }> = [];
@@ -249,6 +268,45 @@ function assertRetainedClaim(store: ObservedReminderStore): void {
   assert.deepEqual(store.terminalCounters, { sent: 0, failed: 0 });
   assert.equal(store.item.status, "scheduled");
   assert.equal(store.item.version, 1);
+}
+
+function assertNoClaim(store: ObservedReminderStore): void {
+  assert.deepEqual(store.deliveries, new Map());
+  assert.deepEqual(store.finishCalls, []);
+  assert.deepEqual(store.terminalCounters, { sent: 0, failed: 0 });
+  assert.equal(store.item.status, "scheduled");
+  assert.equal(store.item.version, 1);
+}
+
+function claimDelivery(store: ObservedReminderStore): ReminderDelivery {
+  return {
+    id: "late-claim-host",
+    dedupeKey: reminderDedupeKey(store.item.id, store.reminderAt),
+    itemId: store.item.id,
+    reminderAt: store.reminderAt.toISOString(),
+    attemptedAt: new Date().toISOString(),
+    completedAt: null,
+    status: "claimed",
+    channelResults: null,
+    failure: null,
+  };
+}
+
+function captureUnhandledRejections(): {
+  reasons: unknown[];
+  stop(): void;
+} {
+  const reasons: unknown[] = [];
+  const onUnhandledRejection = (reason: unknown) => {
+    reasons.push(reason);
+  };
+  process.on("unhandledRejection", onUnhandledRejection);
+  return {
+    reasons,
+    stop() {
+      process.off("unhandledRejection", onUnhandledRejection);
+    },
+  };
 }
 
 const timeoutSettlements: Array<{
@@ -379,6 +437,177 @@ for (const [index, scenario] of stopSettlements.entries()) {
     }
   });
 }
+
+test("PluginHost timeout isolates a late claim from Schedule persistence", {
+  timeout: 3_000,
+}, async () => {
+  const pendingClaim = deferred<ReminderDelivery | null>();
+  let sendCalls = 0;
+  const harness = jobHarness(
+    "schedule-claim-timeout",
+    async () => {
+      sendCalls++;
+      return sentResult;
+    },
+    { intervalMs: 8, timeoutMs: 20, claimPending: pendingClaim }
+  );
+
+  try {
+    await harness.host.initialize();
+    await waitFor(
+      () => harness.store.claimCalls === 1 && harness.store.claimSignals.length === 1,
+      "the first Host run did not reach claim"
+    );
+    await waitFor(
+      () =>
+        harness.host.list()[0]?.error?.code === "PLUGIN_TIMEOUT" &&
+        harness.getRuns() >= 2,
+      "Host did not timeout and release the blocked claim"
+    );
+    assert.equal(harness.store.claimSignals[0]?.aborted, true);
+    assert.equal(sendCalls, 0);
+    assertNoClaim(harness.store);
+
+    pendingClaim.resolve(claimDelivery(harness.store));
+    await waitFor(
+      () => harness.getCompletedRunIds().includes(1),
+      "the late claim continuation did not settle"
+    );
+    assert.equal(sendCalls, 0);
+    assertNoClaim(harness.store);
+  } finally {
+    if (!pendingClaim.settled) pendingClaim.resolve(null);
+    await harness.host.stop();
+  }
+});
+
+test("PluginHost stop isolates a late claim from Schedule persistence", {
+  timeout: 3_000,
+}, async () => {
+  const pendingClaim = deferred<ReminderDelivery | null>();
+  let sendCalls = 0;
+  const harness = jobHarness(
+    "schedule-claim-stop",
+    async () => {
+      sendCalls++;
+      return sentResult;
+    },
+    { intervalMs: 8, timeoutMs: 1_000, claimPending: pendingClaim }
+  );
+
+  try {
+    await harness.host.initialize();
+    await waitFor(
+      () => harness.store.claimCalls === 1 && harness.store.claimSignals.length === 1,
+      "the Host run did not reach claim before stop"
+    );
+    await harness.host.stop();
+    assert.equal(harness.store.claimSignals[0]?.aborted, true);
+    assert.equal(sendCalls, 0);
+    assertNoClaim(harness.store);
+
+    pendingClaim.resolve(claimDelivery(harness.store));
+    await waitFor(
+      () => harness.getCompletedRunIds().includes(1),
+      "the stopped claim continuation did not settle"
+    );
+    assert.equal(sendCalls, 0);
+    assertNoClaim(harness.store);
+  } finally {
+    if (!pendingClaim.settled) pendingClaim.resolve(null);
+    // stop() is idempotent but avoid a second call when it already completed.
+    if (harness.host.list()[0]?.state !== "stopping") await harness.host.stop();
+  }
+});
+
+test("PluginHost timeout contains a late ordinary claim rejection", {
+  timeout: 3_000,
+}, async () => {
+  const pendingClaim = deferred<ReminderDelivery | null>();
+  const unhandled = captureUnhandledRejections();
+  let sendCalls = 0;
+  const harness = jobHarness(
+    "schedule-claim-timeout-rejection",
+    async () => {
+      sendCalls++;
+      return sentResult;
+    },
+    { intervalMs: 8, timeoutMs: 20, claimPending: pendingClaim }
+  );
+
+  try {
+    await harness.host.initialize();
+    await waitFor(
+      () => harness.store.claimCalls === 1 && harness.store.claimSignals.length === 1,
+      "the first Host run did not reach claim"
+    );
+    await waitFor(
+      () =>
+        harness.host.list()[0]?.error?.code === "PLUGIN_TIMEOUT" &&
+        harness.getRuns() >= 2,
+      "Host did not timeout and release the rejected claim"
+    );
+
+    pendingClaim.reject(new Error("claim transport rejected after timeout"));
+    await waitFor(
+      () => harness.getCompletedRunIds().includes(1),
+      "the late rejected claim continuation did not settle"
+    );
+    await new Promise<void>((resolve) => setImmediate(resolve));
+
+    assert.equal(harness.store.claimSignals[0]?.aborted, true);
+    assert.equal(sendCalls, 0);
+    assertNoClaim(harness.store);
+    assert.deepEqual(unhandled.reasons, []);
+  } finally {
+    if (!pendingClaim.settled) pendingClaim.resolve(null);
+    await harness.host.stop();
+    unhandled.stop();
+  }
+});
+
+test("PluginHost stop contains a late ordinary claim rejection", {
+  timeout: 3_000,
+}, async () => {
+  const pendingClaim = deferred<ReminderDelivery | null>();
+  const unhandled = captureUnhandledRejections();
+  let sendCalls = 0;
+  let stopped = false;
+  const harness = jobHarness(
+    "schedule-claim-stop-rejection",
+    async () => {
+      sendCalls++;
+      return sentResult;
+    },
+    { intervalMs: 8, timeoutMs: 1_000, claimPending: pendingClaim }
+  );
+
+  try {
+    await harness.host.initialize();
+    await waitFor(
+      () => harness.store.claimCalls === 1 && harness.store.claimSignals.length === 1,
+      "the Host run did not reach claim before stop"
+    );
+    await harness.host.stop();
+    stopped = true;
+
+    pendingClaim.reject(new Error("claim transport rejected after stop"));
+    await waitFor(
+      () => harness.getCompletedRunIds().includes(1),
+      "the stopped job's late rejected claim did not settle"
+    );
+    await new Promise<void>((resolve) => setImmediate(resolve));
+
+    assert.equal(harness.store.claimSignals[0]?.aborted, true);
+    assert.equal(sendCalls, 0);
+    assertNoClaim(harness.store);
+    assert.deepEqual(unhandled.reasons, []);
+  } finally {
+    if (!pendingClaim.settled) pendingClaim.resolve(null);
+    if (!stopped) await harness.host.stop();
+    unhandled.stop();
+  }
+});
 
 const ordinaryFailures: Array<{
   name: string;

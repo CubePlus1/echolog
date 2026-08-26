@@ -6,6 +6,7 @@ import postgres from "postgres";
 import { schedulePlugin } from "../plugins/schedule/src/index.js";
 import { pollDueReminders } from "../plugins/schedule/src/reminders.js";
 import {
+  ScheduleClaimTimeoutError,
   ScheduleConflictError,
   ScheduleStore,
 } from "../plugins/schedule/src/store.js";
@@ -26,10 +27,120 @@ function quoteTestSchema(schema: string): string {
   return `"${schema}"`;
 }
 
-function databaseUrlForSchema(databaseUrl: string, schema: string): string {
+function databaseUrlForSchema(
+  databaseUrl: string,
+  schema: string,
+  applicationName?: string
+): string {
   const url = new URL(databaseUrl);
   url.searchParams.set("options", `-c search_path=${schema}`);
+  if (applicationName) url.searchParams.set("application_name", applicationName);
   return url.toString();
+}
+
+interface HeldRowLock {
+  release(): void;
+  settled: Promise<void>;
+}
+
+interface TrackedAbortController {
+  controller: AbortController;
+  listenerCounts(): { added: number; removed: number };
+}
+
+function trackedAbortController(): TrackedAbortController {
+  const controller = new AbortController();
+  const signal = controller.signal;
+  const originalAdd = signal.addEventListener.bind(signal);
+  const originalRemove = signal.removeEventListener.bind(signal);
+  let added = 0;
+  let removed = 0;
+
+  Object.defineProperties(signal, {
+    addEventListener: {
+      configurable: true,
+      value: ((
+        type: string,
+        listener: EventListenerOrEventListenerObject,
+        options?: boolean | AddEventListenerOptions
+      ) => {
+        if (type === "abort") added++;
+        return originalAdd(type, listener, options);
+      }) as AbortSignal["addEventListener"],
+    },
+    removeEventListener: {
+      configurable: true,
+      value: ((
+        type: string,
+        listener: EventListenerOrEventListenerObject,
+        options?: boolean | EventListenerOptions
+      ) => {
+        if (type === "abort") removed++;
+        return originalRemove(type, listener, options);
+      }) as AbortSignal["removeEventListener"],
+    },
+  });
+
+  return {
+    controller,
+    listenerCounts: () => ({ added, removed }),
+  };
+}
+
+async function holdScheduleItemLock(
+  connection: ReturnType<typeof postgres>,
+  itemId: string
+): Promise<HeldRowLock> {
+  let releaseLock!: () => void;
+  let resolveLocked!: () => void;
+  let rejectLocked!: (error: unknown) => void;
+  let released = false;
+  const releaseRequested = new Promise<void>((resolve) => {
+    releaseLock = resolve;
+  });
+  const locked = new Promise<void>((resolve, reject) => {
+    resolveLocked = resolve;
+    rejectLocked = reject;
+  });
+  const settled = connection.begin(async (transaction) => {
+    await transaction`
+      SELECT id
+      FROM schedule_items
+      WHERE id = ${itemId}
+      FOR UPDATE
+    `;
+    resolveLocked();
+    await releaseRequested;
+  });
+  void settled.catch(rejectLocked);
+  await locked;
+  return {
+    release() {
+      if (released) return;
+      released = true;
+      releaseLock();
+    },
+    settled,
+  };
+}
+
+async function waitForBlockedApplication(
+  admin: ReturnType<typeof postgres>,
+  applicationName: string
+): Promise<void> {
+  const deadline = Date.now() + 2_000;
+  while (Date.now() < deadline) {
+    const [activity] = await admin<{ blocked: number }[]>`
+      SELECT COUNT(*)::integer AS blocked
+      FROM pg_stat_activity
+      WHERE application_name = ${applicationName}
+        AND state = 'active'
+        AND wait_event_type = 'Lock'
+    `;
+    if ((activity?.blocked ?? 0) > 0) return;
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+  throw new Error(`claim connection ${applicationName} did not block on the row lock`);
 }
 
 const logger = {
@@ -45,6 +156,159 @@ test("schedule integration requires an explicit test database URL", () => {
     "set ECHOLOG_TEST_DATABASE_URL to run PostgreSQL integration tests"
   );
 });
+
+test(
+  "Schedule rolls back blocked claims after internal timeout and caller abort",
+  { skip: !testDatabaseUrl, timeout: 30_000 },
+  async () => {
+    if (!testDatabaseUrl) return;
+    const schema = testSchemaName();
+    const quotedSchema = quoteTestSchema(schema);
+    const scopedDatabaseUrl = databaseUrlForSchema(testDatabaseUrl, schema);
+    const admin = postgres(testDatabaseUrl, { max: 1 });
+    const locker = postgres(scopedDatabaseUrl, { max: 1 });
+    const timeoutApplication = `el_schedule_timeout_${randomUUID().slice(0, 12)}`;
+    const abortApplication = `el_schedule_abort_${randomUUID().slice(0, 12)}`;
+    const timeoutStore = new ScheduleStore(
+      databaseUrlForSchema(testDatabaseUrl, schema, timeoutApplication),
+      { claimTimeoutMs: 250 }
+    );
+    const abortStore = new ScheduleStore(
+      databaseUrlForSchema(testDatabaseUrl, schema, abortApplication),
+      { claimTimeoutMs: 2_000 }
+    );
+    const observerStore = new ScheduleStore(scopedDatabaseUrl);
+    const heldLocks: HeldRowLock[] = [];
+    let schemaCreated = false;
+
+    try {
+      await admin.unsafe(`CREATE SCHEMA ${quotedSchema}`);
+      schemaCreated = true;
+      const migrationRunner = createPluginMigrationRunner(scopedDatabaseUrl);
+      await migrationRunner("schedule", schedulePlugin.migrations ?? []);
+
+      const dueAt = new Date("2026-08-26T01:00:00Z");
+      const attemptedAt = new Date("2026-08-26T02:00:00Z");
+      const successItem = await observerStore.create({
+        title: "Bounded claim success cleanup",
+        description: null,
+        scheduledStartAt: dueAt,
+        scheduledEndAt: null,
+        timezone: "UTC",
+        priority: 0,
+        nextReminderAt: dueAt,
+      });
+      const successCaller = trackedAbortController();
+      assert.ok(await observerStore.claimReminder(
+        successItem.id,
+        dueAt,
+        attemptedAt,
+        successCaller.controller.signal
+      ));
+      assert.equal(successCaller.controller.signal.aborted, false);
+      assert.deepEqual(
+        successCaller.listenerCounts(),
+        { added: 1, removed: 1 },
+        "a successful bounded claim must remove its caller abort listener"
+      );
+
+      const timeoutItem = await timeoutStore.create({
+        title: "Blocked internal timeout",
+        description: null,
+        scheduledStartAt: dueAt,
+        scheduledEndAt: null,
+        timezone: "UTC",
+        priority: 0,
+        nextReminderAt: dueAt,
+      });
+      const timeoutLock = await holdScheduleItemLock(locker, timeoutItem.id);
+      heldLocks.push(timeoutLock);
+      const timeoutCaller = trackedAbortController();
+      const timedOutClaim = timeoutStore.claimReminder(
+        timeoutItem.id,
+        dueAt,
+        attemptedAt,
+        timeoutCaller.controller.signal
+      );
+      await waitForBlockedApplication(admin, timeoutApplication);
+      await assert.rejects(timedOutClaim, (error: unknown) => {
+        assert.ok(error instanceof ScheduleClaimTimeoutError);
+        assert.equal(error.code, "SCHEDULE_CLAIM_TIMEOUT");
+        assert.equal(error.timeoutMs, 250);
+        return true;
+      });
+      assert.equal(
+        timeoutCaller.controller.signal.aborted,
+        false,
+        "an internal transport timeout must not abort the caller signal"
+      );
+      assert.deepEqual(
+        timeoutCaller.listenerCounts(),
+        { added: 1, removed: 1 },
+        "an internal timeout must remove its caller abort listener"
+      );
+      timeoutLock.release();
+      await timeoutLock.settled;
+      await timeoutStore.close();
+      assert.deepEqual(
+        await observerStore.listReminders({ itemId: timeoutItem.id, limit: 10 }),
+        [],
+        "the late transaction must roll back instead of inserting a claim"
+      );
+      const unchangedAfterTimeout = await observerStore.get(timeoutItem.id);
+      assert.equal(unchangedAfterTimeout?.status, "scheduled");
+      assert.equal(unchangedAfterTimeout?.version, 1);
+
+      const abortItem = await observerStore.create({
+        title: "Blocked caller abort",
+        description: null,
+        scheduledStartAt: dueAt,
+        scheduledEndAt: null,
+        timezone: "UTC",
+        priority: 0,
+        nextReminderAt: dueAt,
+      });
+      const abortLock = await holdScheduleItemLock(locker, abortItem.id);
+      heldLocks.push(abortLock);
+      const abortCaller = trackedAbortController();
+      const abortedClaim = abortStore.claimReminder(
+        abortItem.id,
+        dueAt,
+        attemptedAt,
+        abortCaller.controller.signal
+      );
+      await waitForBlockedApplication(admin, abortApplication);
+      const abortReason = new DOMException("host stopped", "AbortError");
+      abortCaller.controller.abort(abortReason);
+      await assert.rejects(abortedClaim, (error: unknown) => error === abortReason);
+      assert.deepEqual(
+        abortCaller.listenerCounts(),
+        { added: 1, removed: 1 },
+        "caller abort must remove the bounded claim listener"
+      );
+      abortLock.release();
+      await abortLock.settled;
+      await abortStore.close();
+      assert.deepEqual(
+        await observerStore.listReminders({ itemId: abortItem.id, limit: 10 }),
+        [],
+        "caller abort must revoke the late transaction's claim authority"
+      );
+      const unchangedAfterAbort = await observerStore.get(abortItem.id);
+      assert.equal(unchangedAfterAbort?.status, "scheduled");
+      assert.equal(unchangedAfterAbort?.version, 1);
+    } finally {
+      for (const lock of heldLocks) lock.release();
+      await Promise.allSettled(heldLocks.map(({ settled }) => settled));
+      await abortStore.close();
+      await timeoutStore.close();
+      await observerStore.close();
+      await locker.end();
+      if (schemaCreated) await admin.unsafe(`DROP SCHEMA ${quotedSchema} CASCADE`);
+      await admin.end();
+    }
+  }
+);
 
 test(
   "Schedule persists CAS transitions, range routes, and at-most-once reminder ledgers",

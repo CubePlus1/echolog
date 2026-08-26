@@ -175,12 +175,15 @@ export default schedulePlugin;
 export { pollDueReminders } from "./reminders.js";
 export { createScheduleRoutes } from "./routes.js";
 export {
+  SCHEDULE_CLAIM_TIMEOUT_MS,
+  ScheduleClaimTimeoutError,
   ScheduleConflictError,
   ScheduleNotFoundError,
   ScheduleStore,
   reminderDedupeKey,
   scheduleItemFromRow,
 } from "./store.js";
+export type { ScheduleStoreOptions } from "./store.js";
 export type {
   NotificationSend,
   NotificationSendResult,

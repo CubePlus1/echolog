@@ -31,10 +31,25 @@ optional `AbortSignal`, and per-channel `sent | disabled | failed` results.
 It does not import the Core notifier or access notification configuration.
 Missing service capability degrades only this plugin.
 
+Claiming is also abort-aware: the caller signal is forwarded through the
+lock-and-insert transaction, while a separate bounded claim transport timeout
+protects the scheduler from a blocked database lock. Caller aborts and Host
+timeout/stop retain the reminder unclaimed (or, if a prior claim already
+committed, as `claimed`); a late lock continuation cannot insert a ledger row.
+The internal timeout is reported as a distinct `SCHEDULE_CLAIM_TIMEOUT` error
+and does not abort the caller signal.
+
 Host timeout or daemon stop aborts the caller signal. If notification delivery
 settles after that abort, Schedule retains the ledger as `claimed` for
 diagnosis and performs no late `sent`/`failed` write. Normal channel failure
 while the caller remains active is still terminalized as `failed`.
+
+Reminder text converts the stored absolute instant into the item's IANA
+timezone with `Intl.DateTimeFormat`, so non-UTC and daylight-saving wall times
+remain accurate; invalid legacy zones fall back explicitly to UTC. The Web
+contribution live-polls the canonical range and refreshes its faces only when
+item data, the reference date, or derived awaiting state changes. Unchanged
+polls preserve the current DOM, and unmounted contributions ignore late data.
 
 Canonical routes:
 

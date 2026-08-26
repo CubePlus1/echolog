@@ -312,6 +312,25 @@ not later than now. Month, week, and day views project the same
 mutations require `expectedVersion`, and each reminder instant is claimed by a
 unique ledger dedupe key before delivery.
 
+The ready Web contribution implements both initial and five-second live loads.
+It compares a stable snapshot of item data, the reference calendar date, and
+derived awaiting state; only a changed snapshot requests a Host book refresh.
+Identical polls preserve the current DOM/focus, concurrent refreshes coalesce,
+and an unmounted contribution ignores late responses.
+
+Reminder messages format the stored absolute instant with
+`Intl.DateTimeFormat` in the item's IANA timezone, including runtime DST rules.
+An invalid legacy timezone falls back visibly to UTC. This is presentation
+only: the persisted/HTTP instant remains `TIMESTAMPTZ`/ISO with an explicit
+offset.
+
+Claim acquisition forwards the Host caller `AbortSignal` through the
+lock-and-insert transaction and uses a separate bounded transport timeout. A
+caller abort or Host timeout/stop cannot produce a late ledger insert after a
+blocked row lock resumes; the internal timeout is exposed as the distinct
+`SCHEDULE_CLAIM_TIMEOUT` error and does not abort the caller signal. Timer and
+abort-listener resources are cleaned up on success, caller abort, and timeout.
+
 If a Host job timeout or daemon stop aborts the caller signal, a late
 notification continuation MUST NOT terminalize the reminder. Schedule retains
 the ledger as `claimed`; only an unaborted caller may persist `sent` or

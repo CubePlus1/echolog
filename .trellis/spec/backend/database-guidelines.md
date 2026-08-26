@@ -52,6 +52,10 @@ PostgreSQL（docker compose 起在 5436 端口，容器名 echolog-db）+ drizzl
 
 - Store explicit IANA timezone display intent separately from absolute
   `TIMESTAMPTZ` instants; HTTP inputs must include `Z` or a numeric offset.
+- User-facing reminder text formats the stored instant with
+  `Intl.DateTimeFormat` in the item's IANA timezone. Never display the raw UTC
+  ISO value beside a non-UTC zone label; invalid legacy zones fall back
+  explicitly to UTC without rewriting the persisted instant.
 - Derived UI state such as “awaiting confirmation” is calculated from persisted
   state + time and is never stored as another status.
 - Claim a reminder by inserting a unique ledger key before delivery. A ledger
@@ -70,6 +74,12 @@ PostgreSQL（docker compose 起在 5436 端口，容器名 echolog-db）+ drizzl
   immediately before `claimed -> sent|failed`, recheck the signal. Caller
   abort or `AbortError` retains `claimed`; ordinary channel/service failure
   still writes `failed`.
+- Reminder claim transactions accept the caller signal but bound database-lock
+  waiting with a separate internal transport timeout. Check the internal signal
+  before/after `FOR UPDATE`, before/after the ledger insert, and before the
+  transaction callback returns; caller abort and timeout must clean up their
+  timer/listener resources and a late lock release must roll back rather than
+  insert a claim.
 
 ### 4. Validation & Error Matrix
 
@@ -81,6 +91,7 @@ PostgreSQL（docker compose 起在 5436 端口，容器名 echolog-db）+ drizzl
 | Duplicate or restarted poll | Existing ledger excludes the exact instant; no send |
 | Host notification failure | Record bounded failure; do not change item state |
 | Job abort/timeout/stop | Rethrow before finalization, release Host running state, retain `claimed` |
+| Blocked reminder claim timeout | Reject with distinct `SCHEDULE_CLAIM_TIMEOUT`, keep caller signal un-aborted, and prevent late ledger insert |
 
 ### 5. Good/Base/Bad Cases
 
