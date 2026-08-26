@@ -88,7 +88,8 @@ export interface FlowPersistence {
   finalizeNotification(
     deliveryId: string,
     expectedVersion: number,
-    result: FlowNotificationFinalization
+    result: FlowNotificationFinalization,
+    signal?: AbortSignal
   ): Promise<FlowDelivery>;
   listDeliveries(
     limit?: number,
@@ -198,7 +199,8 @@ export class FlowService {
           // notification content, prompts, or replies.
           error: notificationFailureMessage(error),
           at: this.clock(),
-        }
+        },
+        signal
       );
       explainFailedDelivery(reserved);
       return reserved;
@@ -218,7 +220,8 @@ export class FlowService {
             channels: notification.channels,
             error: noDeliveryMessage(notification),
             at: this.clock(),
-          }
+          },
+      signal
     );
     if (candidate.delivery.status === "failed") {
       explainFailedDelivery(reserved);

@@ -284,6 +284,87 @@ test("degrades an invalid disabled manifest without running lifecycle hooks", as
   assert.equal(lifecycle.healthyStop, 1);
 });
 
+test("isolates a disabled manifest missing permissions before later plugins", async () => {
+  const lifecycle = {
+    invalidMigrations: 0,
+    invalidRegister: 0,
+    invalidStart: 0,
+    invalidStop: 0,
+    healthyMigrations: 0,
+    healthyStart: 0,
+    healthyStop: 0,
+  };
+  const validManifest = manifest("notification-missing-permissions");
+  const {
+    permissions: _permissions,
+    ...missingPermissions
+  } = validManifest;
+  const pluginHost = new PluginHost({
+    definitions: [
+      {
+        manifest: missingPermissions as PluginManifest,
+        defaultEnabled: false,
+        register() {
+          lifecycle.invalidRegister++;
+        },
+        start() {
+          lifecycle.invalidStart++;
+        },
+        stop() {
+          lifecycle.invalidStop++;
+        },
+      },
+      {
+        manifest: manifest("notification-healthy-after-missing-permissions"),
+        defaultEnabled: true,
+        start() {
+          lifecycle.healthyStart++;
+        },
+        stop() {
+          lifecycle.healthyStop++;
+        },
+      },
+    ],
+    logger,
+    migrationRunner: async (pluginId) => {
+      if (pluginId === "notification-missing-permissions") {
+        lifecycle.invalidMigrations++;
+      } else {
+        lifecycle.healthyMigrations++;
+      }
+    },
+    commandRunner: async () => ({ stdout: "", stderr: "", exitCode: 0 }),
+  });
+
+  await pluginHost.initialize();
+
+  const plugins = Object.fromEntries(
+    pluginHost.list().map((plugin) => [plugin.id, plugin])
+  );
+  const invalid = plugins["notification-missing-permissions"];
+  assert.equal(invalid?.enabled, false);
+  assert.equal(invalid?.state, "degraded");
+  assert.equal(invalid?.error?.code, "PLUGIN_DEGRADED");
+  assert.match(invalid?.error?.message ?? "", /permissions must be an array/);
+  assert.equal(
+    plugins["notification-healthy-after-missing-permissions"]?.state,
+    "ready"
+  );
+  assert.deepEqual(lifecycle, {
+    invalidMigrations: 0,
+    invalidRegister: 0,
+    invalidStart: 0,
+    invalidStop: 0,
+    healthyMigrations: 1,
+    healthyStart: 1,
+    healthyStop: 0,
+  });
+
+  await pluginHost.stop();
+  assert.equal(lifecycle.invalidStop, 0);
+  assert.equal(lifecycle.healthyStop, 1);
+});
+
 test("isolates an unavailable notification service from later plugins", async () => {
   let healthyStarted = false;
   const pluginHost = host([

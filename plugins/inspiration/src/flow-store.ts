@@ -561,48 +561,73 @@ export class FlowStore {
   async finalizeNotification(
     deliveryId: string,
     expectedVersion: number,
-    result: FlowNotificationFinalization
+    result: FlowNotificationFinalization,
+    signal?: AbortSignal
   ): Promise<FlowDelivery> {
-    const rows = result.delivered
-      ? await this.sql<DeliveryRow[]>`
-          UPDATE inspiration_flow_deliveries
-          SET status = 'sent', notified_at = ${result.at},
-              notification_channel = NULL,
-              notification_channels = ${this.sql.json(result.channels)},
-              error = NULL,
-              version = version + 1, updated_at = ${result.at}
-          WHERE id = ${deliveryId} AND version = ${expectedVersion}
-            AND status = 'dispatching'
-          RETURNING *
-        `
-      : await this.sql<DeliveryRow[]>`
-          UPDATE inspiration_flow_deliveries
-          SET status = 'failed',
-              notification_channel = NULL,
-              notification_channels = ${result.channels === null
-                ? null
-                : this.sql.json(result.channels)},
-              error = ${result.error},
-              version = version + 1, updated_at = ${result.at}
-          WHERE id = ${deliveryId} AND version = ${expectedVersion}
-            AND status = 'dispatching'
-          RETURNING *
-        `;
-    if (rows[0]) return mapDelivery(rows[0]);
+    signal?.throwIfAborted();
+    return this.sql.begin(async (transaction) => {
+      const currentRows = await transaction<DeliveryRow[]>`
+        SELECT * FROM inspiration_flow_deliveries
+        WHERE id = ${deliveryId}
+        FOR UPDATE
+      `;
+      signal?.throwIfAborted();
+      const current = currentRows[0];
+      if (!current) {
+        throw new FlowStoreError(
+          "NOT_FOUND",
+          `delivery ${deliveryId} not found`,
+          404
+        );
+      }
+      if (
+        current.version !== expectedVersion ||
+        current.status !== "dispatching"
+      ) {
+        throw new FlowStoreError(
+          "VERSION_CONFLICT",
+          `delivery ${deliveryId} changed before notification finalization`,
+          409,
+          current.version
+        );
+      }
 
-    const currentRows = await this.sql<DeliveryRow[]>`
-      SELECT * FROM inspiration_flow_deliveries WHERE id = ${deliveryId}
-    `;
-    const current = currentRows[0];
-    if (!current) {
-      throw new FlowStoreError("NOT_FOUND", `delivery ${deliveryId} not found`, 404);
-    }
-    throw new FlowStoreError(
-      "VERSION_CONFLICT",
-      `delivery ${deliveryId} changed before notification finalization`,
-      409,
-      current.version
-    );
+      signal?.throwIfAborted();
+      const rows = result.delivered
+        ? await transaction<DeliveryRow[]>`
+            UPDATE inspiration_flow_deliveries
+            SET status = 'sent', notified_at = ${result.at},
+                notification_channel = NULL,
+                notification_channels = ${transaction.json(result.channels)},
+                error = NULL,
+                version = version + 1, updated_at = ${result.at}
+            WHERE id = ${deliveryId} AND version = ${expectedVersion}
+              AND status = 'dispatching'
+            RETURNING *
+          `
+        : await transaction<DeliveryRow[]>`
+            UPDATE inspiration_flow_deliveries
+            SET status = 'failed',
+                notification_channel = NULL,
+                notification_channels = ${result.channels === null
+                  ? null
+                  : transaction.json(result.channels)},
+                error = ${result.error},
+                version = version + 1, updated_at = ${result.at}
+            WHERE id = ${deliveryId} AND version = ${expectedVersion}
+              AND status = 'dispatching'
+            RETURNING *
+          `;
+      signal?.throwIfAborted();
+      if (rows[0]) return mapDelivery(rows[0]);
+
+      throw new FlowStoreError(
+        "VERSION_CONFLICT",
+        `delivery ${deliveryId} changed before notification finalization`,
+        409,
+        current.version
+      );
+    });
   }
 
   async listDeliveries(

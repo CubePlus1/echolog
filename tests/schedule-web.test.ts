@@ -298,6 +298,48 @@ test("Schedule coalesces overlapping live snapshot refreshes", async () => {
   assert.equal(refreshCalls, 2, "the acknowledged queued snapshot must remain stable");
 });
 
+test("Schedule ignores an older live response that resolves after a newer request", async () => {
+  const base = item({ title: "v1", version: 1 });
+  const older = deferred<ReturnType<typeof item>[]>();
+  const newer = deferred<ReturnType<typeof item>[]>();
+  let apiCalls = 0;
+  let refreshCalls = 0;
+  const contribution = await activate({
+    now: () => NOW,
+    api: async () => {
+      apiCalls++;
+      if (apiCalls === 1) return [base];
+      if (apiCalls === 2) return older.promise;
+      return newer.promise;
+    },
+    refresh: async () => { refreshCalls++; },
+  });
+  await contribution.load();
+
+  const olderLive = contribution.loadLive();
+  const newerLive = contribution.loadLive();
+  newer.resolve([{ ...base, title: "v3 newest", version: 3 }]);
+  const newestData = await newerLive;
+  assert.equal(newestData.scheduleItems[0].title, "v3 newest");
+  assert.equal(refreshCalls, 1);
+
+  older.resolve([{ ...base, title: "v2 stale", version: 2 }]);
+  const staleResult = await olderLive;
+  assert.equal(
+    staleResult.scheduleItems[0].title,
+    "v3 newest",
+    "the stale request must return, rather than replace, the latest snapshot"
+  );
+  assert.equal(refreshCalls, 1, "a stale response must not request another render");
+
+  const html = contribution.renderFace(
+    { type: "schedule-overview" },
+    { ...renderContext([]), data: {} }
+  );
+  assert.match(html, /v3 newest/);
+  assert.equal(html.includes("v2 stale"), false);
+});
+
 test("Schedule does not run a queued refresh after focus begins mid-refresh", async () => {
   const base = item({ title: "v1", version: 1 });
   const responses = [

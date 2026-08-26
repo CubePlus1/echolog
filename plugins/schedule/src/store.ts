@@ -500,21 +500,44 @@ export class ScheduleStore {
       channelResults: NotificationSendResult["channels"] | null;
       failure: string | null;
     },
-    completedAt = new Date()
+    completedAt = new Date(),
+    callerSignal?: AbortSignal
   ): Promise<ReminderDelivery> {
-    const [updated] = await this.db
-      .update(scheduleReminderDeliveries)
-      .set({
-        ...input,
-        failure: input.failure?.slice(0, 1_000) ?? null,
-        completedAt,
-      })
-      .where(and(
-        eq(scheduleReminderDeliveries.id, id),
-        eq(scheduleReminderDeliveries.status, "claimed")
-      ))
-      .returning();
-    if (!updated) throw new Error(`Reminder delivery ${id} is not claimable`);
+    callerSignal?.throwIfAborted();
+    const updated = await this.db.transaction(async (transaction) => {
+      callerSignal?.throwIfAborted();
+      const [claimable] = await transaction
+        .select({ id: scheduleReminderDeliveries.id })
+        .from(scheduleReminderDeliveries)
+        .where(and(
+          eq(scheduleReminderDeliveries.id, id),
+          eq(scheduleReminderDeliveries.status, "claimed")
+        ))
+        .for("update");
+      // The row lock is the blocking wait in this transaction. Recheck after
+      // it returns and again immediately before the terminal state mutation.
+      callerSignal?.throwIfAborted();
+      if (!claimable) throw new Error(`Reminder delivery ${id} is not claimable`);
+      callerSignal?.throwIfAborted();
+      const [row] = await transaction
+        .update(scheduleReminderDeliveries)
+        .set({
+          ...input,
+          failure: input.failure?.slice(0, 1_000) ?? null,
+          completedAt,
+        })
+        .where(and(
+          eq(scheduleReminderDeliveries.id, id),
+          eq(scheduleReminderDeliveries.status, "claimed")
+        ))
+        .returning();
+      // Keep the final post-write fence inside the transaction so an abort
+      // observed here rolls the terminal mutation back before commit.
+      callerSignal?.throwIfAborted();
+      if (!row) throw new Error(`Reminder delivery ${id} is not claimable`);
+      return row;
+    });
+    callerSignal?.throwIfAborted();
     return reminderFromRow(updated);
   }
 

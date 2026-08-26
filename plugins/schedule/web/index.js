@@ -367,6 +367,7 @@ export async function activate({
   let latestCalendar = { referenceKey, ...queryWindow(referenceKey) };
   let observedSnapshot = "";
   let renderedSnapshot = "";
+  let snapshotRequestGeneration = 0;
   let fullLoadGeneration = 0;
   let refreshPromise = null;
   let mounted = true;
@@ -447,16 +448,20 @@ export async function activate({
   return {
     id: "schedule",
     async load() {
+      const requestGeneration = ++snapshotRequestGeneration;
       const snapshot = await fetchSnapshot();
       if (!mounted) return {};
+      if (requestGeneration !== snapshotRequestGeneration) return currentData();
       fullLoadGeneration++;
       applySnapshot(snapshot, true);
       return currentData();
     },
     async loadLive() {
       if (!mounted) return {};
+      const requestGeneration = ++snapshotRequestGeneration;
       const snapshot = await fetchSnapshot();
       if (!mounted) return {};
+      if (requestGeneration !== snapshotRequestGeneration) return currentData();
       if (!renderedSnapshot) {
         applySnapshot(snapshot, true);
       } else {
@@ -567,6 +572,7 @@ export async function activate({
     },
     async unmount() {
       mounted = false;
+      snapshotRequestGeneration++;
       stylesheet?.remove?.();
     },
   };

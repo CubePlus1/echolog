@@ -378,6 +378,44 @@ test("service calls notifications.send with text and the stable delivery dedupe 
   }]);
   assert.equal(finalized.length, 1);
   assert.deepEqual((finalized[0] as unknown[]).slice(0, 2), ["delivery-a", 2]);
+  assert.equal((finalized[0] as unknown[])[3], controller.signal);
+});
+
+test("service forwards caller abort to pending finalization", async () => {
+  const controller = new AbortController();
+  let markFinalizeStarted!: () => void;
+  const finalizeStarted = new Promise<void>((resolve) => {
+    markFinalizeStarted = resolve;
+  });
+  const store = persistence({
+    async finalizeNotification(_id, _version, _result, signal) {
+      assert.equal(signal, controller.signal);
+      markFinalizeStarted();
+      return new Promise<FlowDelivery>((_resolve, reject) => {
+        signal?.addEventListener("abort", () => reject(signal.reason), {
+          once: true,
+        });
+      });
+    },
+  });
+  const service = new FlowService(store, () => async () => ({
+    channels: {
+      mac: { status: "sent" },
+      ntfy: { status: "disabled" },
+    },
+  }), () => NOW);
+
+  const deliveryAttempt = service.nextManual(
+    "abort-during-finalize",
+    controller.signal
+  );
+  const rejected = assert.rejects(
+    deliveryAttempt,
+    (error) => error instanceof Error && error.name === "AbortError"
+  );
+  await finalizeStarted;
+  controller.abort();
+  await rejected;
 });
 
 test("sent duplicate is not re-sent after the pre-send claim", async () => {

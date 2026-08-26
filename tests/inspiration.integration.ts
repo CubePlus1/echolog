@@ -380,6 +380,134 @@ test(
 );
 
 test(
+  "caller abort rolls back blocked sent and failed PostgreSQL finalization",
+  { skip: !testDatabaseUrl, timeout: 30_000 },
+  async () => withIntegrationSchema(async ({ admin, databaseUrl }) => {
+    const applicationName = `el_insp_fin_${randomUUID().replaceAll("-", "").slice(0, 12)}`;
+    const flowUrl = new URL(databaseUrl);
+    flowUrl.searchParams.set("application_name", applicationName);
+    const capture = new InspirationStore(databaseUrl);
+    const flow = new FlowStore(flowUrl.toString());
+    const blocker = postgres(databaseUrl, { max: 1 });
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown) => {
+      unhandled.push(reason);
+    };
+    process.on("unhandledRejection", onUnhandled);
+
+    const runCase = async (outcome: "sent" | "failed") => {
+      const controller = new AbortController();
+      let markNotificationDone!: () => void;
+      let releaseNotification!: () => void;
+      let markLockAcquired!: () => void;
+      let releaseLock!: () => void;
+      const notificationDone = new Promise<void>((resolve) => {
+        markNotificationDone = resolve;
+      });
+      const notificationRelease = new Promise<void>((resolve) => {
+        releaseNotification = resolve;
+      });
+      const lockAcquired = new Promise<void>((resolve) => {
+        markLockAcquired = resolve;
+      });
+      const lockRelease = new Promise<void>((resolve) => {
+        releaseLock = resolve;
+      });
+      let heldLock: Promise<unknown> | null = null;
+      let observedRejection: Promise<void> | null = null;
+      const dedupeKey = `blocked-finalize-${outcome}`;
+
+      try {
+        const service = new FlowService(
+          flow,
+          () => async () => {
+            markNotificationDone();
+            await notificationRelease;
+            if (outcome === "failed") {
+              throw new Error("controlled notification failure");
+            }
+            return {
+              channels: {
+                mac: { status: "sent" },
+                ntfy: { status: "disabled" },
+              },
+            };
+          }
+        );
+        const attempt = service.nextManual(dedupeKey, controller.signal);
+        observedRejection = assert.rejects(
+          attempt,
+          (error) => error instanceof Error && error.name === "AbortError"
+        );
+        await notificationDone;
+
+        const deliveryRows = await blocker<{ id: string; status: string }[]>`
+          SELECT id, status FROM inspiration_flow_deliveries
+          WHERE dedupe_key = ${`manual:${dedupeKey}`}
+        `;
+        const delivery = deliveryRows[0];
+        assert.ok(delivery);
+        assert.equal(delivery.status, "dispatching");
+
+        heldLock = blocker.begin(async (transaction) => {
+          await transaction`
+            SELECT id FROM inspiration_flow_deliveries
+            WHERE id = ${delivery.id}
+            FOR UPDATE
+          `;
+          markLockAcquired();
+          await lockRelease;
+        });
+        await lockAcquired;
+        releaseNotification();
+        await waitForDatabaseLock(admin, applicationName);
+
+        controller.abort();
+        releaseLock();
+        await heldLock;
+        heldLock = null;
+        await observedRejection;
+        observedRejection = null;
+        await new Promise<void>((resolve) => setImmediate(resolve));
+
+        const afterAbort = await blocker<{ status: string }[]>`
+          SELECT status FROM inspiration_flow_deliveries
+          WHERE id = ${delivery.id}
+        `;
+        assert.equal(
+          afterAbort[0]?.status,
+          "dispatching",
+          `${outcome} finalization must not write after caller abort`
+        );
+      } finally {
+        controller.abort();
+        releaseNotification?.();
+        releaseLock?.();
+        await heldLock?.catch(() => undefined);
+        await observedRejection?.catch(() => undefined);
+      }
+    };
+
+    try {
+      await capture.create({
+        content: "blocked notification finalization",
+        tags: ["reliability"],
+        project: "EchoLog",
+        status: "inbox",
+      });
+      await configureFlow(flow);
+      await runCase("sent");
+      await runCase("failed");
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      assert.deepEqual(unhandled, []);
+    } finally {
+      process.off("unhandledRejection", onUnhandled);
+      await Promise.all([capture.close(), flow.close(), blocker.end()]);
+    }
+  })
+);
+
+test(
   "scheduled reservation derives its key from the locked updated settings snapshot",
   { skip: !testDatabaseUrl, timeout: 30_000 },
   async () => withIntegrationSchema(async ({ admin, databaseUrl }) => {

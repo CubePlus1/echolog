@@ -124,6 +124,43 @@ async function holdScheduleItemLock(
   };
 }
 
+async function holdReminderDeliveryLock(
+  connection: ReturnType<typeof postgres>,
+  deliveryId: string
+): Promise<HeldRowLock> {
+  let releaseLock!: () => void;
+  let resolveLocked!: () => void;
+  let rejectLocked!: (error: unknown) => void;
+  let released = false;
+  const releaseRequested = new Promise<void>((resolve) => {
+    releaseLock = resolve;
+  });
+  const locked = new Promise<void>((resolve, reject) => {
+    resolveLocked = resolve;
+    rejectLocked = reject;
+  });
+  const settled = connection.begin(async (transaction) => {
+    await transaction`
+      SELECT id
+      FROM schedule_reminder_deliveries
+      WHERE id = ${deliveryId}
+      FOR UPDATE
+    `;
+    resolveLocked();
+    await releaseRequested;
+  });
+  void settled.catch(rejectLocked);
+  await locked;
+  return {
+    release() {
+      if (released) return;
+      released = true;
+      releaseLock();
+    },
+    settled,
+  };
+}
+
 async function waitForBlockedApplication(
   admin: ReturnType<typeof postgres>,
   applicationName: string
@@ -140,7 +177,7 @@ async function waitForBlockedApplication(
     if ((activity?.blocked ?? 0) > 0) return;
     await new Promise((resolve) => setTimeout(resolve, 5));
   }
-  throw new Error(`claim connection ${applicationName} did not block on the row lock`);
+  throw new Error(`Schedule connection ${applicationName} did not block on the row lock`);
 }
 
 const logger = {
@@ -302,6 +339,105 @@ test(
       await Promise.allSettled(heldLocks.map(({ settled }) => settled));
       await abortStore.close();
       await timeoutStore.close();
+      await observerStore.close();
+      await locker.end();
+      if (schemaCreated) await admin.unsafe(`DROP SCHEMA ${quotedSchema} CASCADE`);
+      await admin.end();
+    }
+  }
+);
+
+test(
+  "Schedule rolls back blocked sent and failed finalizations after caller abort",
+  { skip: !testDatabaseUrl, timeout: 30_000 },
+  async () => {
+    if (!testDatabaseUrl) return;
+    const schema = testSchemaName();
+    const quotedSchema = quoteTestSchema(schema);
+    const scopedDatabaseUrl = databaseUrlForSchema(testDatabaseUrl, schema);
+    const applicationName = `el_schedule_finalize_${randomUUID().slice(0, 12)}`;
+    const admin = postgres(testDatabaseUrl, { max: 1 });
+    const locker = postgres(scopedDatabaseUrl, { max: 1 });
+    const finalizationStore = new ScheduleStore(
+      databaseUrlForSchema(testDatabaseUrl, schema, applicationName)
+    );
+    const observerStore = new ScheduleStore(scopedDatabaseUrl);
+    const heldLocks: HeldRowLock[] = [];
+    let schemaCreated = false;
+    const unhandledReasons: unknown[] = [];
+    const onUnhandledRejection = (reason: unknown) => unhandledReasons.push(reason);
+    process.on("unhandledRejection", onUnhandledRejection);
+
+    try {
+      await admin.unsafe(`CREATE SCHEMA ${quotedSchema}`);
+      schemaCreated = true;
+      const migrationRunner = createPluginMigrationRunner(scopedDatabaseUrl);
+      await migrationRunner("schedule", schedulePlugin.migrations ?? []);
+
+      const dueAt = new Date("2026-08-26T01:00:00Z");
+      const attemptedAt = new Date("2026-08-26T02:00:00Z");
+      for (const status of ["sent", "failed"] as const) {
+        const item = await observerStore.create({
+          title: `Blocked ${status} finalization`,
+          description: null,
+          scheduledStartAt: dueAt,
+          scheduledEndAt: null,
+          timezone: "UTC",
+          priority: 0,
+          nextReminderAt: dueAt,
+        });
+        const claimed = await finalizationStore.claimReminder(
+          item.id,
+          dueAt,
+          attemptedAt
+        );
+        assert.ok(claimed);
+        const heldLock = await holdReminderDeliveryLock(locker, claimed.id);
+        heldLocks.push(heldLock);
+        const controller = new AbortController();
+        const abortReason = new DOMException(
+          `Host released blocked ${status} finalization`,
+          "AbortError"
+        );
+        const finalization = finalizationStore.finishReminder(
+          claimed.id,
+          {
+            status,
+            channelResults: status === "sent" ? {
+              mac: { status: "sent" },
+              ntfy: { status: "disabled" },
+            } : null,
+            failure: status === "failed" ? "provider unavailable" : null,
+          },
+          new Date("2026-08-26T02:00:01Z"),
+          controller.signal
+        );
+        const rejected = assert.rejects(
+          finalization,
+          (error: unknown) => error === abortReason
+        );
+        await waitForBlockedApplication(admin, applicationName);
+        controller.abort(abortReason);
+        heldLock.release();
+        await heldLock.settled;
+        await rejected;
+
+        const [ledger] = await observerStore.listReminders({
+          itemId: item.id,
+          limit: 10,
+        });
+        assert.equal(ledger?.status, "claimed");
+        assert.equal(ledger?.completedAt, null);
+        assert.equal(ledger?.channelResults, null);
+        assert.equal(ledger?.failure, null);
+      }
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      assert.deepEqual(unhandledReasons, []);
+    } finally {
+      process.off("unhandledRejection", onUnhandledRejection);
+      for (const lock of heldLocks) lock.release();
+      await Promise.allSettled(heldLocks.map(({ settled }) => settled));
+      await finalizationStore.close();
       await observerStore.close();
       await locker.end();
       if (schemaCreated) await admin.unsafe(`DROP SCHEMA ${quotedSchema} CASCADE`);

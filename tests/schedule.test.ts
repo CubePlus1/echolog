@@ -370,8 +370,11 @@ class MemoryReminderStore {
       status: "sent" | "failed";
       channelResults: NotificationSendResult["channels"] | null;
       failure: string | null;
-    }
+    },
+    _completedAt?: Date,
+    signal?: AbortSignal
   ): Promise<ReminderDelivery> {
+    signal?.throwIfAborted();
     this.state.terminalWrites.push({ id, status: input.status });
     const entry = [...this.state.deliveries.values()].find((value) => value.id === id);
     if (!entry || entry.status !== "claimed") throw new Error("not claimable");

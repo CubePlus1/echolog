@@ -21,7 +21,8 @@ export interface ReminderStore {
       channelResults: NotificationSendResult["channels"] | null;
       failure: string | null;
     },
-    completedAt?: Date
+    completedAt?: Date,
+    signal?: AbortSignal
   ): Promise<ReminderDelivery>;
 }
 
@@ -179,7 +180,7 @@ export async function pollDueReminders(
         status: "failed",
         channelResults: null,
         failure: errorMessage(error),
-      }, new Date());
+      }, new Date(), signal);
       summary.failed++;
       continue;
     }
@@ -189,7 +190,7 @@ export async function pollDueReminders(
       status: outcome.status,
       channelResults: result.channels,
       failure: outcome.failure,
-    }, new Date());
+    }, new Date(), signal);
     summary[outcome.status]++;
   }
   return summary;

@@ -120,7 +120,8 @@ async function waitFor(
 
 class ObservedReminderStore implements ReminderStore {
   constructor(
-    private readonly claimPending?: Deferred<ReminderDelivery | null>
+    private readonly claimPending?: Deferred<ReminderDelivery | null>,
+    private readonly finishPending?: Deferred<void>
   ) {}
 
   readonly item = scheduleItem();
@@ -136,6 +137,8 @@ class ObservedReminderStore implements ReminderStore {
   dueCalls = 0;
   claimCalls = 0;
   readonly claimSignals: AbortSignal[] = [];
+  readonly finishSignals: AbortSignal[] = [];
+  finishAttempts = 0;
   private claimPendingUsed = false;
 
   async dueReminders(): Promise<DueReminder[]> {
@@ -180,8 +183,15 @@ class ObservedReminderStore implements ReminderStore {
       status: "sent" | "failed";
       channelResults: NotificationSendResult["channels"] | null;
       failure: string | null;
-    }
+    },
+    _completedAt?: Date,
+    signal?: AbortSignal
   ): Promise<ReminderDelivery> {
+    signal?.throwIfAborted();
+    this.finishAttempts++;
+    if (signal) this.finishSignals.push(signal);
+    if (this.finishPending) await this.finishPending.promise;
+    signal?.throwIfAborted();
     this.finishCalls.push({ id, ...input });
     this.terminalCounters[input.status]++;
     const delivery = [...this.deliveries.values()].find((entry) => entry.id === id);
@@ -214,9 +224,13 @@ function jobHarness(
     intervalMs: number;
     timeoutMs: number;
     claimPending?: Deferred<ReminderDelivery | null>;
+    finishPending?: Deferred<void>;
   }
 ): JobHarness {
-  const store = new ObservedReminderStore(options.claimPending);
+  const store = new ObservedReminderStore(
+    options.claimPending,
+    options.finishPending
+  );
   let runs = 0;
   const completedRunIds: number[] = [];
   const summaries: Array<{ runId: number; result: ReminderPollResult }> = [];
@@ -434,6 +448,77 @@ for (const [index, scenario] of stopSettlements.entries()) {
     } finally {
       if (!pending.settled) pending.resolve(sentResult);
       if (!stopped) await harness.host.stop();
+    }
+  });
+}
+
+const blockedFinalizationSettlements: Array<{
+  name: string;
+  send: NotificationSend;
+  settle(pending: Deferred<void>): void;
+}> = [
+  {
+    name: "sent finalization resolving late",
+    send: async () => sentResult,
+    settle: (pending) => pending.resolve(),
+  },
+  {
+    name: "failed finalization resolving late",
+    send: async () => { throw new Error("provider unavailable before finalization"); },
+    settle: (pending) => pending.resolve(),
+  },
+  {
+    name: "finalization rejecting late",
+    send: async () => sentResult,
+    settle: (pending) => pending.reject(new Error("database rejected after timeout")),
+  },
+];
+
+for (const [index, scenario] of blockedFinalizationSettlements.entries()) {
+  test(`PluginHost timeout revokes Schedule ${scenario.name}`, {
+    timeout: 3_000,
+  }, async () => {
+    const pendingFinish = deferred<void>();
+    const unhandled = captureUnhandledRejections();
+    const harness = jobHarness(
+      `schedule-finalization-timeout-${index}`,
+      scenario.send,
+      { intervalMs: 8, timeoutMs: 20, finishPending: pendingFinish }
+    );
+
+    try {
+      await harness.host.initialize();
+      await waitFor(
+        () => harness.store.finishAttempts === 1,
+        "the first Host run did not reach finalization"
+      );
+      assert.equal(
+        harness.store.finishSignals[0],
+        harness.store.claimSignals[0],
+        "Schedule must propagate the exact Host signal into finalization"
+      );
+      await waitFor(
+        () =>
+          harness.host.list()[0]?.error?.code === "PLUGIN_TIMEOUT" &&
+          harness.getRuns() >= 2,
+        "Host did not release the blocked finalization"
+      );
+      assert.equal(harness.store.finishSignals[0]?.aborted, true);
+      assertRetainedClaim(harness.store);
+
+      scenario.settle(pendingFinish);
+      await waitFor(
+        () => harness.getCompletedRunIds().includes(1),
+        "the late finalization continuation did not settle"
+      );
+      await new Promise<void>((resolve) => setImmediate(resolve));
+
+      assertRetainedClaim(harness.store);
+      assert.deepEqual(unhandled.reasons, []);
+    } finally {
+      if (!pendingFinish.settled) pendingFinish.resolve();
+      await harness.host.stop();
+      unhandled.stop();
     }
   });
 }
