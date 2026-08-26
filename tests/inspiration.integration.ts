@@ -319,6 +319,7 @@ test(
       assert.equal(recovered.candidate?.delivery.error, FLOW_UNKNOWN_DISPATCH_ERROR);
       assert.deepEqual(recovered.explanation, [
         "recovery:interrupted-dispatch-unknown",
+        "delivery:failed",
       ]);
 
       clock = new Date(clock.getTime() + 1_000);
