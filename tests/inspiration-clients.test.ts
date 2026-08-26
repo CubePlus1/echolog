@@ -448,6 +448,161 @@ test("Inspiration Web coalesces overlapping live polls behind one Host refresh",
   await contribution.unmount();
 });
 
+test("Inspiration Web keeps expanded Flow history through Host and live refreshes", async () => {
+  let firstPageRevision = 1;
+  let liveRefreshes = 0;
+  const paginatedCursors: string[] = [];
+  const delivery = (
+    id: string,
+    status: string,
+    outcome: string | null,
+    surfacedAt: string,
+    source = "scheduled"
+  ) => ({ id, version: 1, source, status, outcome, surfacedAt });
+  const firstPage = () => {
+    if (firstPageRevision === 1) {
+      return {
+        deliveries: [
+          delivery("delivery-a", "sent", null, "2026-08-26T10:00:00.000Z"),
+          delivery("delivery-b", "dispatching", null, "2026-08-26T09:00:00.000Z"),
+        ],
+        nextCursor: "page-2",
+      };
+    }
+    if (firstPageRevision === 2) {
+      return {
+        deliveries: [
+          delivery("delivery-new", "reserved", null, "2026-08-26T11:00:00.000Z"),
+          delivery("delivery-a", "sent", "viewed", "2026-08-26T10:00:00.000Z"),
+        ],
+        nextCursor: "page-2-regressed",
+      };
+    }
+    return {
+      deliveries: [
+        delivery("delivery-live", "failed", null, "2026-08-26T12:00:00.000Z", "manual"),
+        delivery("delivery-new", "sent", "archived", "2026-08-26T11:00:00.000Z"),
+      ],
+      nextCursor: "page-2-live-regressed",
+    };
+  };
+  const pluginApi = async (path: string) => {
+    if (path.includes("/inspirations?")) return { items: [], nextCursor: null };
+    if (path.endsWith("/flow/settings")) return { id: "default", version: 1 };
+    if (path.includes("/flow/deliveries?")) {
+      const cursor = new URL(path, "http://echolog.local").searchParams.get("cursor");
+      if (!cursor) return firstPage();
+      paginatedCursors.push(cursor);
+      if (cursor === "page-2") {
+        firstPageRevision = 2;
+        return {
+          deliveries: [
+            delivery("delivery-c", "failed", null, "2026-08-26T08:00:00.000Z"),
+          ],
+          nextCursor: "page-3",
+        };
+      }
+      if (cursor === "page-3") {
+        return {
+          deliveries: [
+            delivery("delivery-d", "sent", "kept", "2026-08-26T07:00:00.000Z"),
+          ],
+          nextCursor: null,
+        };
+      }
+      throw new Error(`Regressed pagination cursor: ${cursor}`);
+    }
+    throw new Error(`Unexpected API path: ${path}`);
+  };
+  const host = createPluginWebHost(async (path: string) => {
+    assert.equal(path, "/plugins");
+    return {
+      plugins: [{
+        id: "inspiration",
+        enabled: true,
+        state: "ready",
+        webEntry: webModulePath,
+      }],
+    };
+  });
+  const data: Record<string, unknown> = {};
+  const root = { ownerDocument: { activeElement: null } };
+  let rendered = "";
+  let refreshAndRender: () => Promise<void>;
+  const hostApi = {
+    api: pluginApi,
+    root,
+    refresh: async () => {
+      liveRefreshes += 1;
+      await refreshAndRender();
+    },
+  };
+  refreshAndRender = async () => {
+    await host.refresh(hostApi);
+    await host.loadData(data);
+    rendered = String(host.renderFace(
+      { type: "inspiration-flow" },
+      { data, esc: escapeText, escA: escapeAttribute }
+    ));
+  };
+  const occurrences = (html: string, fragment: string) => html.split(fragment).length - 1;
+  const runAction = async () => {
+    const result = await host.handleAction("load-more-inspiration-deliveries", {
+      id: undefined,
+      $: () => null,
+    });
+    if (result.refresh !== false) await refreshAndRender();
+    return result;
+  };
+
+  await refreshAndRender();
+  const pageTwoResult = await runAction();
+  assert.equal(pageTwoResult.handled, true);
+  assert.equal(pageTwoResult.refresh, undefined);
+  assert.deepEqual(paginatedCursors, ["page-2"]);
+  assert.equal(occurrences(rendered, '<div class="inspiration-history-row"'), 4);
+  assert.equal(occurrences(rendered, "<strong>待投递</strong>"), 1);
+  assert.equal(occurrences(rendered, "<strong>已展示 · 已查看</strong>"), 1);
+  assert.equal(occurrences(rendered, "<strong>投递中</strong>"), 1);
+  assert.equal(occurrences(rendered, "<strong>定时投递失败（未展示）</strong>"), 1);
+  assert.match(rendered, /load-more-inspiration-deliveries/);
+
+  await runAction();
+  assert.deepEqual(paginatedCursors, ["page-2", "page-3"]);
+  assert.equal(occurrences(rendered, '<div class="inspiration-history-row"'), 5);
+  assert.equal(occurrences(rendered, "<strong>已展示 · 已保留</strong>"), 1);
+  assert.doesNotMatch(rendered, /load-more-inspiration-deliveries/);
+
+  firstPageRevision = 3;
+  await host.loadData(data, { live: true });
+  assert.equal(liveRefreshes, 1);
+  assert.deepEqual(paginatedCursors, ["page-2", "page-3"]);
+  assert.equal(occurrences(rendered, '<div class="inspiration-history-row"'), 6);
+  assert.equal(occurrences(rendered, "<strong>手动投递失败（未展示）</strong>"), 1);
+  assert.equal(occurrences(rendered, "<strong>已展示 · 已归档</strong>"), 1);
+  assert.equal(occurrences(rendered, "<strong>待投递</strong>"), 0);
+  assert.equal(occurrences(rendered, "<strong>已展示 · 已查看</strong>"), 1);
+  assert.equal(occurrences(rendered, "<strong>投递中</strong>"), 1);
+  assert.equal(occurrences(rendered, "<strong>定时投递失败（未展示）</strong>"), 1);
+  assert.equal(occurrences(rendered, "<strong>已展示 · 已保留</strong>"), 1);
+  assert.doesNotMatch(rendered, /load-more-inspiration-deliveries/);
+
+  await host.stop();
+  await host.refresh({ api: pluginApi, root });
+  const freshData: Record<string, unknown> = {};
+  await host.loadData(freshData);
+  const freshRender = String(host.renderFace(
+    { type: "inspiration-flow" },
+    { data: freshData, esc: escapeText, escA: escapeAttribute }
+  ));
+  assert.equal(occurrences(freshRender, '<div class="inspiration-history-row"'), 2);
+  assert.equal(occurrences(freshRender, "<strong>投递中</strong>"), 0);
+  assert.equal(occurrences(freshRender, "<strong>定时投递失败（未展示）</strong>"), 0);
+  assert.equal(occurrences(freshRender, "<strong>已展示 · 已保留</strong>"), 0);
+  assert.match(freshRender, /load-more-inspiration-deliveries/);
+  await host.stop();
+});
+
 test("Inspiration Web uses canonical APIs, escapes DTOs, and delegates Flow policy", async () => {
   const { activate } = await import(webModulePath);
   const malicious = '<img src=x onerror="alert(1)">';

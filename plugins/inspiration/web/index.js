@@ -270,6 +270,19 @@ function deliverySnapshotSignature(deliveries, nextCursor) {
   ]);
 }
 
+function mergeUniqueDeliveries(...deliveryGroups) {
+  const merged = [];
+  const seen = new Set();
+  for (const deliveries of deliveryGroups) {
+    for (const delivery of Array.isArray(deliveries) ? deliveries : []) {
+      if (seen.has(delivery.id)) continue;
+      seen.add(delivery.id);
+      merged.push(delivery);
+    }
+  }
+  return merged;
+}
+
 function isHostEditing(root) {
   const active = root?.ownerDocument?.activeElement;
   return Boolean(
@@ -291,6 +304,7 @@ export async function activate({ api, refresh, root }) {
   let latestSettings = null;
   let latestDeliveries = [];
   let latestDeliveryNextCursor = null;
+  let deliveryHistoryExpanded = false;
   let currentCandidate = null;
   let mounted = true;
   let lifecycleVersion = 0;
@@ -304,12 +318,16 @@ export async function activate({ api, refresh, root }) {
     flow: deliverySnapshotSignature(deliveries, nextCursor),
   });
 
-  const applyLiveSnapshot = (inspirations, deliveries, nextCursor) => {
+  const applySnapshot = (inspirations, deliveries, nextCursor) => {
     latestInspirations = inspirations;
-    latestDeliveries = deliveries;
-    latestDeliveryNextCursor = nextCursor;
+    if (deliveryHistoryExpanded) {
+      latestDeliveries = mergeUniqueDeliveries(deliveries, latestDeliveries);
+    } else {
+      latestDeliveries = mergeUniqueDeliveries(deliveries);
+      latestDeliveryNextCursor = nextCursor;
+    }
     if (currentCandidate) {
-      const currentDelivery = deliveries.find(
+      const currentDelivery = latestDeliveries.find(
         (delivery) => delivery.id === currentCandidate.delivery.id
       );
       const currentInspiration = inspirations.find(
@@ -332,16 +350,17 @@ export async function activate({ api, refresh, root }) {
       api(`${API_PREFIX}/flow/deliveries?limit=20`),
     ]);
     if (!mounted || expectedLifecycleVersion !== lifecycleVersion) return {};
-    latestInspirations = Array.isArray(list?.items) ? list.items : [];
-    latestSettings = settings;
-    latestDeliveries = Array.isArray(ledger?.deliveries) ? ledger.deliveries : [];
-    latestDeliveryNextCursor = typeof ledger?.nextCursor === "string"
+    const nextInspirations = Array.isArray(list?.items) ? list.items : [];
+    const nextDeliveries = Array.isArray(ledger?.deliveries) ? ledger.deliveries : [];
+    const nextDeliveryNextCursor = typeof ledger?.nextCursor === "string"
       ? ledger.nextCursor
       : null;
+    latestSettings = settings;
+    applySnapshot(nextInspirations, nextDeliveries, nextDeliveryNextCursor);
     const signatures = signaturesFor(
-      latestInspirations,
-      latestDeliveries,
-      latestDeliveryNextCursor
+      nextInspirations,
+      nextDeliveries,
+      nextDeliveryNextCursor
     );
     presentedInboxSignature = signatures.inbox;
     presentedFlowSignature = signatures.flow;
@@ -405,7 +424,7 @@ export async function activate({ api, refresh, root }) {
       if (snapshotChanged && canInvalidateHost && isHostEditing(root)) {
         return liveData;
       }
-      applyLiveSnapshot(nextInspirations, nextDeliveries, nextDeliveryNextCursor);
+      applySnapshot(nextInspirations, nextDeliveries, nextDeliveryNextCursor);
       if (
         snapshotChanged &&
         canInvalidateHost
@@ -704,16 +723,11 @@ export async function activate({ api, refresh, root }) {
         const page = await api(
           `${API_PREFIX}/flow/deliveries?limit=20&cursor=${encodeURIComponent(latestDeliveryNextCursor)}`
         );
-        const existing = new Set(latestDeliveries.map((delivery) => delivery.id));
-        for (const delivery of Array.isArray(page?.deliveries) ? page.deliveries : []) {
-          if (!existing.has(delivery.id)) {
-            existing.add(delivery.id);
-            latestDeliveries.push(delivery);
-          }
-        }
+        latestDeliveries = mergeUniqueDeliveries(latestDeliveries, page?.deliveries);
         latestDeliveryNextCursor = typeof page?.nextCursor === "string"
           ? page.nextCursor
           : null;
+        deliveryHistoryExpanded = true;
         return { handled: true, message: "已加载更多 Flow 投递" };
       }
       const candidateIsActionable = isActionableDelivery(currentCandidate?.delivery);
@@ -791,6 +805,7 @@ export async function activate({ api, refresh, root }) {
       latestSettings = null;
       latestDeliveries = [];
       latestDeliveryNextCursor = null;
+      deliveryHistoryExpanded = false;
       currentCandidate = null;
     },
   };
