@@ -204,22 +204,31 @@ test("understanding service captures, retries transient provider failures, and p
   assert.equal(JSON.stringify(result).includes("secret-key"), false);
 });
 
-test("disabled understanding does not capture or call the provider", async () => {
+test("disabled understanding skips scheduled work but permits an explicit run", async () => {
   let captures = 0;
   let calls = 0;
+  const current = new Date("2026-08-26T09:00:00+08:00");
   const service = new ScreenUnderstandingService(
     makeStore(),
-    { async get() { return { id: "default", version: 1, ...DEFAULT_UNDERSTANDING_SETTINGS, enabled: false, updatedAt: new Date() }; } } as any,
-    { async getForInference() { throw new Error("must not resolve provider"); } },
-    { async captureForInference() { captures++; throw new Error("must not capture"); } },
-    { async complete() { calls++; throw new Error("must not call"); } },
+    { async get() { return { id: "default", version: 1, ...DEFAULT_UNDERSTANDING_SETTINGS, enabled: false, providerProfileId: profile.id, updatedAt: current }; } } as any,
+    { async getForInference() { return { profile, apiKey: "secret-key" }; } },
+    { async captureForInference() {
+      captures++;
+      return { format: "png" as const, displayId: 1, widthPixels: 1, heightPixels: 1, bytes: 3, capturedAt: current.toISOString(), png: Buffer.from("png") };
+    } },
+    { async complete() {
+      calls++;
+      return { content: '{"summary":"显式识别","activity":"授权测试","confidence":0.95,"sensitive":false,"apps":["代码编辑器"]}', latencyMs: 12, costMicros: null };
+    } },
+    { isIdle() { return false; } },
+    () => current
   );
-  await assert.rejects(
-    service.run(),
-    (error) => error instanceof UnderstandingError && error.code === "UNDERSTANDING_DISABLED"
-  );
+  assert.equal(await service.runScheduled(), null);
   assert.equal(captures, 0);
   assert.equal(calls, 0);
+  assert.equal((await service.run()).summary, "显式识别");
+  assert.equal(captures, 1);
+  assert.equal(calls, 1);
 });
 
 test("scheduled understanding uses non-interactive credentials and resumes after a manual read", async () => {
@@ -357,7 +366,7 @@ test("scheduled understanding retries transient Keychain failures", async () => 
   }
 });
 
-test("manual Keychain authorization populates the cache used by later scheduled runs", async () => {
+test("explicit authorization while disabled unlocks enablement and scheduled cache use", async () => {
   const fakeRoot = await mkdtemp(join(tmpdir(), "echolog-understanding-cache-"));
   const fakeExecutable = join(
     fakeRoot,
@@ -373,6 +382,7 @@ test("manual Keychain authorization populates the cache used by later scheduled 
   await chmod(fakeExecutable, 0o755);
   const helperRequests: Array<{ args: string[]; timeoutMs?: number }> = [];
   let current = new Date("2026-08-26T11:00:00+08:00");
+  let enabled = false;
   try {
     const keychain = new MacKeychainClient(async (request) => {
       helperRequests.push({ args: request.args, timeoutMs: request.timeoutMs });
@@ -418,7 +428,7 @@ test("manual Keychain authorization populates the cache used by later scheduled 
           id: "default",
           version: 1,
           ...DEFAULT_UNDERSTANDING_SETTINGS,
-          enabled: true,
+          enabled,
           providerProfileId: profile.id,
           captureIntervalSeconds: 60,
           updatedAt: current,
@@ -455,9 +465,10 @@ test("manual Keychain authorization populates the cache used by later scheduled 
       () => current
     );
 
-    assert.equal(await service.runScheduled(), null);
-    current = new Date(current.getTime() + 60_000);
-    assert.equal(await service.runScheduled(), null);
+    await assert.rejects(
+      providers.withSelectable(profile.id, true, async () => undefined),
+      (error) => error instanceof ProviderError && error.code === "KEYCHAIN_AUTH_REQUIRED"
+    );
     assert.equal(helperRequests.length, 1);
     assert.equal(helperRequests[0]?.args.includes("--no-auth-ui"), true);
 
@@ -466,6 +477,8 @@ test("manual Keychain authorization populates the cache used by later scheduled 
     assert.equal(helperRequests[1]?.args.includes("--no-auth-ui"), false);
     assert.equal(keychain.hasCachedValue(profile.id), true);
 
+    await providers.withSelectable(profile.id, true, async () => { enabled = true; });
+    assert.equal(helperRequests.length, 2);
     current = new Date(current.getTime() + 60_000);
     assert.ok(await service.runScheduled());
     assert.equal(helperRequests.length, 2);

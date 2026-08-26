@@ -60,6 +60,11 @@ to be in Simplified Chinese. The one-shot capture process has its own 12-second
 hard watchdog, shorter than the daemon's 15-second request timeout.
 Never invoke `request-permission` from the daemon.
 
+The `enabled` setting controls periodic scheduling. The loopback-only
+“立即识别” action remains available as an explicit one-off run while scheduling
+is disabled, so a user can authorize and warm the credential cache before
+enabling automatic understanding.
+
 The periodic understanding job checks the database-backed interval every five
 seconds. This keeps a configured 120-second interval close to two minutes even
 when the setting changes while the daemon is running, instead of rounding it up

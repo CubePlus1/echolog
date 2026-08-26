@@ -277,7 +277,7 @@ export class ScreenUnderstandingService {
     this.inFlight = true;
     try {
       const configuration = await this.settings.get();
-      if (!configuration.enabled) {
+      if (!configuration.enabled && options.scheduled) {
         throw new UnderstandingError(
           "UNDERSTANDING_DISABLED",
           "Screen understanding is disabled",

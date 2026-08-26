@@ -482,12 +482,13 @@ curl -X POST http://localhost:19827/api/plugins/screen-time/understanding/captur
 #### AI 屏幕识别
 
 `POST /api/plugins/screen-time/understanding/run` 是 loopback-only 的显式识别入口，
-只接受空 JSON 对象。它要求 settings 中 `enabled=true`、选中了有 Keychain 密钥的
-Provider；服务会采集活动显示器、调用 `${baseUrl}/chat/completions`，并只接受包含
+只接受空 JSON 对象。它要求选中了有 Keychain 密钥的 Provider；服务会采集活动
+显示器、调用 `${baseUrl}/chat/completions`，并只接受包含
 `summary`、`activity`、`confidence`、`sensitive`、`apps` 的 JSON 结果。失败不会返回
 远端响应正文或 API key。
 
-该显式入口允许 macOS 显示 Keychain 授权 UI，并为用户保留至少 60 秒完成授权。
+`enabled` 只控制周期调度；该显式入口在周期识别关闭时仍可执行。它允许 macOS
+显示 Keychain 授权 UI，并为用户保留至少 60 秒完成授权。
 成功读取后，凭据进入 daemon 的进程内缓存并解除该 Provider 的自动调度阻断。
 周期任务只执行禁止 UI 的 Keychain 查询；遇到 `KEYCHAIN_AUTH_REQUIRED` 会静默跳过
 本轮并停止重复查询，不会弹窗或把插件降级。后续周期识别直接使用内存缓存，不再
@@ -527,8 +528,8 @@ observation 返回 `404`。它不会删除 request budget ledger。
 `dailyRequestBudget` 和可选的 `dailyCostBudgetMicros` 约束执行。一次进程内同时只
 允许一个识别任务；临时网络错误按 `maxAttempts` 有界重试。
 
-识别关闭返回 `409 UNDERSTANDING_DISABLED`；未配置 Provider 返回
-`409 UNDERSTANDING_PROVIDER_REQUIRED`；请求/成本预算耗尽返回 `429`；模型认证、
+未配置 Provider 返回 `409 UNDERSTANDING_PROVIDER_REQUIRED`；请求/成本预算耗尽
+返回 `429`；模型认证、
 超时、限流、不可达和非法响应分别返回脱敏的 `PROVIDER_AUTH`、
 `PROVIDER_TIMEOUT`、`PROVIDER_RATE_LIMITED`、`PROVIDER_UNAVAILABLE` 或
 `UNDERSTANDING_RESPONSE_INVALID`。原始截图测试和识别入口均不提供
