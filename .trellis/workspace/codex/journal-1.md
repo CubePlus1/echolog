@@ -122,3 +122,36 @@ Integrated notification, Schedule, and Inspiration review fixes; closed caller-a
 ### Next Steps
 
 - None - task complete
+
+
+## Session 4: PR 36 Flow history review fix
+
+**Date**: 2026-08-26
+**Task**: PR 36 Flow history review fix
+**Branch**: `codex/plugins-integration`
+
+### Summary
+
+Fixed Codex P2 by preserving expanded Inspiration Flow delivery history across Host rebuilds and live first-page refreshes, retaining authoritative signatures and expanded cursors; added Host-path regression coverage and frontend spec guidance; full validation, CI, independent review, and GitHub Codex review passed.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `b851002` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
