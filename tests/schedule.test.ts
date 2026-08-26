@@ -11,7 +11,7 @@ import {
   SCHEDULE_REMINDER_JOB_TIMEOUT_MS,
   schedulePlugin,
 } from "../plugins/schedule/src/index.js";
-import { pollDueReminders } from "../plugins/schedule/src/reminders.js";
+import { pollDueReminders, type ReminderStore } from "../plugins/schedule/src/reminders.js";
 import { createScheduleRoutes } from "../plugins/schedule/src/routes.js";
 import {
   ScheduleConflictError,
@@ -340,7 +340,13 @@ class MemoryReminderStore {
     return this.state.due;
   }
 
-  async claimReminder(itemId: string, reminderAt: Date): Promise<ReminderDelivery | null> {
+  async claimReminder(
+    itemId: string,
+    reminderAt: Date,
+    _attemptedAt?: Date,
+    signal?: AbortSignal
+  ): Promise<ReminderDelivery | null> {
+    signal?.throwIfAborted();
     const dedupeKey = reminderDedupeKey(itemId, reminderAt);
     if (this.state.deliveries.has(dedupeKey)) return null;
     const delivery: ReminderDelivery = {
@@ -380,6 +386,24 @@ function reminderState(): ReminderState {
     due: [{ item: scheduled, reminderAt: new Date(scheduled.nextReminderAt!) }],
     deliveries: new Map(),
     terminalWrites: [],
+  };
+}
+
+function deferred<T>(): {
+  promise: Promise<T>;
+  resolve(value: T): void;
+  reject(error: unknown): void;
+} {
+  let resolvePromise!: (value: T) => void;
+  let rejectPromise!: (error: unknown) => void;
+  const promise = new Promise<T>((resolve, reject) => {
+    resolvePromise = resolve;
+    rejectPromise = reject;
+  });
+  return {
+    promise,
+    resolve: resolvePromise,
+    reject: rejectPromise,
   };
 }
 
@@ -490,6 +514,105 @@ test("reminder polling terminalizes operational failures but retains caller-abor
   );
   assert.equal(preAborted.deliveries.size, 0);
   assert.deepEqual(preAborted.terminalWrites, []);
+});
+
+test("reminder polling forwards caller abort through claim and ignores a late claim", async () => {
+  const dueState = reminderState();
+  const pending = deferred<ReminderDelivery | null>();
+  const controller = new AbortController();
+  let claimSignal: AbortSignal | undefined;
+  let sends = 0;
+  let terminalWrites = 0;
+  const store: ReminderStore = {
+    async dueReminders() {
+      return dueState.due;
+    },
+    async claimReminder(_itemId, _reminderAt, _attemptedAt, signal) {
+      claimSignal = signal;
+      return pending.promise;
+    },
+    async finishReminder() {
+      terminalWrites++;
+      throw new Error("late claim must not finish a delivery");
+    },
+  };
+
+  const polling = pollDueReminders(
+    store,
+    async () => {
+      sends++;
+      return {
+        channels: {
+          mac: { status: "sent" },
+          ntfy: { status: "disabled" },
+        },
+      };
+    },
+    controller.signal
+  );
+
+  while (!claimSignal) {
+    await new Promise<void>((resolve) => setImmediate(resolve));
+  }
+  assert.equal(claimSignal, controller.signal);
+  controller.abort();
+  pending.resolve({
+    id: "late-claim",
+    dedupeKey: "schedule:late",
+    itemId: dueState.due[0]!.item.id,
+    reminderAt: dueState.due[0]!.reminderAt.toISOString(),
+    attemptedAt: new Date().toISOString(),
+    completedAt: null,
+    status: "claimed",
+    channelResults: null,
+    failure: null,
+  });
+
+  await assert.rejects(
+    polling,
+    (error) => error instanceof Error && error.name === "AbortError"
+  );
+  assert.equal(sends, 0);
+  assert.equal(terminalWrites, 0);
+});
+
+test("internal claim transport timeout is distinct from caller abort", async () => {
+  const timeout = Object.assign(
+    new Error("schedule reminder claim timed out"),
+    { name: "ScheduleClaimTimeoutError", code: "SCHEDULE_CLAIM_TIMEOUT" }
+  );
+  const controller = new AbortController();
+  const state = reminderState();
+  let sends = 0;
+  const store: ReminderStore = {
+    async dueReminders() {
+      return state.due;
+    },
+    async claimReminder() {
+      throw timeout;
+    },
+    async finishReminder() {
+      throw new Error("claim timeout must not finish a delivery");
+    },
+  };
+  await assert.rejects(
+    pollDueReminders(
+      store,
+      async () => {
+        sends++;
+        return {
+          channels: {
+            mac: { status: "sent" },
+            ntfy: { status: "disabled" },
+          },
+        };
+      },
+      controller.signal
+    ),
+    (error) => error === timeout
+  );
+  assert.equal(controller.signal.aborted, false);
+  assert.equal(sends, 0);
 });
 
 test("Schedule registers one bounded Host job and cleans lifecycle state", async () => {

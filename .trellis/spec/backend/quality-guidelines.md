@@ -37,6 +37,9 @@
   caller signal；`signal.aborted` 或 `AbortError` 直接上抛，不能记作普通
   operational failure。测试须让受控 promise 在真实 Host timeout/stop 后迟到
   resolve/reject，并断言无 terminal write。
+- 对可能等待数据库锁的后台操作，caller abort 与内部 transport timeout 必须使用
+  不同的 `AbortController`/错误类型；超时竞态必须同时拒绝外层等待、释放 timer 和
+  listener，并在锁返回后、写入前复查内部 signal，禁止迟到 continuation 落库。
 - 崩溃容忍:片段开启即 INSERT,周期 UPDATE(60s),`stopTracker` 收尾在 `lastSeenAt` 而非 `new Date()`
 - 采样断档检测(`now - lastSampleAt > 3×间隔`)兜住睡眠/合盖,在最后活跃时刻收尾
 

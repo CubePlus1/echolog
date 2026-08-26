@@ -11,7 +11,8 @@ export interface ReminderStore {
   claimReminder(
     itemId: string,
     reminderAt: Date,
-    attemptedAt?: Date
+    attemptedAt?: Date,
+    signal?: AbortSignal
   ): Promise<ReminderDelivery | null>;
   finishReminder(
     id: string,
@@ -116,8 +117,10 @@ export async function pollDueReminders(
     const claimed = await store.claimReminder(
       reminder.item.id,
       reminder.reminderAt,
-      now
+      now,
+      signal
     );
+    signal.throwIfAborted();
     if (!claimed) {
       summary.deduplicated++;
       continue;

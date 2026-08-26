@@ -63,6 +63,100 @@ export interface DueReminder {
   reminderAt: Date;
 }
 
+export const SCHEDULE_CLAIM_TIMEOUT_MS = 5_000;
+
+export class ScheduleClaimTimeoutError extends Error {
+  readonly code = "SCHEDULE_CLAIM_TIMEOUT" as const;
+
+  constructor(public readonly timeoutMs: number) {
+    super(`Schedule reminder claim timed out after ${timeoutMs}ms`);
+    this.name = "ScheduleClaimTimeoutError";
+  }
+}
+
+export interface ScheduleStoreOptions {
+  claimTimeoutMs?: number;
+}
+
+function callerAbortReason(signal: AbortSignal): unknown {
+  return signal.reason ?? new DOMException("The operation was aborted", "AbortError");
+}
+
+/**
+ * Bound the claim transport without conflating an internal timeout with the
+ * caller's AbortSignal.  The operation is deliberately allowed to settle
+ * after the race, but its internal signal guards every transaction write so a
+ * late lock release cannot insert a claim.
+ */
+function runBoundedClaim<T>(
+  callerSignal: AbortSignal | undefined,
+  timeoutMs: number,
+  operation: (signal: AbortSignal) => Promise<T>
+): Promise<T> {
+  const internalController = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let settled = false;
+  let removeCallerListener: (() => void) | undefined;
+
+  const operationPromise = Promise.resolve().then(() =>
+    operation(internalController.signal)
+  );
+  // The operation may settle after the timeout/abort race.  Attach a rejection
+  // handler immediately so that a late database error is never unhandled.
+  void operationPromise.catch(() => undefined);
+
+  return new Promise<T>((resolve, reject) => {
+    const cleanup = () => {
+      if (timer !== undefined) clearTimeout(timer);
+      timer = undefined;
+      removeCallerListener?.();
+      removeCallerListener = undefined;
+    };
+    const settle = (callback: () => void) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      callback();
+    };
+    const rejectCallerAbort = () => {
+      internalController.abort();
+      settle(() => reject(callerAbortReason(callerSignal!)));
+    };
+
+    if (callerSignal) {
+      if (callerSignal.aborted) {
+        rejectCallerAbort();
+        return;
+      }
+      const onAbort = () => rejectCallerAbort();
+      callerSignal.addEventListener("abort", onAbort, { once: true });
+      removeCallerListener = () => callerSignal.removeEventListener("abort", onAbort);
+    }
+
+    timer = setTimeout(() => {
+      internalController.abort();
+      settle(() => reject(new ScheduleClaimTimeoutError(timeoutMs)));
+    }, timeoutMs);
+
+    void operationPromise.then(
+      (value) => {
+        if (callerSignal?.aborted) {
+          rejectCallerAbort();
+          return;
+        }
+        settle(() => resolve(value));
+      },
+      (error: unknown) => {
+        if (callerSignal?.aborted) {
+          rejectCallerAbort();
+          return;
+        }
+        settle(() => reject(error));
+      }
+    );
+  });
+}
+
 function iso(value: Date | null): string | null {
   return value?.toISOString() ?? null;
 }
@@ -114,10 +208,16 @@ export class ScheduleStore {
   private readonly sql;
   private readonly db;
   private closed = false;
+  private readonly claimTimeoutMs: number;
 
-  constructor(databaseUrl: string) {
+  constructor(databaseUrl: string, options: ScheduleStoreOptions = {}) {
+    const claimTimeoutMs = options.claimTimeoutMs ?? SCHEDULE_CLAIM_TIMEOUT_MS;
+    if (!Number.isInteger(claimTimeoutMs) || claimTimeoutMs <= 0) {
+      throw new Error("claimTimeoutMs must be a positive integer");
+    }
     this.sql = postgres(databaseUrl);
     this.db = drizzle(this.sql);
+    this.claimTimeoutMs = claimTimeoutMs;
   }
 
   async close(): Promise<void> {
@@ -341,35 +441,45 @@ export class ScheduleStore {
   async claimReminder(
     itemId: string,
     reminderAt: Date,
-    attemptedAt = new Date()
+    attemptedAt = new Date(),
+    callerSignal?: AbortSignal
   ): Promise<ReminderDelivery | null> {
     const id = nanoid(12);
     const dedupeKey = reminderDedupeKey(itemId, reminderAt);
     const reminderInstant = reminderAt.toISOString();
     const attemptedInstant = attemptedAt.toISOString();
-    const inserted = await this.sql.begin(async (transaction) => {
-      // Lock and re-check the item so a stale due-list snapshot cannot claim a
-      // reminder that was already confirmed, cancelled, or snoozed.
-      const eligible = await transaction<{ id: string }[]>`
-        SELECT id
-        FROM schedule_items
-        WHERE id = ${itemId}
-          AND status = 'scheduled'
-          AND next_reminder_at = ${reminderInstant}
-        FOR UPDATE
-      `;
-      if (!eligible[0]) return false;
-      const claimed = await transaction<{ id: string }[]>`
-        INSERT INTO schedule_reminder_deliveries (
-          id, dedupe_key, item_id, reminder_at, attempted_at, status
-        ) VALUES (
-          ${id}, ${dedupeKey}, ${itemId}, ${reminderInstant}, ${attemptedInstant}, 'claimed'
-        )
-        ON CONFLICT (dedupe_key) DO NOTHING
-        RETURNING id
-      `;
-      return Boolean(claimed[0]);
-    });
+    const inserted = await runBoundedClaim(
+      callerSignal,
+      this.claimTimeoutMs,
+      async (internalSignal) => this.sql.begin(async (transaction) => {
+        internalSignal.throwIfAborted();
+        // Lock and re-check the item so a stale due-list snapshot cannot claim
+        // a reminder that was already confirmed, cancelled, or snoozed.
+        const eligible = await transaction<{ id: string }[]>`
+          SELECT id
+          FROM schedule_items
+          WHERE id = ${itemId}
+            AND status = 'scheduled'
+            AND next_reminder_at = ${reminderInstant}
+          FOR UPDATE
+        `;
+        internalSignal.throwIfAborted();
+        if (!eligible[0]) return false;
+        internalSignal.throwIfAborted();
+        const claimed = await transaction<{ id: string }[]>`
+          INSERT INTO schedule_reminder_deliveries (
+            id, dedupe_key, item_id, reminder_at, attempted_at, status
+          ) VALUES (
+            ${id}, ${dedupeKey}, ${itemId}, ${reminderInstant}, ${attemptedInstant}, 'claimed'
+          )
+          ON CONFLICT (dedupe_key) DO NOTHING
+          RETURNING id
+        `;
+        internalSignal.throwIfAborted();
+        return Boolean(claimed[0]);
+      })
+    );
+    if (callerSignal) callerSignal.throwIfAborted();
     return inserted ? {
       id,
       dedupeKey,

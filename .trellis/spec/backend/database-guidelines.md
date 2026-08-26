@@ -70,6 +70,12 @@ PostgreSQL（docker compose 起在 5436 端口，容器名 echolog-db）+ drizzl
   immediately before `claimed -> sent|failed`, recheck the signal. Caller
   abort or `AbortError` retains `claimed`; ordinary channel/service failure
   still writes `failed`.
+- Reminder claim transactions accept the caller signal but bound database-lock
+  waiting with a separate internal transport timeout. Check the internal signal
+  before/after `FOR UPDATE`, before/after the ledger insert, and before the
+  transaction callback returns; caller abort and timeout must clean up their
+  timer/listener resources and a late lock release must roll back rather than
+  insert a claim.
 
 ### 4. Validation & Error Matrix
 
@@ -81,6 +87,7 @@ PostgreSQL（docker compose 起在 5436 端口，容器名 echolog-db）+ drizzl
 | Duplicate or restarted poll | Existing ledger excludes the exact instant; no send |
 | Host notification failure | Record bounded failure; do not change item state |
 | Job abort/timeout/stop | Rethrow before finalization, release Host running state, retain `claimed` |
+| Blocked reminder claim timeout | Reject with distinct `SCHEDULE_CLAIM_TIMEOUT`, keep caller signal un-aborted, and prevent late ledger insert |
 
 ### 5. Good/Base/Bad Cases
 
