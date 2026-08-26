@@ -70,6 +70,7 @@ button { cursor: pointer; }
 .mini-status { padding: 6px 9px; }
 .mini-status.is-saved { border-color: rgba(133, 181, 138, 0.36); color: var(--green); }
 .mini-status.is-missing { border-color: rgba(201, 164, 75, 0.32); color: var(--gold); }
+.mini-status.is-unknown { color: var(--ink-muted); }
 
 .field-label { display: grid; gap: 7px; margin-top: 14px; color: var(--ink-muted); font-size: 12px; letter-spacing: 0.03em; }
 .field-note { color: var(--ink-dim); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10px; }

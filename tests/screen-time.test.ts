@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
-import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -1000,6 +1000,31 @@ test("screen-time Web clears submitted keys and never renders them", async () =>
   );
   assert.equal(html.includes("test-credential-value"), false);
   assert.equal(JSON.stringify(data).includes("test-credential-value"), false);
+
+  provider.hasApiKey = null;
+  const unknownKeyHtml = contribution.renderFace(
+    { type: "understanding-providers" },
+    {
+      data,
+      esc: (value: unknown) => String(value),
+      escA: (value: unknown) => String(value),
+      fmtDur: String,
+    }
+  );
+  assert.match(unknownKeyHtml, /密钥状态不可用/);
+  assert.match(unknownKeyHtml, /保存或替换密钥/);
+  assert.match(unknownKeyHtml, /删除密钥/);
+
+  const standalone = await readFile(
+    join(process.cwd(), "web/screen-understanding.js"),
+    "utf8"
+  );
+  assert.match(standalone, /hasApiKey === null \? "密钥状态不可用"/);
+  assert.match(standalone, /\$\("deleteKey"\)\.hidden = provider\.hasApiKey === false/);
+  assert.match(
+    await readFile(join(process.cwd(), "web/screen-understanding.html"), "utf8"),
+    /id="deleteKey"/
+  );
 
   provider.displayName = '<img src=x onerror="alert(1)">';
   provider.model = "<script>alert(2)</script>";
