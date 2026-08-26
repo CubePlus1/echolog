@@ -88,3 +88,37 @@ Fixed caller AbortError propagation and queued-transport cancellation race; vali
 ### Next Steps
 
 - Integrate `fdd22d9` into the PR #36 branch and request Codex review on the resulting latest commit.
+
+
+## Session 3: PR 36 final integration and Codex review
+
+**Date**: 2026-08-26
+**Task**: PR 36 final integration and Codex review
+**Branch**: `codex/plugins-integration`
+
+### Summary
+
+Integrated notification, Schedule, and Inspiration review fixes; closed caller-abort finalization, stale live-response, and malformed disabled-manifest isolation gaps; passed full tests/typecheck/build/PostgreSQL integrations; pushed PR #36 and received a clean Codex review on 29cb75c.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `7420eec` | (see git log) |
+| `29cb75c` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

@@ -9,6 +9,6 @@
 - [x] Run focused tests, PostgreSQL integration, full test/typecheck/build and
       `git diff --check`.
 - [x] Dispatch an independent final check and resolve verified P0/P1/P2 findings.
-- [ ] Commit Trellis/spec bookkeeping, archive this task, and record the session.
-- [ ] Push `codex/plugins-integration`, verify PR #36 head/CI, and comment exactly
+- [x] Commit Trellis/spec bookkeeping, archive this task, and record the session.
+- [x] Push `codex/plugins-integration`, verify PR #36 head/CI, and comment exactly
       `@codex review`.

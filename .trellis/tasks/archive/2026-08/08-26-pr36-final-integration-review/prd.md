@@ -28,8 +28,8 @@ head 重新触发 Codex Code Review。
 - [x] `codex/plugins-integration` 包含 notification、Schedule 和 Inspiration 的
       全部已验证修复，且 Trellis active/archive 路径无重复漂移。
 - [x] 全量与定向验证通过，无未解决的本地 P0/P1/P2 审查发现。
-- [ ] 集成分支工作树干净并成功 push 到 PR #36 的远端 head。
-- [ ] PR 最新 head 已触发 CI，并已精确评论 `@codex review`。
+- [x] 集成分支工作树干净并成功 push 到 PR #36 的远端 head。
+- [x] PR 最新 head 已触发 CI，并已精确评论 `@codex review`。
 - [x] 不 merge PR/main，不重写历史，不覆盖其他 worktree 的用户改动。
 
 ## Notes

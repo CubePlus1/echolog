@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 2
-- **Last Active**: 2026-08-24
+- **Total Sessions**: 3
+- **Last Active**: 2026-08-26
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~82 | Active |
+| `journal-1.md` | ~124 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 3 | 2026-08-26 | PR 36 final integration and Codex review | `7420eec`, `29cb75c` | `codex/plugins-integration` |
 | 2 | 2026-08-24 | PR 36 notification and Host review fixes | `fdd22d9`, `4c5f55f` | `codex/plugin-notification-service` |
 | 1 | 2026-08-24 | Bundled Plugin API v1 notification service | `29fe6c3`, `3bd3f38` | `codex/plugin-notification-service` |
 <!-- @@@/auto:session-history -->

@@ -48,6 +48,13 @@ malformed disabled plugins are reported as `enabled: false`, `degraded`, run no
 lifecycle, and do not block the next healthy plugin. A second independent review
 of the final working tree reported no P0/P1/P2 findings.
 
+## PR verification
+
+- Pushed normally to `origin/codex/plugins-integration`; no force/rebase/main merge.
+- GitHub CI `verify` passed on head `29cb75c1ec` in 1m13s.
+- Posted the exact PR comment `@codex review`.
+- GitHub Codex reviewed commit `29cb75c1ec` and reported no major issues.
+
 ## Spec-update judgment
 
 The merged child branches already record the durable-delivery, caller-Abort,
