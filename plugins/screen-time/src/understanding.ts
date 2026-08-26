@@ -14,15 +14,6 @@ import { VisionProviderError } from "./vision-provider.js";
 const MAX_HISTORY_LIMIT = 100;
 const RETRY_BASE_DELAY_MS = 250;
 
-function isKeychainAccessFailure(error: unknown): boolean {
-  return error instanceof ProviderError && [
-    "KEYCHAIN_UNAVAILABLE",
-    "KEYCHAIN_OPERATION_FAILED",
-    "KEYCHAIN_AUTH_REQUIRED",
-    "PLUGIN_TIMEOUT",
-  ].includes(error.code);
-}
-
 function isSilentScheduledCredentialFailure(error: unknown): boolean {
   return error instanceof ProviderError && [
     "KEYCHAIN_AUTH_REQUIRED",
@@ -453,8 +444,7 @@ export class ScreenUnderstandingService {
     } catch (error) {
       if (
         configuration.providerProfileId &&
-        (isKeychainAccessFailure(error) ||
-          (error instanceof ProviderError && error.code === "PROVIDER_KEY_REQUIRED"))
+        isSilentScheduledCredentialFailure(error)
       ) {
         this.scheduledKeychainBlockedFor = configuration.providerProfileId;
       }

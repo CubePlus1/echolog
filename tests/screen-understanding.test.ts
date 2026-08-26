@@ -298,6 +298,65 @@ test("scheduled understanding uses non-interactive credentials and resumes after
   assert.deepEqual(accessModes, ["non-interactive", "interactive", "non-interactive"]);
 });
 
+test("scheduled understanding retries transient Keychain failures", async () => {
+  const failures = [
+    ["KEYCHAIN_UNAVAILABLE", 503],
+    ["KEYCHAIN_OPERATION_FAILED", 502],
+    ["PLUGIN_TIMEOUT", 504],
+  ] as const;
+
+  for (const [code, statusCode] of failures) {
+    let current = new Date("2026-08-26T10:30:00+08:00");
+    let providerResolutions = 0;
+    const settings = {
+      async get() {
+        return {
+          id: "default",
+          version: 1,
+          ...DEFAULT_UNDERSTANDING_SETTINGS,
+          enabled: true,
+          providerProfileId: profile.id,
+          captureIntervalSeconds: 60,
+          updatedAt: current,
+        };
+      },
+    };
+    const service = new ScreenUnderstandingService(
+      makeStore(),
+      settings as any,
+      {
+        async getForInference() {
+          providerResolutions++;
+          throw new ProviderError(code, "Safe transient Keychain failure", statusCode);
+        },
+      },
+      {
+        async captureForInference() {
+          throw new Error("must not capture without credentials");
+        },
+      },
+      {
+        async complete() {
+          throw new Error("must not call provider without credentials");
+        },
+      },
+      { isIdle() { return false; } },
+      () => current
+    );
+
+    await assert.rejects(
+      service.runScheduled(),
+      (error) => error instanceof ProviderError && error.code === code
+    );
+    current = new Date(current.getTime() + 60_000);
+    await assert.rejects(
+      service.runScheduled(),
+      (error) => error instanceof ProviderError && error.code === code
+    );
+    assert.equal(providerResolutions, 2, `${code} must be retried`);
+  }
+});
+
 test("manual Keychain authorization populates the cache used by later scheduled runs", async () => {
   const fakeRoot = await mkdtemp(join(tmpdir(), "echolog-understanding-cache-"));
   const fakeExecutable = join(
