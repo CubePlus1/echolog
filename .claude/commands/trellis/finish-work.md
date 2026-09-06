@@ -1,66 +1,45 @@
 # Finish Work
 
-Wrap up the current session: archive the active task (and any other completed-but-unarchived tasks the user wants to clean up) and record the session journal. Code commits are NOT done here — those happen in workflow Phase 3.4 before you invoke this command.
+Complete the current request's authorized wrap-up. Check acceptance before task bookkeeping; a session ending or a commit existing does not establish task completion. Apply `.trellis/workflow.md` and AGENTS.md for authorization, branches, and PR review.
 
-## Step 1: Survey current state
+## Step 1: Inspect Current State
 
 ```bash
 python3 ./.trellis/scripts/get_context.py --mode record
-```
-
-This prints:
-
-- **My active tasks** — review whether any besides the current one are actually done (code merged, AC met) and should be archived this round.
-- **Git status** — quick visual on what's dirty.
-- **Recent commits** — you'll need their hashes in Step 4 for `--commit`.
-
-If `--mode record` surfaces other completed tasks not tied to the current session, surface them to the user with a one-shot confirmation: "These N tasks look done — archive them too in this round? [y/N]". Default is no; the current active task is always archived in Step 3 regardless.
-
-## Step 2: Sanity check — classify dirty paths
-
-Run:
-
-```bash
 git status --porcelain
 ```
 
-Filter out paths under `.trellis/workspace/` and `.trellis/tasks/` — those are managed by `add_session.py` and `task.py archive` auto-commits and will appear dirty as part of this skill's own work.
+Read the current task's acceptance and verification evidence. Inspect the task-owned diff and actual commits. Leave unrelated tasks alone unless the user asked to clean them up; do not introduce an unsolicited archive-confirmation prompt.
 
-For each remaining dirty path, decide whether it belongs to **the current task** or to **other parallel work** (e.g., another terminal window editing the same repo). Heuristics:
+## Step 2: Finish the Deliverable
 
-- Paths referenced in the current task's `prd.md` / `implement.jsonl` / `check.jsonl` → current task
-- Paths in code areas matching the task's stated scope, or that you remember editing this session → current task
-- Paths in unrelated areas you have no recollection of touching this session → other parallel work
+- If implementation or required checks remain, execute the applicable workflow step directly, then return here. Do not send the user away to invoke another command.
+- If task changes are uncommitted and commits are authorized, perform Phase 3.4 directly. Otherwise retain the verified local diff and report commit status separately. An unrequested commit is not a local-delivery gate.
+- Preserve unrelated dirty paths. Inspect mixed files/hunks before classifying ownership; stage only attributable task changes. Ask only if essential ownership cannot be established and the requested next action would affect unknown work.
+- A requested PR/merge/release must satisfy its own authorization and latest-commit review requirements. Pending external work does not erase completed local work, but remains incomplete when included in the requested outcome.
 
-Then route:
+## Step 3: Archive Only Completed Tasks
 
-- **Any remaining path looks like current-task work** — bail out with:
-  > "Working tree has uncommitted code changes from this task: `<list>`. Return to workflow Phase 3.4 to commit them before running `/trellis:finish-work`."
+Archive a task only when its own acceptance is met, including merge/release if that task requires them. Archive only the current task or others explicitly included in the requested cleanup. Never archive an unfinished task to clear the active pointer.
 
-  Do NOT run `git commit` here. Do NOT prompt the user to commit. The user goes back to Phase 3.4 and the AI drives the batched commit there.
-- **All remaining paths look unrelated** (other parallel-window work) — report them once and continue to Step 3:
-  > "FYI, dirty files outside this task's scope — leaving them for the other window: `<list>`."
-- **Genuinely unsure** — ask the user once: "Are `<list>` this task's work I forgot to commit, or another window's? (commit / ignore)" — then route per their answer.
+```bash
+python3 ./.trellis/scripts/task.py archive --help
+```
 
-## Step 3: Archive task(s)
+Inspect script/configuration side effects first. Archive can auto-commit: use a supported no-commit option when requested/needed, or leave the task unarchived if the operation cannot honor current constraints. Run permitted archive operations on a task branch only:
 
 ```bash
 python3 ./.trellis/scripts/task.py archive <task-name>
 ```
 
-At minimum: the current active task (if any). Plus any extra tasks the user confirmed in Step 1. Each archive produces a `chore(task): archive ...` commit via the script's auto-commit.
+If the user only asks to clear active state, `task.py finish` clears the session pointer without declaring completion. No active task means no archive step; do not manufacture one for this command.
 
-If there is no active task and the user did not confirm any cleanup archives, skip this step.
+## Step 4: Preserve Useful Context and Report
 
-## Step 4: Record session journal
+Record a journal only when it adds useful cross-session context and its side effects are authorized. Inspect `add_session.py --help` and auto-commit settings. Use actual task commit hashes; omit unsupported claims or fabricated hashes. Do not create commits merely to make a journal possible.
 
 ```bash
-python3 ./.trellis/scripts/add_session.py \
-  --title "Session Title" \
-  --commit "hash1,hash2" \
-  --summary "Brief summary"
+python3 ./.trellis/scripts/add_session.py --title "Session Title" --commit "<actual-task-hashes>" --summary "Useful decisions and verified outcome"
 ```
 
-Use the work-commit hashes produced in Phase 3.4 (visible in Step 1's `Recent commits` list, or via `git log --oneline`) for `--commit`. Do not include the archive commit hashes from Step 3. This produces a `chore: record journal` commit.
-
-Final git log order: `<work commits from 3.4>` → `chore(task): archive ...` (one or more) → `chore: record journal`.
+Remove only this session's disposable temporary files. Report what was delivered, the meaningful verification, and any requested step still blocked. Distinguish local delivery, commits, PR review, merge, deployment, and task archive where relevant. Finish authorized actions yourself rather than ending with a reminder for the user to run this command.

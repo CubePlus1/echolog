@@ -1,56 +1,32 @@
 # Continue Current Task
 
-Resume work on the current task — pick up at the right phase/step in `.trellis/workflow.md`.
+Resume the first unfinished applicable step in `.trellis/workflow.md`. Preserve the original objective, accepted decisions, and existing authorization. A status or phase change does not require another approval.
 
----
-
-## Step 1: Load Current Context
+## Load Context
 
 ```bash
 python3 ./.trellis/scripts/get_context.py
-```
-
-Confirms: current task, git state, recent commits.
-
-## Step 2: Load the Phase Index
-
-```bash
 python3 ./.trellis/scripts/get_context.py --mode phase
 ```
 
-Shows the Phase Index (Plan / Execute / Finish) with routing + skill mapping.
+Inspect current task, relevant artifacts, git state, and prior authorization. A request to continue an implementation task resumes implementation. If the prior scope was explicitly planning-only or a consequential decision remains unresolved, keep that boundary and continue independent preparation.
 
-## Step 3: Decide Where You Are
+## Route by Remaining Work
 
-`get_context.py` shows the active task's `status` field. Route by `status` + artifact presence. This command replaces the user needing to remember the Trellis flow; it does not itself approve implementation.
+- No active task: follow request triage; reuse/create a suitable task when useful or proceed inline for taskless work. Do not ask for process consent.
+- `planning` with insufficient goal/acceptance: **1.1**, inspecting evidence before clarifying consequential gaps.
+- `planning` with sufficient scope/acceptance: **1.4**, run `task.py start` and proceed if implementation is authorized. Extra documents are needed only for a concrete purpose; JSONL context is needed only for agents actually consuming it.
+- `in_progress` with implementation unfinished: **2.1**.
+- Implementation done but required verification missing: **2.2**.
+- Verification passed: **3.3** assess useful spec updates, **3.4** perform authorized commits, then **3.5** execute wrap-up.
+- `completed` but not archived: verify acceptance and run authorized finish-work steps. Never archive merely because the status says completed.
 
-- `status=planning` + no `prd.md` → **1.1** (load `trellis-brainstorm`)
-- `status=planning` + `prd.md` only → decide whether the task is lightweight or complex. Lightweight can move to **1.4** review; complex returns to **1.1** to add `design.md` + `implement.md`.
-- `status=planning` + complex artifacts complete + sub-agent jsonl not curated (only the seed `_example` row) → **1.3**
-- `status=planning` + required artifacts complete + required jsonl curated or inline mode → **1.4** (ask for start review; only run `task.py start` after user confirms)
-- `status=in_progress` + implementation not started → **2.1**
-- `status=in_progress` + implementation done, not yet checked → **2.2**
-- `status=in_progress` + check passed → **3.3** (spec update) → **3.4** (commit)
-- `status=completed` (rare; usually archived immediately) → archive flow
+Skip applicable steps whose outputs are already valid. Revisit only facts affected by new evidence or scope; do not restart planning or repeat passing checks without cause.
 
-Phase rules (full detail in `.trellis/workflow.md`):
-
-1. Run steps **in order** within a phase — `[required]` steps must not be skipped
-2. `[once]` steps are already done if the required output exists. `prd.md` alone can be enough only for lightweight tasks; complex tasks also need `design.md` and `implement.md`.
-3. You may go back to an earlier phase if discoveries require it
-
-## Step 4: Load the Specific Step
-
-Once you know which step to resume at:
+## Execute
 
 ```bash
-python3 ./.trellis/scripts/get_context.py --mode phase --step <X.X> --platform claude
+python3 ./.trellis/scripts/get_context.py --mode phase --step <X.Y>
 ```
 
-Follow the loaded instructions. After each `[required]` step completes, move to the next.
-
----
-
-## Reference
-
-Full workflow and detailed phase steps live in `.trellis/workflow.md`. This command is only an entry point — the canonical guidance is there.
+Load the relevant guidance and keep progressing to the requested outcome. Use available skills/tools; unavailable slash commands or agent types have an inline equivalent. Report an exact blocker only after independent authorized work is done. Local completion, commits, review, merge, and deployment are separate states.

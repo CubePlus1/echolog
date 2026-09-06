@@ -125,7 +125,7 @@ Before investigating, state what you believe and why:
 | H2: [cause B] | 30% | Plausible given environment |
 | H3: [other] | 30% | Catch-all |
 
-Priors must sum to 100%. If you can't assign probabilities, investigate first.
+Use qualitative confidence when numerical priors are unsupported. Investigate the evidence that best separates plausible causes; do not manufacture probabilities as a gate to action.
 
 ### Step 2: Observe Evidence
 
@@ -173,16 +173,17 @@ Never express binary certainty when evidence is incomplete. Use "most likely", "
 
 ## After Analysis: Immediate Actions
 
-**IMPORTANT**: After completing the analysis above, you MUST immediately:
+After analysis, finish the authorized debugging outcome and preserve only useful new knowledge:
 
-1. **Update spec/guides** - Don't just list TODOs, actually update the relevant files:
+1. **Fix and verify** the task's root cause when implementation is requested. An analysis-only request ends with evidence and a concrete recommendation.
+2. **Update an owning spec/guide only when needed** for a changed contract or reusable non-obvious lesson. Confirm the target exists and fits this repository:
    - If it's a cross-platform issue → update `cross-platform-thinking-guide.md`
    - If it's a cross-layer issue → update `cross-layer-thinking-guide.md`
    - If it's a code reuse issue → update `code-reuse-thinking-guide.md`
    - If it's domain-specific → update `backend/*.md` or `frontend/*.md`
 
-2. **Sync templates** - After updating `.trellis/spec/`, sync to `src/templates/markdown/spec/`
+3. **Sync templates only when applicable**: do so only if this repository owns a corresponding template and the task requires both. Do not assume upstream Trellis template paths exist in an application repository.
 
-3. **Commit the spec updates** - This is the primary output, not just the analysis text
+4. **Follow existing commit authorization** in workflow Phase 3.4. Documentation and commits are not unconditional completion gates.
 
-> **The analysis is worthless if it stays in chat. The value is in the updated specs.**
+If the same failure repeats, change the hypothesis or diagnostic method. Complete independent work and report the exact missing input/access if further progress is externally blocked.

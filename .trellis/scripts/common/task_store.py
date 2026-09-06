@@ -184,8 +184,9 @@ def _default_prd_content(title: str, description: str | None = None) -> str:
 ## Notes
 
 - Keep `prd.md` focused on requirements, constraints, and acceptance criteria.
-- Lightweight tasks can remain PRD-only.
-- For complex tasks, add `design.md` for technical design and `implement.md` for execution planning before `task.py start`.
+- A clear goal and acceptance criteria can be sufficient in `prd.md` alone.
+- Add `design.md` or `implement.md` only for useful durable design or coordination; complexity alone does not require them.
+- Follow workflow.md readiness and existing authorization before `task.py start`; do not request a second implementation approval.
 """
 
 
@@ -352,8 +353,9 @@ def cmd_create(args: argparse.Namespace) -> int:
     print("", file=sys.stderr)
     print(colored("Next steps:", Colors.BLUE), file=sys.stderr)
     print("  - Fill prd.md with requirements and acceptance criteria", file=sys.stderr)
-    print("  - Lightweight task: PRD-only is valid", file=sys.stderr)
-    print("  - Complex task: add design.md and implement.md before task.py start", file=sys.stderr)
+    print("  - PRD-only is valid when goal and acceptance are sufficient", file=sys.stderr)
+    print("  - Add design.md / implement.md only for useful design or coordination", file=sys.stderr)
+    print("  - Follow workflow.md readiness and existing authorization for task.py start", file=sys.stderr)
     if seeded_jsonl:
         print(
             "  - Curate implement.jsonl / check.jsonl as spec/research manifests when sub-agents need context",

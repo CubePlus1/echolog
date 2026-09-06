@@ -18,26 +18,26 @@ In this project, "spec" for implementation work means **code-spec**:
 - Concrete signatures, payload fields, env keys, and boundary behavior
 - Testable validation/error behavior
 
-If the change touches infra or cross-layer contracts, code-spec depth is mandatory.
+When infrastructure or cross-layer behavior changes a durable contract, update its owning spec with the concrete details needed by future implementers.
 
-### Mandatory Triggers
+### Contract Review Triggers
 
-Apply code-spec depth when the change includes any of:
+Review the owning spec when the change includes any of:
 - New/changed command or API signature
 - Cross-layer request/response contract change
 - Database schema/migration change
 - Infra integration (storage, queue, cache, secrets, env wiring)
 
-### Mandatory Output (7 Sections)
+### Useful Content
 
-For triggered tasks, include all sections below:
+Include only the applicable details below, preferably in existing sections. Do not add empty sections, duplicate code/tests, or require a seven-section rewrite for a small contract change:
 1. Scope / Trigger
 2. Signatures (command/API/DB)
 3. Contracts (request/response/env)
 4. Validation & Error Matrix
 5. Good/Base/Bad Cases
 6. Tests Required (with assertion points)
-7. Wrong vs Correct (at least one pair)
+7. Wrong vs Correct (only for a non-obvious recurring pitfall)
 
 ---
 
@@ -53,7 +53,7 @@ For triggered tasks, include all sections below:
 | **Established a convention** | Team agreed on naming pattern | Quality guidelines |
 | **New thinking trigger** | "Don't forget to check X before doing Y" | `guides/*.md` (as a checklist item) |
 
-**Key Insight**: Code-spec updates are NOT just for problems. Every feature implementation contains design decisions and contracts that future AI/developers need to execute safely.
+Update specs for changed contracts or reusable knowledge absent from current guidance. A routine feature/fix that adds no such information needs no documentation write.
 
 ---
 
@@ -143,7 +143,9 @@ If you added a new section or the code-spec status changed, update the category'
 
 ## Update Templates
 
-### Mandatory Template for Infra/Cross-Layer Work
+### Optional Template for Infra/Cross-Layer Work
+
+Use only sections needed to explain the changed contract; a small edit to the owning spec is often sufficient.
 
 ```markdown
 ## Scenario: <name>
@@ -315,15 +317,14 @@ If you're unsure what to update, answer these prompts:
 
 ## Quality Checklist
 
-Before finishing your code-spec update:
+Before finishing, check applicable items only. Omit examples, signatures, matrices, case sets, or tests that do not clarify this change; missing inapplicable sections are not a completion failure.
 
 - [ ] Is the content specific and actionable?
-- [ ] Did you include a code example?
+- [ ] Is a code example included when needed to explain non-obvious behavior?
 - [ ] Did you explain WHY, not just WHAT?
-- [ ] Did you include executable signatures/contracts?
-- [ ] Did you include validation and error matrix?
-- [ ] Did you include Good/Base/Bad cases?
-- [ ] Did you include required tests with assertion points?
+- [ ] Are affected executable signatures/contracts recorded when relevant?
+- [ ] Are changed validation/error behavior and useful case distinctions clear?
+- [ ] Are meaningful required tests and assertions documented when the change needs them?
 - [ ] Is it in the right code-spec file?
 - [ ] Does it duplicate existing content?
 - [ ] Would a new team member understand it?

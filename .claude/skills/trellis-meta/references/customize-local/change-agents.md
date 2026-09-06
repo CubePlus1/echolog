@@ -6,8 +6,8 @@ When the user wants to change `trellis-research`, `trellis-implement`, or `trell
 
 1. Target platform agent directory
 2. `.trellis/workflow.md` Phase 2 / research routing
-3. Current task `prd.md`
-4. Current task `implement.jsonl` / `check.jsonl`
+3. Current task `prd.md` when present, otherwise the dispatch scope
+4. Existing relevant `implement.jsonl` / `check.jsonl` entries when used
 5. Relevant hook or agent prelude
 
 ## Common Paths
@@ -41,15 +41,15 @@ Use the actual paths in the user project as authoritative.
 
 ## Modification Principles
 
-1. **Preserve role boundaries**: research investigates and persists; implement writes implementation; check reviews and fixes.
+1. **Preserve role boundaries**: research returns evidence and persists only when durable output is requested or useful; implement writes implementation; check reviews and fixes only when authorized.
 2. **Do not hard-code project specs into agents**: long-term specs belong in `.trellis/spec/`; agents are responsible for reading them.
-3. **Make read order explicit**: active task -> PRD -> info -> JSONL -> spec/research.
+3. **Make read order explicit**: dispatch scope and task path when present, then relevant existing task artifacts and spec/research. Taskless assignments do not require manufacturing a task.
 4. **Make write boundaries explicit**: which directories may be written and which may not.
 5. **Synchronize across platforms**: when the user configured multiple platforms, decide whether to change only the current platform or all platform agents.
 
 ## Agent Pull Platforms
 
-If an agent file contains a prelude for "read task/context after startup," do not remove those steps when editing. Otherwise the agent will work only from chat context and bypass Trellis's core mechanism.
+Preserve relevant context loading in the prelude. Reuse supplied context and make task artifacts conditional on their existence and purpose; taskless work still reads applicable specs.
 
 ## Hook Push Platforms
 
