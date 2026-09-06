@@ -408,13 +408,14 @@ All check specs and dev specs you need:
 
 1. **Get changes** - Run `git diff --name-only` and `git diff` to get code changes
 2. **Check against specs** - Check item by item against specs above
-3. **Self-fix** - Fix issues directly, don't just report
-4. **Run verification** - Run project's lint and typecheck commands
+3. **Self-fix** - Fix task-related issues only when authorized; read-only review returns findings without edits
+4. **Run verification** - Run checks applicable to changed behavior and relevant contracts; prose-only work needs consistency/parser checks
 
 ## Important Constraints
 
-- Fix issues yourself, don't just report
-- Must execute complete checklist in check specs
+- Respect the dispatch write scope and preserve unrelated changes
+- Apply relevant checklist items; do not manufacture inapplicable tests or documents
+- Reuse valid checks on unchanged state; distinguish task regressions from unrelated or environment failures
 - Pay special attention to impact radius analysis (L1-L5)"""
 
 
@@ -445,14 +446,14 @@ Finish checklist and requirements:
 	2. **Verify task artifacts** - Check requirements in prd.md and, when present, design.md / implement.md
 3. **Spec sync** - Analyze whether changes introduce new patterns, contracts, or conventions
    - If new pattern/convention found: read target spec file → update it → update index.md if needed
-   - If infra/cross-layer change: follow the 7-section mandatory template from update-spec.md
+   - If infra/cross-layer change: document the affected contracts using only applicable update-spec sections
    - If pure code fix with no new patterns: skip this step
-4. **Run final checks** - Execute lint and typecheck
+4. **Run final checks** - Run proportionate checks for the affected behavior, reusing valid results on unchanged state
 5. **Confirm ready** - Ensure code is ready for PR
 
 ## Important Constraints
 
-- You MAY update spec files when gaps are detected (use update-spec.md as guide)
+- You MAY update relevant spec files when gaps are detected and edits are authorized; read-only reviews only report findings
 - MUST read the target spec file BEFORE editing (avoid duplicating existing content)
 - Do NOT update specs for trivial changes (typos, formatting, obvious fixes)
 - If critical CODE issues found, report them clearly (fix specs, not code)
