@@ -22,10 +22,7 @@ Each phase contains numbered steps, such as `1.3 Configure context`. These numbe
 
 ## Skill Routing
 
-`workflow.md` separates routing by platform capability:
-
-- Platforms with sub-agent support: dispatch `trellis-implement` by default for implementation and `trellis-check` for checking.
-- Platforms without sub-agent support: the main session reads skills such as `trellis-before-dev`, then executes directly.
+`workflow.md` describes routing in Request Triage, Routing and Completion Rules, and Phase 2. Direct execution is the default. Delegate only an independent bounded task when permitted and useful; platform capability alone does not require delegation. The main session reads applicable skills and can implement/check inline when agent tooling is unavailable.
 
 When changing local AI behavior, update the routing descriptions in `workflow.md` first, then check whether the corresponding platform skill, command, or agent files need to stay in sync.
 
@@ -48,7 +45,7 @@ Hooks choose the right block based on current task status and inject it into the
 | `in_progress` | The task has entered implementation and checking. |
 | `completed` | The task is complete and waiting for wrap-up or archive. |
 
-If the user wants to change policies such as "whether to create a task when there is no task," "when task creation may be skipped," or "whether sub-agents are required," edit these state blocks and the routing table above them.
+To change task creation or delegation policy, edit these state blocks and the matching Request Triage, Routing and Completion Rules, and numbered phase steps. Also inspect SessionStart hints for duplicated policy.
 
 ## Local Modification Patterns
 
@@ -60,7 +57,7 @@ Common changes:
 | Change task creation policy | Update the `no_task` state block and Phase 1 description. |
 | Change the default implementation/check path | Update Phase 2 and skill routing. |
 | Change the wrap-up flow | Update Phase 3 and `finish-work` together. Phase 3.4 executes commits within existing authorization; Phase 3.5 completes applicable wrap-up. Preserve unrelated dirty paths, archive only accepted tasks, and distinguish local delivery from commit/release state. |
-| Change platform differences | Update routing descriptions grouped by platform. |
+| Change platform differences | Add a scoped exception to the relevant phase and state block only when that platform needs one. |
 
 After editing, make the AI reread `.trellis/workflow.md`; do not assume the flow from the old conversation is still valid.
 

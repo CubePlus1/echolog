@@ -17,14 +17,14 @@ When the user wants to change Trellis phases, next-action hints, whether to crea
 | Change the next step during planning | Phase 1 and `[workflow-state:planning]`. |
 | Change whether an agent is required during in_progress | Phase 2 and `[workflow-state:in_progress]`. |
 | Change wrap-up after completion | Phase 3 and `[workflow-state:completed]`. |
-| Change which skill a user intent triggers | `Skill Routing` table. |
+| Change which skill a user intent triggers | Request Triage, Routing and Completion Rules, and the relevant numbered phase step. |
 
 ## Modification Steps
 
 1. Find the relevant section in `.trellis/workflow.md`.
 2. When changing rules, keep explicit trigger conditions and next actions.
 3. If adding or renaming a skill/agent, synchronize the corresponding files in platform directories.
-4. Workflow-state changes only need an edit to the `[workflow-state:STATUS]` block in `.trellis/workflow.md`. The hook is parser-only — it reads whatever you put in the block. Keep the opening and closing tags' STATUS strings identical (`[workflow-state:foo]…[/workflow-state:foo]`); mismatched STATUS pairs are silently dropped.
+4. The per-turn workflow-state hook parses `[workflow-state:STATUS]` blocks from `.trellis/workflow.md`; keep paired STATUS strings identical. Also inspect `.claude/hooks/session-start.py`, which emits its own task next-action hints, and the continue command. Keep all actual entry points consistent with the changed policy.
 5. Make the AI reread `.trellis/workflow.md`; do not keep using rules from the old conversation.
 
 ## Example: Relax Task Creation Requirements
@@ -41,7 +41,7 @@ If the formal Phase 1 flow also needs to change, synchronize the Phase 1 section
 
 ## Example: One Platform Does Not Use Sub-Agents
 
-If the user wants only one platform to avoid sub-agents, first confirm whether that platform has a separate group in the workflow. Then change Phase 2 routing for that platform group instead of deleting all `trellis-implement` / `trellis-check` instructions across platforms.
+Direct execution is already the default on every platform. If the user wants a stricter platform-specific delegation rule, add that scoped exception to Phase 2 and its applicable state block; inspect existing routing rather than assuming a platform group exists. Preserve usable optional agent definitions for other workflows.
 
 ## `/trellis:continue` Route Table
 
@@ -53,7 +53,7 @@ If the user wants only one platform to avoid sub-agents, first confirm whether t
 | `planning` | sufficient scope/acceptance and implementation authorized | run `task.py start` and continue without another approval |
 | `planning` | consequential decision or necessary context missing | inspect evidence, complete useful context, clarify only a material blocker |
 | `planning` | extra documents absent but scope/acceptance sufficient | proceed; complexity alone does not require design/implementation documents |
-| `in_progress` | no implementation in conversation history | Phase 2.1 (`trellis-implement`) |
+| `in_progress` | implementation unfinished | Phase 2.1 (direct implementation; optional useful delegation) |
 | `in_progress` | implementation done, no `trellis-check` run | Phase 2.2 (`trellis-check`) |
 | `in_progress` | check passed | Phase 3.3 (spec update) → 3.4 (commit) |
 | `completed` | task is still in active tree | Phase 3.5 (run `/trellis:finish-work` to archive) |

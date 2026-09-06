@@ -39,7 +39,7 @@ python3 ./.trellis/scripts/task.py finish
 python3 ./.trellis/scripts/task.py archive <name>
 ```
 
-`create` seeds `task.json` and `prd.md`, with optional context manifests; `--slug` omits the date prefix. `start` sets `in_progress` and the session pointer. If session identity is missing, follow the command's hint using the real current session identifier. `finish` clears the pointer without completing the task. `archive` sets `completed`, moves the task, clears matching pointers, and can auto-commit. Inspect `--help` and configuration before commands with commit/external effects.
+`create` seeds `task.json` and `prd.md`, with optional context manifests; `--slug` sets the suffix of the `MM-DD-<slug>` directory. Use the returned task path. `start` sets `in_progress` and the session pointer. If session identity is missing, follow the command's hint using the real current session identifier. `finish` clears the pointer without completing the task. `archive` sets `completed`, moves the task, clears matching pointers, and can auto-commit. Inspect `--help` and configuration before commands with commit/external effects.
 
 Optional metadata, hierarchy, and PR commands are listed by `task.py --help`. Create parent/child tasks only for deliverables benefiting from independent acceptance and ownership; record dependencies explicitly.
 
@@ -126,9 +126,9 @@ Use `/trellis:continue` or `/trellis:finish-work` when callable. Otherwise read 
 
 #### 1.0 Create/reuse task `[when needed · once]`
 
-Check `task.py current --source` and `task.py list`. Reuse a matching task; create one for product work or useful durable coordination without asking process consent. Simple answers, read-only audits, and narrow documentation/rule maintenance need no task. Honor an explicit request to skip Trellis with a proportionate inline plan.
+Before any file writes, including task creation, check `git status --short --branch` and `git branch --show-current`. On `main` or detached HEAD, create a task branch first, preserving existing changes. Follow AGENTS.md for Issue/README synchronization and external authorization; remote access must not block independent local work.
 
-Before edits, check `git branch --show-current`. On `main` or detached HEAD, create a task branch first, preserving existing changes. Follow AGENTS.md for Issue/README synchronization and external authorization; remote access must not block independent local work.
+Then check `task.py current --source` and `task.py list`. Reuse a matching task; create one for product work or useful durable coordination without asking process consent. Simple answers, read-only audits, and narrow documentation/rule maintenance need no task. Honor an explicit request to skip Trellis with a proportionate inline plan.
 
 #### 1.1 Establish scope and acceptance `[required · once]`
 
