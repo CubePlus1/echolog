@@ -161,14 +161,14 @@ export async function activate({ api }) {
               <input class="form-input" id="spName:${escA(profile.id)}" type="text" value="${escA(profile.displayName)}" placeholder="显示名称" />
               <input class="form-input" id="spUrl:${escA(profile.id)}" type="url" value="${escA(profile.baseUrl)}" placeholder="API Base URL" />
               <input class="form-input" id="spModel:${escA(profile.id)}" type="text" value="${escA(profile.model)}" placeholder="模型" />
-              <input class="form-input" id="spKey:${escA(profile.id)}" type="password" autocomplete="new-password" placeholder="${profile.hasApiKey ? "输入新密钥以替换" : "输入 API Key"}" />
+              <input class="form-input" id="spKey:${escA(profile.id)}" type="password" autocomplete="new-password" placeholder="${profile.hasApiKey === true ? "输入新密钥以替换" : profile.hasApiKey === null ? "输入密钥以保存或替换" : "输入 API Key"}" />
             </div>
             <div class="form-error" id="spError:${escA(profile.id)}"></div>
             <div class="rule-form-foot">
               <span class="form-hint" style="margin:0">${esc(profile.id)} · v${esc(profile.version)}</span>
               <button type="button" data-act="save-provider" data-id="${escA(profile.id)}">保存配置</button>
-              <button type="button" data-act="set-provider-key" data-id="${escA(profile.id)}">${profile.hasApiKey ? "替换密钥" : "保存密钥"}</button>
-              ${profile.hasApiKey ? `<button type="button" data-act="delete-provider-key" data-id="${escA(profile.id)}">删除密钥</button>` : ""}
+              <button type="button" data-act="set-provider-key" data-id="${escA(profile.id)}">${profile.hasApiKey === true ? "替换密钥" : profile.hasApiKey === null ? "保存或替换密钥" : "保存密钥"}</button>
+              ${profile.hasApiKey !== false ? `<button type="button" data-act="delete-provider-key" data-id="${escA(profile.id)}">删除密钥</button>` : ""}
               <button class="rule-del" type="button" data-act="delete-provider" data-id="${escA(profile.id)}">删除配置</button>
             </div>
           </div>`

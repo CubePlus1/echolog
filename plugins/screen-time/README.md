@@ -33,8 +33,17 @@ explicitly:
 
 ```bash
 ECHOLOG_MACOS_ADHOC_SMOKE=1 pnpm build:macos-capture
+pnpm smoke:macos-helper
 ECHOLOG_MACOS_SIGNING_IDENTITY='Developer ID Application: ...' pnpm build:macos-release
 ```
+
+Automatic understanding uses `keychain get --no-auth-ui`. If macOS requires
+authorization, the run is skipped without showing UI and further scheduled
+Keychain reads for that Provider remain blocked. “立即识别” is an explicit,
+interactive operation with a 60-second helper timeout. A successful manual read
+caches the credential in daemon memory, clears the block, and lets later
+scheduled runs use the cache without invoking the helper again. Set and delete
+operations update the same cache; plugin stop or daemon restart clears it.
 
 The artifact is `native/macos-capture/build/EchoLogScreenCapture.app`. The Web
 “测试截图” and “立即识别” actions invoke that app identity through macOS
@@ -42,12 +51,19 @@ LaunchServices (`/usr/bin/open -W -n ... --args`) and localhost-only routes. The
 daemon exclusively pre-creates mode `0600` stdout/stderr files inside one mode
 `0700` private temporary directory, validates the PNG, sends it to the selected
 OpenAI-compatible vision endpoint, and deletes the directory in `finally`.
-Keychain operations execute the inner helper directly; API keys never enter the
-database, argv, logs, or API responses. Successful runs persist only structured
+Keychain operations execute the inner helper directly. Provider listing and
+ordinary page loads report only the daemon's cached key state and never probe
+Keychain. API keys never enter the database, argv, logs, or API responses.
+Successful runs persist only structured
 summary/activity/apps/confidence metadata, with displayed field values required
 to be in Simplified Chinese. The one-shot capture process has its own 12-second
 hard watchdog, shorter than the daemon's 15-second request timeout.
 Never invoke `request-permission` from the daemon.
+
+The `enabled` setting controls periodic scheduling. The loopback-only
+“立即识别” action remains available as an explicit one-off run while scheduling
+is disabled, so a user can authorize and warm the credential cache before
+enabling automatic understanding.
 
 The periodic understanding job checks the database-backed interval every five
 seconds. This keeps a configured 120-second interval close to two minutes even

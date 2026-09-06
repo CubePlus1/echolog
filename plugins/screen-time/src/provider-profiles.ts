@@ -18,6 +18,7 @@ export type ProviderErrorCode =
   | "PROVIDER_PROFILE_IN_USE"
   | "PROVIDER_PROFILE_LIMIT"
   | "PROVIDER_KEY_REQUIRED"
+  | "KEYCHAIN_AUTH_REQUIRED"
   | "KEYCHAIN_UNAVAILABLE"
   | "KEYCHAIN_OPERATION_FAILED"
   | "PLUGIN_TIMEOUT";
@@ -54,11 +55,24 @@ export interface ProviderProfileStore {
 }
 
 export interface ProviderSecretStore {
-  has(id: string, signal?: AbortSignal): Promise<boolean>;
-  get?(id: string, signal?: AbortSignal): Promise<string | null>;
+  has(
+    id: string,
+    signal?: AbortSignal,
+    access?: ProviderSecretAccess
+  ): Promise<boolean>;
+  get?(
+    id: string,
+    signal?: AbortSignal,
+    access?: ProviderSecretAccess
+  ): Promise<string | null>;
   set(id: string, value: string, signal?: AbortSignal): Promise<void>;
   delete(id: string, signal?: AbortSignal): Promise<void>;
+  cachedState?(id: string): boolean | null;
+  hasCachedValue?(id: string): boolean;
+  clearCache?(): void;
 }
+
+export type ProviderSecretAccess = "interactive" | "non-interactive";
 
 export interface ProviderProfile {
   id: string;
@@ -226,23 +240,6 @@ function serializeProfile(
   };
 }
 
-async function mapWithConcurrency<T, R>(
-  values: T[],
-  concurrency: number,
-  mapper: (value: T) => Promise<R>
-): Promise<R[]> {
-  const results = new Array<R>(values.length);
-  let next = 0;
-  const workers = Array.from({ length: Math.min(concurrency, values.length) }, async () => {
-    while (next < values.length) {
-      const index = next++;
-      results[index] = await mapper(values[index]);
-    }
-  });
-  await Promise.all(workers);
-  return results;
-}
-
 export class ProviderProfileService {
   private readonly locks = new Map<string, Promise<void>>();
 
@@ -268,13 +265,7 @@ export class ProviderProfileService {
 
   async list(signal?: AbortSignal): Promise<ProviderProfile[]> {
     const rows = await this.store.listProviderProfiles();
-    return mapWithConcurrency(rows, 4, async (row) => {
-      try {
-        return serializeProfile(row, await this.secrets.has(row.id, signal));
-      } catch {
-        return serializeProfile(row, null);
-      }
-    });
+    return rows.map((row) => serializeProfile(row, this.cachedSecretState(row.id)));
   }
 
   async create(input: ProviderProfileMetadataInput): Promise<ProviderProfile> {
@@ -306,12 +297,7 @@ export class ProviderProfileService {
           existing.version
         );
       }
-      let hasApiKey: boolean | null = null;
-      try {
-        hasApiKey = await this.secrets.has(id, signal);
-      } catch {
-        // Metadata remains editable when the native Keychain helper is down.
-      }
+      const hasApiKey = this.cachedSecretState(id);
       const updated = await this.store.updateProviderProfile(id, expectedVersion, input);
       if (!updated) await this.throwMissingOrConflict(id);
       return serializeProfile(updated!, hasApiKey);
@@ -375,7 +361,11 @@ export class ProviderProfileService {
   ): Promise<T> {
     return this.exclusive(id, async () => {
       await this.requireProfile(id);
-      if (requireKey && !(await this.secrets.has(id, signal))) {
+      if (
+        requireKey &&
+        this.cachedSecretState(id) !== true &&
+        !(await this.secrets.has(id, signal, "non-interactive"))
+      ) {
         throw new ProviderError("PROVIDER_KEY_REQUIRED", `provider profile ${id} requires an API key`, 409);
       }
       return operation();
@@ -384,7 +374,8 @@ export class ProviderProfileService {
 
   async getForInference(
     id: string,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    access: ProviderSecretAccess = "interactive"
   ): Promise<{ profile: ProviderProfile; apiKey: string }> {
     return this.exclusive(id, async () => {
       const row = await this.requireProfile(id);
@@ -395,7 +386,7 @@ export class ProviderProfileService {
           503
         );
       }
-      const apiKey = await this.secrets.get(id, signal);
+      const apiKey = await this.secrets.get(id, signal, access);
       if (!apiKey) {
         throw new ProviderError(
           "PROVIDER_KEY_REQUIRED",
@@ -408,6 +399,18 @@ export class ProviderProfileService {
         apiKey,
       };
     });
+  }
+
+  hasCachedCredential(id: string): boolean {
+    return this.secrets.hasCachedValue?.(id) ?? false;
+  }
+
+  clearCredentialCache(): void {
+    this.secrets.clearCache?.();
+  }
+
+  private cachedSecretState(id: string): boolean | null {
+    return this.secrets.cachedState?.(id) ?? null;
   }
 
   private async requireProfile(id: string): Promise<ScreenUnderstandingProviderProfile> {

@@ -36,10 +36,10 @@ public struct HelperRunner: Sendable {
                 "bytes": result.bytes,
                 "capturedAt": result.capturedAt,
             ])
-        case let .keychainStatus(service, account):
-            return try JSONOutput.success(["hasSecret": try keychain.hasSecret(service: service, account: account)])
-        case let .keychainGet(service, account):
-            if let secret = try keychain.getSecret(service: service, account: account) {
+        case let .keychainStatus(service, account, noAuthUI):
+            return try JSONOutput.success(["hasSecret": try keychain.hasSecret(service: service, account: account, noAuthUI: noAuthUI)])
+        case let .keychainGet(service, account, noAuthUI):
+            if let secret = try keychain.getSecret(service: service, account: account, noAuthUI: noAuthUI) {
                 return try JSONOutput.success(["hasSecret": true, "secret": secret])
             }
             return try JSONOutput.success(["hasSecret": false])

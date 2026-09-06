@@ -1,6 +1,13 @@
 import assert from "node:assert/strict";
+import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
-import type { ProviderProfile } from "../plugins/screen-time/src/provider-profiles.js";
+import {
+  ProviderError,
+  ProviderProfileService,
+  type ProviderProfile,
+} from "../plugins/screen-time/src/provider-profiles.js";
 import {
   ScreenUnderstandingService,
   UnderstandingError,
@@ -47,22 +54,39 @@ test("vision payload requires Simplified Chinese display values", () => {
 });
 
 test("Keychain client reads a secret only through the helper response", async () => {
+  const fakeRoot = await mkdtemp(join(tmpdir(), "echolog-understanding-keychain-"));
+  const fakeExecutable = join(
+    fakeRoot,
+    "EchoLogScreenCapture.app",
+    "Contents",
+    "MacOS",
+    "echolog-screen-capture"
+  );
+  await mkdir(join(fakeRoot, "EchoLogScreenCapture.app", "Contents", "MacOS"), {
+    recursive: true,
+  });
+  await writeFile(fakeExecutable, "#!/bin/sh\nexit 0\n");
+  await chmod(fakeExecutable, 0o755);
   const requests: string[][] = [];
-  const client = new MacKeychainClient(async (request) => {
-    requests.push(request.args);
-    return {
-      stdout: JSON.stringify(
-        request.args[1] === "get"
-          ? { ok: true, hasSecret: true, secret: "secret-value" }
-          : { ok: true, hasSecret: request.args[1] !== "delete" }
-      ),
-      stderr: "",
-      exitCode: 0,
-    };
-  }, "/test/EchoLogScreenCapture.app/Contents/MacOS/echolog-screen-capture");
-  assert.equal(await client.get("vision-primary"), "secret-value");
-  assert.equal(requests[0]?.includes("secret-value"), false);
-  assert.equal(requests[0]?.[1], "get");
+  try {
+    const client = new MacKeychainClient(async (request) => {
+      requests.push(request.args);
+      return {
+        stdout: JSON.stringify(
+          request.args[1] === "get"
+            ? { ok: true, hasSecret: true, secret: "secret-value" }
+            : { ok: true, hasSecret: request.args[1] !== "delete" }
+        ),
+        stderr: "",
+        exitCode: 0,
+      };
+    }, fakeExecutable);
+    assert.equal(await client.get("vision-primary"), "secret-value");
+    assert.equal(requests[0]?.includes("secret-value"), false);
+    assert.equal(requests[0]?.[1], "get");
+  } finally {
+    await rm(fakeRoot, { recursive: true, force: true });
+  }
 });
 
 test("vision client accepts OpenAI-compatible JSON and maps provider failures safely", async () => {
@@ -180,22 +204,287 @@ test("understanding service captures, retries transient provider failures, and p
   assert.equal(JSON.stringify(result).includes("secret-key"), false);
 });
 
-test("disabled understanding does not capture or call the provider", async () => {
+test("disabled understanding skips scheduled work but permits an explicit run", async () => {
   let captures = 0;
   let calls = 0;
+  const current = new Date("2026-08-26T09:00:00+08:00");
   const service = new ScreenUnderstandingService(
     makeStore(),
-    { async get() { return { id: "default", version: 1, ...DEFAULT_UNDERSTANDING_SETTINGS, enabled: false, updatedAt: new Date() }; } } as any,
-    { async getForInference() { throw new Error("must not resolve provider"); } },
-    { async captureForInference() { captures++; throw new Error("must not capture"); } },
-    { async complete() { calls++; throw new Error("must not call"); } },
+    { async get() { return { id: "default", version: 1, ...DEFAULT_UNDERSTANDING_SETTINGS, enabled: false, providerProfileId: profile.id, updatedAt: current }; } } as any,
+    { async getForInference() { return { profile, apiKey: "secret-key" }; } },
+    { async captureForInference() {
+      captures++;
+      return { format: "png" as const, displayId: 1, widthPixels: 1, heightPixels: 1, bytes: 3, capturedAt: current.toISOString(), png: Buffer.from("png") };
+    } },
+    { async complete() {
+      calls++;
+      return { content: '{"summary":"显式识别","activity":"授权测试","confidence":0.95,"sensitive":false,"apps":["代码编辑器"]}', latencyMs: 12, costMicros: null };
+    } },
+    { isIdle() { return false; } },
+    () => current
   );
-  await assert.rejects(
-    service.run(),
-    (error) => error instanceof UnderstandingError && error.code === "UNDERSTANDING_DISABLED"
-  );
+  assert.equal(await service.runScheduled(), null);
   assert.equal(captures, 0);
   assert.equal(calls, 0);
+  assert.equal((await service.run()).summary, "显式识别");
+  assert.equal(captures, 1);
+  assert.equal(calls, 1);
+});
+
+test("scheduled understanding uses non-interactive credentials and resumes after a manual read", async () => {
+  let current = new Date("2026-08-26T10:00:00+08:00");
+  let providerResolutions = 0;
+  let credentialCached = false;
+  const accessModes: string[] = [];
+  const settings = {
+    async get() {
+      return {
+        id: "default",
+        version: 1,
+        ...DEFAULT_UNDERSTANDING_SETTINGS,
+        enabled: true,
+        providerProfileId: profile.id,
+        captureIntervalSeconds: 60,
+        updatedAt: current,
+      };
+    },
+  };
+  const service = new ScreenUnderstandingService(
+    makeStore(),
+    settings as any,
+    {
+      async getForInference(_id, _signal, access) {
+        providerResolutions++;
+        accessModes.push(access ?? "interactive");
+        if (access === "non-interactive" && !credentialCached) {
+          throw new ProviderError(
+            "KEYCHAIN_AUTH_REQUIRED",
+            "Keychain authorization is required",
+            409
+          );
+        }
+        credentialCached = true;
+        return { profile, apiKey: "secret-key" };
+      },
+      hasCachedCredential() { return credentialCached; },
+    },
+    {
+      async captureForInference() {
+        return {
+          format: "png" as const,
+          displayId: 1,
+          widthPixels: 1,
+          heightPixels: 1,
+          bytes: 3,
+          capturedAt: current.toISOString(),
+          png: Buffer.from("png"),
+        };
+      },
+    },
+    {
+      async complete() {
+        return {
+          content: '{"summary":"编辑代码","activity":"编写功能","confidence":0.95,"sensitive":false,"apps":["代码编辑器"]}',
+          latencyMs: 12,
+          costMicros: null,
+        };
+      },
+    },
+    { isIdle() { return false; } },
+    () => current
+  );
+
+  assert.equal(await service.runScheduled(), null);
+  current = new Date(current.getTime() + 60_000);
+  assert.equal(await service.runScheduled(), null);
+  assert.equal(providerResolutions, 1);
+  assert.deepEqual(accessModes, ["non-interactive"]);
+
+  await service.run();
+  current = new Date(current.getTime() + 60_000);
+  assert.ok(await service.runScheduled());
+  assert.equal(providerResolutions, 3);
+  assert.deepEqual(accessModes, ["non-interactive", "interactive", "non-interactive"]);
+});
+
+test("scheduled understanding retries transient Keychain failures", async () => {
+  const failures = [
+    ["KEYCHAIN_UNAVAILABLE", 503],
+    ["KEYCHAIN_OPERATION_FAILED", 502],
+    ["PLUGIN_TIMEOUT", 504],
+  ] as const;
+
+  for (const [code, statusCode] of failures) {
+    let current = new Date("2026-08-26T10:30:00+08:00");
+    let providerResolutions = 0;
+    const settings = {
+      async get() {
+        return {
+          id: "default",
+          version: 1,
+          ...DEFAULT_UNDERSTANDING_SETTINGS,
+          enabled: true,
+          providerProfileId: profile.id,
+          captureIntervalSeconds: 60,
+          updatedAt: current,
+        };
+      },
+    };
+    const service = new ScreenUnderstandingService(
+      makeStore(),
+      settings as any,
+      {
+        async getForInference() {
+          providerResolutions++;
+          throw new ProviderError(code, "Safe transient Keychain failure", statusCode);
+        },
+      },
+      {
+        async captureForInference() {
+          throw new Error("must not capture without credentials");
+        },
+      },
+      {
+        async complete() {
+          throw new Error("must not call provider without credentials");
+        },
+      },
+      { isIdle() { return false; } },
+      () => current
+    );
+
+    await assert.rejects(
+      service.runScheduled(),
+      (error) => error instanceof ProviderError && error.code === code
+    );
+    current = new Date(current.getTime() + 60_000);
+    await assert.rejects(
+      service.runScheduled(),
+      (error) => error instanceof ProviderError && error.code === code
+    );
+    assert.equal(providerResolutions, 2, `${code} must be retried`);
+  }
+});
+
+test("explicit authorization while disabled unlocks enablement and scheduled cache use", async () => {
+  const fakeRoot = await mkdtemp(join(tmpdir(), "echolog-understanding-cache-"));
+  const fakeExecutable = join(
+    fakeRoot,
+    "EchoLogScreenCapture.app",
+    "Contents",
+    "MacOS",
+    "echolog-screen-capture"
+  );
+  await mkdir(join(fakeRoot, "EchoLogScreenCapture.app", "Contents", "MacOS"), {
+    recursive: true,
+  });
+  await writeFile(fakeExecutable, "#!/bin/sh\nexit 0\n");
+  await chmod(fakeExecutable, 0o755);
+  const helperRequests: Array<{ args: string[]; timeoutMs?: number }> = [];
+  let current = new Date("2026-08-26T11:00:00+08:00");
+  let enabled = false;
+  try {
+    const keychain = new MacKeychainClient(async (request) => {
+      helperRequests.push({ args: request.args, timeoutMs: request.timeoutMs });
+      if (request.args.includes("--no-auth-ui")) {
+        return {
+          stdout: JSON.stringify({
+            ok: false,
+            error: "Keychain authorization is required",
+            code: "KEYCHAIN_AUTH_REQUIRED",
+            retryable: false,
+          }),
+          stderr: "",
+          exitCode: 10,
+        };
+      }
+      return {
+        stdout: JSON.stringify({
+          ok: true,
+          hasSecret: true,
+          secret: "integration-credential-value",
+        }),
+        stderr: "",
+        exitCode: 0,
+      };
+    }, fakeExecutable);
+    const providers = new ProviderProfileService({
+      async getProviderProfile() {
+        return {
+          id: profile.id,
+          version: profile.version,
+          displayName: profile.displayName,
+          providerKind: profile.providerKind,
+          baseUrl: profile.baseUrl,
+          model: profile.model,
+          createdAt: new Date(profile.createdAt),
+          updatedAt: new Date(profile.updatedAt),
+        };
+      },
+    } as any, keychain);
+    const settings = {
+      async get() {
+        return {
+          id: "default",
+          version: 1,
+          ...DEFAULT_UNDERSTANDING_SETTINGS,
+          enabled,
+          providerProfileId: profile.id,
+          captureIntervalSeconds: 60,
+          updatedAt: current,
+        };
+      },
+    };
+    const service = new ScreenUnderstandingService(
+      makeStore(),
+      settings as any,
+      providers,
+      {
+        async captureForInference() {
+          return {
+            format: "png" as const,
+            displayId: 1,
+            widthPixels: 1,
+            heightPixels: 1,
+            bytes: 3,
+            capturedAt: current.toISOString(),
+            png: Buffer.from("png"),
+          };
+        },
+      },
+      {
+        async complete() {
+          return {
+            content: '{"summary":"编辑代码","activity":"编写功能","confidence":0.95,"sensitive":false,"apps":["代码编辑器"]}',
+            latencyMs: 12,
+            costMicros: null,
+          };
+        },
+      },
+      { isIdle() { return false; } },
+      () => current
+    );
+
+    await assert.rejects(
+      providers.withSelectable(profile.id, true, async () => undefined),
+      (error) => error instanceof ProviderError && error.code === "KEYCHAIN_AUTH_REQUIRED"
+    );
+    assert.equal(helperRequests.length, 1);
+    assert.equal(helperRequests[0]?.args.includes("--no-auth-ui"), true);
+
+    await service.run();
+    assert.equal(helperRequests.length, 2);
+    assert.equal(helperRequests[1]?.args.includes("--no-auth-ui"), false);
+    assert.equal(keychain.hasCachedValue(profile.id), true);
+
+    await providers.withSelectable(profile.id, true, async () => { enabled = true; });
+    assert.equal(helperRequests.length, 2);
+    current = new Date(current.getTime() + 60_000);
+    assert.ok(await service.runScheduled());
+    assert.equal(helperRequests.length, 2);
+  } finally {
+    await rm(fakeRoot, { recursive: true, force: true });
+  }
 });
 
 test("understanding routes expose local run and safe history endpoints", async () => {

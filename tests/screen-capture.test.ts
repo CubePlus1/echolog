@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
 import {
   chmod,
+  mkdir,
   mkdtemp,
   rm,
   stat,
@@ -10,16 +12,41 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 import {
   CaptureError,
   MacScreenCaptureService,
 } from "../plugins/screen-time/src/macos-screen-capture.js";
 import {
+  MACOS_HELPER_BUILD_COMMAND,
   DEFAULT_MACOS_HELPER_EXECUTABLE,
+  checkMacosHelperInstall,
   resolveMacosHelperExecutable,
   validateMacosHelperExecutableOverride,
 } from "../plugins/screen-time/src/macos-helper.js";
 import { createScreenRoutes } from "../plugins/screen-time/src/routes.js";
+
+const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
+let fakeHelperRoot = "";
+let fakeHelperExecutable = "";
+
+test.before(async () => {
+  fakeHelperRoot = await mkdtemp(join(tmpdir(), "echolog-capture-helper-"));
+  fakeHelperExecutable = join(
+    fakeHelperRoot,
+    "EchoLogScreenCapture.app",
+    "Contents",
+    "MacOS",
+    "echolog-screen-capture"
+  );
+  await mkdir(dirname(fakeHelperExecutable), { recursive: true });
+  await writeFile(fakeHelperExecutable, "#!/bin/sh\nexit 0\n");
+  await chmod(fakeHelperExecutable, 0o755);
+});
+
+test.after(async () => {
+  await rm(fakeHelperRoot, { recursive: true, force: true });
+});
 
 const PNG_1X1 = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
@@ -95,6 +122,70 @@ test("macOS helper resolution uses the packaged app inner executable and validat
   assert.throws(() => resolveMacosHelperExecutable("/tmp/wrong-helper"));
 });
 
+test("macOS helper install check reports a missing app bundle with the build command", async () => {
+  const root = await mkdtemp(join(tmpdir(), "echolog-missing-helper-"));
+  const executable = join(
+    root,
+    "EchoLogScreenCapture.app",
+    "Contents",
+    "MacOS",
+    "echolog-screen-capture"
+  );
+  try {
+    const check = checkMacosHelperInstall(executable);
+    assert.equal(check.ok, false);
+    assert.equal(check.executable, executable);
+    assert.equal(check.buildCommand, MACOS_HELPER_BUILD_COMMAND);
+    assert.match(check.message, /EchoLogScreenCapture\.app is missing/);
+    assert.match(check.message, /pnpm build:macos-capture/);
+
+    let invoked = false;
+    const service = new MacScreenCaptureService(async () => {
+      invoked = true;
+      throw new Error("must not invoke LaunchServices");
+    }, executable);
+    const checks = await service.doctor();
+    assert.equal(invoked, false);
+    assert.equal(checks[0]?.ok, false);
+    assert.equal(checks[0]?.details?.buildCommand, MACOS_HELPER_BUILD_COMMAND);
+    assert.match(checks[0]?.message ?? "", /EchoLogScreenCapture\.app is missing/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("macOS helper smoke script fails clearly when the runtime app bundle is missing", {
+  skip: process.platform !== "darwin",
+}, async () => {
+  const root = await mkdtemp(join(tmpdir(), "echolog-helper-smoke-"));
+  try {
+    const result = await new Promise<{
+      exitCode: number;
+      stdout: string;
+      stderr: string;
+    }>((resolve) => {
+      execFile(
+        join(repoRoot, "scripts/smoke-macos-helper.sh"),
+        ["--root", root],
+        (error, stdout, stderr) => {
+          resolve({
+            exitCode: typeof error?.code === "number" ? error.code : 0,
+            stdout,
+            stderr,
+          });
+        }
+      );
+    });
+    assert.equal(result.exitCode, 1);
+    assert.equal(result.stdout, "");
+    assert.match(result.stderr, /EchoLogScreenCapture\.app is missing/);
+    assert.match(result.stderr, /pnpm build:macos-capture/);
+    assert.match(result.stderr, new RegExp(root.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("capture service returns a bounded in-memory PNG preview and removes the private directory", async () => {
   let capturedPath = "";
   const service = new MacScreenCaptureService(async (request) => {
@@ -105,14 +196,14 @@ test("capture service returns a bounded in-memory PNG preview and removes the pr
     assert.deepEqual(request.args.slice(0, 9), [
       "-W", "-n", "-o", argumentValue(request.args, "-o"),
       "--stderr", argumentValue(request.args, "--stderr"),
-      DEFAULT_MACOS_HELPER_EXECUTABLE.replace("/Contents/MacOS/echolog-screen-capture", ""),
+      fakeHelperExecutable.replace("/Contents/MacOS/echolog-screen-capture", ""),
       "--args", "capture",
     ]);
     assert.equal(request.args.indexOf("-o") < request.args.indexOf("--args"), true);
     assert.equal(request.args.indexOf("--stderr") < request.args.indexOf("--args"), true);
     await writePrivatePng(capturedPath);
     return completeLaunch(request.args, success(capturedPath));
-  });
+  }, fakeHelperExecutable);
   const result = await service.captureTest();
   assert.equal(result.preview.base64, PNG_1X1.toString("base64"));
   assert.equal(result.preview.mediaType, "image/png");
@@ -132,7 +223,7 @@ test("capture service rejects concurrent tests with a bounded busy response", as
     await gate;
     await writePrivatePng(outputPath);
     return completeLaunch(request.args, success(outputPath));
-  });
+  }, fakeHelperExecutable);
   const first = service.captureTest();
   await started;
   await assert.rejects(
@@ -217,7 +308,7 @@ test("capture service rejects malformed output, unsafe paths, symlinks, oversize
   try {
     for (const item of cases) {
       await t.test(item.name, async () => {
-        const service = new MacScreenCaptureService(item.run);
+        const service = new MacScreenCaptureService(item.run, fakeHelperExecutable);
         await assert.rejects(
           service.captureTest(),
           (error) => error instanceof CaptureError && error.code === item.code &&
@@ -242,7 +333,7 @@ test("capture service waits for an asynchronous LaunchServices result", async ()
       void writeLaunchFiles(request.args, success(outputPath).stdout);
     }, 40);
     return { stdout: "ignored", stderr: "Unable to block", exitCode: 0 };
-  });
+  }, fakeHelperExecutable);
   const result = await service.captureTest();
   assert.equal(result.preview.base64, PNG_1X1.toString("base64"));
 });
@@ -257,7 +348,7 @@ test("capture service bounds a missing LaunchServices result and cleans up", asy
     await chmod(stderrPath, 0o600);
     setTimeout(() => controller.abort(), 40);
     return { stdout: "ignored", stderr: "Unable to block", exitCode: 0 };
-  });
+  }, fakeHelperExecutable);
   await assert.rejects(
     service.captureTest(controller.signal),
     (error) => error instanceof CaptureError && error.code === "PLUGIN_TIMEOUT"
@@ -272,7 +363,7 @@ test("capture service rejects an insecure LaunchServices result and cleans up", 
     await writeLaunchFiles(request.args, JSON.stringify({ ok: true }));
     await chmod(argumentValue(request.args, "-o"), 0o644);
     return { stdout: "ignored", stderr: "Unable to block", exitCode: 0 };
-  });
+  }, fakeHelperExecutable);
   await assert.rejects(
     service.captureTest(),
     (error) => error instanceof CaptureError && error.code === "PLUGIN_OUTPUT_INVALID"
@@ -308,7 +399,7 @@ test("capture helper errors are mapped safely and permission diagnostics stay no
       "private diagnostic"
     );
     return { stdout: "ignored", stderr: "benign open diagnostic", exitCode: 0 };
-  });
+  }, fakeHelperExecutable);
   await assert.rejects(
     permission.captureTest(),
     (error) => error instanceof CaptureError &&

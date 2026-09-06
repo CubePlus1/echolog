@@ -352,9 +352,9 @@ curl -X PUT http://localhost:19827/api/plugins/screen-time/understanding/setting
 
 #### screen-understanding providers 与 Keychain
 
-Provider metadata 存在 PostgreSQL；API Key 只存在当前 macOS 用户的 Keychain，
-API 永不返回原文或掩码片段。支持的 provider kind 当前固定为
-`openai-compatible`。
+Provider metadata 存在 PostgreSQL；API Key 只持久化在当前 macOS 用户的 Keychain，
+成功读取后可短暂保存在 daemon 进程内存中。API 永不返回原文或掩码片段；daemon
+停止或重启会清空缓存。支持的 provider kind 当前固定为 `openai-compatible`。
 
 ```bash
 curl http://localhost:19827/api/plugins/screen-time/understanding/providers
@@ -405,13 +405,15 @@ curl -X DELETE http://localhost:19827/api/plugins/screen-time/understanding/prov
 - `expectedVersion`：1–2147483647 的整数；PUT/DELETE 均使用乐观并发。
 - `apiKey`：UTF-8 1–4096 bytes，不得有首尾空白、换行或 NUL。
 
-Keychain 状态正常时 `hasApiKey` 为 boolean；helper/Keychain 暂时不可用时为
-`null`，metadata 仍可读取和编辑，Web 显示“密钥状态不可用”。
+`hasApiKey` 只反映 daemon 内存中已知的状态；daemon 刚启动或状态未知时为 `null`。
+`GET /providers` 和普通页面刷新不会为展示状态调用 helper，也不会触发 Keychain UI。
+metadata 始终可读取和编辑，Web 对 `null` 显示“密钥状态不可用”。
 
 新建成功为 `201`；更新成功为 `200` 且 version 加一；删除 metadata 成功为
 `204`。非法字段/URL/key 返回 `400`；不存在返回 `404`；版本过期、profile
 仍被 settings 选择、启用时删除 key，或启用设置却没有可用 key，返回 `409`。
-Keychain helper 不可用/失败/超时分别返回脱敏的 `503`/`502`/`504`。
+Keychain helper 不可用/失败/超时分别返回脱敏的 `503`/`502`/`504`；需要用户授权
+返回 `409 KEYCHAIN_AUTH_REQUIRED`。
 Key 的 PUT/DELETE 仅接受 loopback 请求，远端请求返回 `403 PLUGIN_LOCAL_ONLY`。
 
 Key PUT/DELETE 成功响应分别为：
@@ -435,8 +437,8 @@ Key PUT/DELETE 成功响应分别为：
 ```
 
 其他稳定冲突 code 包括 `PROVIDER_PROFILE_IN_USE`、`PROVIDER_PROFILE_LIMIT`、
-`PROVIDER_KEY_REQUIRED`；平台/helper code 包括 `KEYCHAIN_UNAVAILABLE`、
-`KEYCHAIN_OPERATION_FAILED` 和 `PLUGIN_TIMEOUT`。
+`PROVIDER_KEY_REQUIRED`；平台/helper code 包括 `KEYCHAIN_AUTH_REQUIRED`、
+`KEYCHAIN_UNAVAILABLE`、`KEYCHAIN_OPERATION_FAILED` 和 `PLUGIN_TIMEOUT`。
 
 #### 显式测试截图
 
@@ -480,10 +482,17 @@ curl -X POST http://localhost:19827/api/plugins/screen-time/understanding/captur
 #### AI 屏幕识别
 
 `POST /api/plugins/screen-time/understanding/run` 是 loopback-only 的显式识别入口，
-只接受空 JSON 对象。它要求 settings 中 `enabled=true`、选中了有 Keychain 密钥的
-Provider；服务会采集活动显示器、调用 `${baseUrl}/chat/completions`，并只接受包含
+只接受空 JSON 对象。它要求选中了有 Keychain 密钥的 Provider；服务会采集活动
+显示器、调用 `${baseUrl}/chat/completions`，并只接受包含
 `summary`、`activity`、`confidence`、`sensitive`、`apps` 的 JSON 结果。失败不会返回
 远端响应正文或 API key。
+
+`enabled` 只控制周期调度；该显式入口在周期识别关闭时仍可执行。它允许 macOS
+显示 Keychain 授权 UI，并为用户保留至少 60 秒完成授权。
+成功读取后，凭据进入 daemon 的进程内缓存并解除该 Provider 的自动调度阻断。
+周期任务只执行禁止 UI 的 Keychain 查询；遇到 `KEYCHAIN_AUTH_REQUIRED` 会静默跳过
+本轮并停止重复查询，不会弹窗或把插件降级。后续周期识别直接使用内存缓存，不再
+逐轮访问 helper。daemon 重启后如 Keychain 不能无 UI 读取，请再次调用本显式入口。
 
 ```bash
 curl -X POST http://localhost:19827/api/plugins/screen-time/understanding/run \
@@ -519,8 +528,8 @@ observation 返回 `404`。它不会删除 request budget ledger。
 `dailyRequestBudget` 和可选的 `dailyCostBudgetMicros` 约束执行。一次进程内同时只
 允许一个识别任务；临时网络错误按 `maxAttempts` 有界重试。
 
-识别关闭返回 `409 UNDERSTANDING_DISABLED`；未配置 Provider 返回
-`409 UNDERSTANDING_PROVIDER_REQUIRED`；请求/成本预算耗尽返回 `429`；模型认证、
+未配置 Provider 返回 `409 UNDERSTANDING_PROVIDER_REQUIRED`；请求/成本预算耗尽
+返回 `429`；模型认证、
 超时、限流、不可达和非法响应分别返回脱敏的 `PROVIDER_AUTH`、
 `PROVIDER_TIMEOUT`、`PROVIDER_RATE_LIMITED`、`PROVIDER_UNAVAILABLE` 或
 `UNDERSTANDING_RESPONSE_INVALID`。原始截图测试和识别入口均不提供

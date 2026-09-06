@@ -50,12 +50,16 @@ function selectedProvider() {
   return state.providers.find((provider) => provider.id === state.selectedProviderId) || null;
 }
 
+function keyStateText(hasApiKey) {
+  return hasApiKey === null ? "密钥状态不可用" : hasApiKey ? "密钥已保存" : "尚无密钥";
+}
+
 function renderProvider() {
   const select = $("providerSelect");
   const empty = $("providerEmpty");
   const details = $("providerDetails");
   select.innerHTML = state.providers.map((provider) =>
-    `<option value="${escapeHtml(provider.id)}">${escapeHtml(provider.displayName)} · ${provider.hasApiKey ? "密钥已保存" : "尚无密钥"}</option>`
+    `<option value="${escapeHtml(provider.id)}">${escapeHtml(provider.displayName)} · ${keyStateText(provider.hasApiKey)}</option>`
   ).join("");
   if (state.providers.length === 0) {
     select.hidden = true;
@@ -63,6 +67,7 @@ function renderProvider() {
     details.hidden = true;
     $("keyBadge").textContent = "未选择";
     $("keyBadge").className = "mini-status";
+    $("deleteKey").hidden = true;
     return;
   }
   select.hidden = false;
@@ -79,8 +84,13 @@ function renderProvider() {
   $("providerBaseUrl").value = provider.baseUrl;
   $("providerVersion").textContent = `v${provider.version}`;
   const badge = $("keyBadge");
-  badge.textContent = provider.hasApiKey ? "密钥已保存" : "尚无密钥";
-  badge.className = `mini-status ${provider.hasApiKey ? "is-saved" : "is-missing"}`;
+  badge.textContent = keyStateText(provider.hasApiKey);
+  badge.className = `mini-status ${provider.hasApiKey === null ? "is-unknown" : provider.hasApiKey ? "is-saved" : "is-missing"}`;
+  $("apiKeyInput").placeholder = provider.hasApiKey === true
+    ? "输入新密钥以替换"
+    : provider.hasApiKey === null ? "输入密钥以保存或替换" : "输入 API Key";
+  $("saveKey").textContent = provider.hasApiKey === true ? "替换密钥" : "保存密钥";
+  $("deleteKey").hidden = provider.hasApiKey === false;
 }
 
 function renderSettings() {
@@ -178,6 +188,21 @@ async function saveKey() {
   }
 }
 
+async function deleteKey() {
+  const provider = selectedProvider();
+  if (!provider || !window.confirm("删除此配置的密钥？")) return;
+  showMessage("keyMessage", "正在从本机 Keychain 删除…");
+  try {
+    await api(`${API_ROOT}/providers/${encodeURIComponent(provider.id)}/key`, { method: "DELETE" });
+    showMessage("keyMessage", "密钥已从 macOS Keychain 删除。", false);
+    toast("API Key 已删除");
+    await load();
+  } catch (error) {
+    showMessage("keyMessage", error.message, true);
+    toast(error.message, true);
+  }
+}
+
 async function saveProvider() {
   const provider = selectedProvider();
   if (!provider) return;
@@ -267,6 +292,7 @@ async function deleteHistory(id) {
 
 $("providerSelect").addEventListener("change", (event) => { state.selectedProviderId = event.target.value; renderProvider(); });
 $("saveKey").addEventListener("click", saveKey);
+$("deleteKey").addEventListener("click", deleteKey);
 $("saveProvider").addEventListener("click", saveProvider);
 $("createProvider").addEventListener("click", createProvider);
 $("saveSettings").addEventListener("click", saveSettings);

@@ -123,6 +123,7 @@ minimum_os="$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$app_p
 
 status_json="$("$app_executable" status --json)"
 STATUS_JSON="$status_json" node -e 'const value = JSON.parse(process.env.STATUS_JSON); if (value.ok !== true || value.command !== "status" || value.bundleIdentifier !== "com.cubeplus1.echolog.screen-capture" || !["granted", "request-needed"].includes(value.permission)) process.exit(1);'
+bash scripts/smoke-macos-helper.sh --root "$bundle_root"
 
 # Keep the ready-to-run bundle portable: production runtime dependencies stay,
 # while pnpm's machine-local install metadata and dev-only toolchain are removed.

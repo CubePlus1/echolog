@@ -16,34 +16,38 @@ public struct PermissionAdapter: Sendable {
 public struct KeychainAdapter: Sendable {
     public init() {}
 
-    public func hasSecret(service: String, account: String) throws -> Bool {
-        let query: [CFString: Any] = [
+    public func hasSecret(service: String, account: String, noAuthUI: Bool = false) throws -> Bool {
+        var query: [CFString: Any] = [
             kSecClass: kSecClassGenericPassword,
             kSecAttrService: service,
             kSecAttrAccount: account,
             kSecReturnData: false,
             kSecMatchLimit: kSecMatchLimitOne,
         ]
+        if noAuthUI { query[kSecUseAuthenticationUI] = kSecUseAuthenticationUIFail }
         let status = SecItemCopyMatching(query as CFDictionary, nil)
         switch KeychainStatusMapping.map(status) {
         case .present: return true
         case .missing: return false
+        case .authRequired: throw keychainAuthRequired(status: status)
         case .failure: throw keychainFailure("Unable to query Keychain", status: status)
         }
     }
 
-    public func getSecret(service: String, account: String) throws -> String? {
-        let query: [CFString: Any] = [
+    public func getSecret(service: String, account: String, noAuthUI: Bool = false) throws -> String? {
+        var query: [CFString: Any] = [
             kSecClass: kSecClassGenericPassword,
             kSecAttrService: service,
             kSecAttrAccount: account,
             kSecReturnData: true,
             kSecMatchLimit: kSecMatchLimitOne,
         ]
+        if noAuthUI { query[kSecUseAuthenticationUI] = kSecUseAuthenticationUIFail }
         var item: CFTypeRef?
         let status = SecItemCopyMatching(query as CFDictionary, &item)
         switch KeychainStatusMapping.map(status) {
         case .missing: return nil
+        case .authRequired: throw keychainAuthRequired(status: status)
         case .failure: throw keychainFailure("Unable to read Keychain item", status: status)
         case .present:
             guard let data = item as? Data, let value = String(data: data, encoding: .utf8) else {
@@ -113,6 +117,16 @@ public struct KeychainAdapter: Sendable {
             code: status == errSecNotAvailable ? "KEYCHAIN_UNAVAILABLE" : "KEYCHAIN_OPERATION_FAILED",
             exitCode: status == errSecNotAvailable ? 8 : 9,
             retryable: status == errSecNotAvailable,
+            systemDomain: NSOSStatusErrorDomain,
+            systemCode: Int(status)
+        )
+    }
+
+    private func keychainAuthRequired(status: OSStatus) -> HelperFailure {
+        HelperFailure(
+            "Keychain authorization is required",
+            code: "KEYCHAIN_AUTH_REQUIRED",
+            exitCode: 10,
             systemDomain: NSOSStatusErrorDomain,
             systemCode: Int(status)
         )

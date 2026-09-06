@@ -1,5 +1,6 @@
 import Foundation
 import Darwin
+import Security
 import XCTest
 @testable import EchoLogScreenCaptureCore
 
@@ -34,7 +35,8 @@ final class ContractTests: XCTestCase {
             ]),
             .keychainStatus(
                 service: "com.cubeplus1.echolog.screen-understanding",
-                account: "vision-primary"
+                account: "vision-primary",
+                noAuthUI: false
             )
         )
         XCTAssertEqual(
@@ -44,12 +46,41 @@ final class ContractTests: XCTestCase {
             ]),
             .keychainGet(
                 service: "com.cubeplus1.echolog.screen-understanding",
-                account: "vision-primary"
+                account: "vision-primary",
+                noAuthUI: false
+            )
+        )
+        XCTAssertEqual(
+            try CommandParser.parse([
+                "keychain", "status", "--service", "com.cubeplus1.echolog.screen-understanding",
+                "--account", "vision-primary", "--no-auth-ui", "--json",
+            ]),
+            .keychainStatus(
+                service: "com.cubeplus1.echolog.screen-understanding",
+                account: "vision-primary",
+                noAuthUI: true
+            )
+        )
+        XCTAssertEqual(
+            try CommandParser.parse([
+                "keychain", "get", "--service", "com.cubeplus1.echolog.screen-understanding",
+                "--account", "vision-primary", "--no-auth-ui", "--json",
+            ]),
+            .keychainGet(
+                service: "com.cubeplus1.echolog.screen-understanding",
+                account: "vision-primary",
+                noAuthUI: true
             )
         )
         XCTAssertThrowsError(try CommandParser.parse([
             "keychain", "status", "--service", "unrelated-service",
             "--account", "vision-primary", "--json",
+        ])) { error in
+            XCTAssertEqual((error as? HelperFailure)?.code, "KEYCHAIN_INVALID_ARGUMENT")
+        }
+        XCTAssertThrowsError(try CommandParser.parse([
+            "keychain", "set", "--service", "com.cubeplus1.echolog.screen-understanding",
+            "--account", "vision-primary", "--no-auth-ui", "--json",
         ])) { error in
             XCTAssertEqual((error as? HelperFailure)?.code, "KEYCHAIN_INVALID_ARGUMENT")
         }
@@ -67,6 +98,9 @@ final class ContractTests: XCTestCase {
     func testKeychainStatusMapping() {
         XCTAssertEqual(KeychainStatusMapping.map(0), .present)
         XCTAssertEqual(KeychainStatusMapping.map(-25300), .missing)
+        XCTAssertEqual(KeychainStatusMapping.map(errSecInteractionNotAllowed), .authRequired)
+        XCTAssertEqual(KeychainStatusMapping.map(errSecAuthFailed), .authRequired)
+        XCTAssertEqual(KeychainStatusMapping.map(errSecUserCanceled), .authRequired)
         XCTAssertEqual(KeychainStatusMapping.map(-25291), .failure)
     }
 
