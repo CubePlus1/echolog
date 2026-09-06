@@ -12,9 +12,9 @@ File locations and formats differ by platform, but responsibility boundaries sho
 
 | Agent | Responsibility |
 | --- | --- |
-| `trellis-research` | Investigate the question and write findings into the current task's `research/`. |
+| `trellis-research` | Return findings and evidence; persist under the task's `research/` only when durable output is requested or useful. A taskless read-only lookup may return directly. |
 | `trellis-implement` | Implement against `prd.md`, optional `design.md` / `implement.md`, `implement.jsonl`, and related spec/research. |
-| `trellis-check` | Review changes, fix discovered issues, and run necessary checks. |
+| `trellis-check` | Review changes and run necessary checks; fix task-related issues only when authorized, preserving a read-only review boundary. |
 
 Agent files should not become generic chat prompts. They should define input sources, write boundaries, whether code may be changed, and how results are reported.
 
@@ -49,7 +49,7 @@ Common on platforms that support agent hooks.
 
 ### agent pull
 
-The agent file instructs the agent to read after startup:
+The agent file instructs the agent to use the dispatch scope and supplied task path first, then read relevant existing artifacts after startup:
 
 - `python3 ./.trellis/scripts/task.py current --source`
 - `implement.jsonl` or `check.jsonl`
@@ -59,6 +59,8 @@ The agent file instructs the agent to read after startup:
 - `implement.md` if present
 
 This mode fits platforms whose hooks cannot reliably rewrite sub-agent prompts.
+
+For taskless assignments, read the brief and relevant specs directly. Missing optional task artifacts do not require creating files or interrupting the user.
 
 ## Local Change Scenarios
 
@@ -73,8 +75,8 @@ This mode fits platforms whose hooks cannot reliably rewrite sub-agent prompts.
 ## Modification Principles
 
 1. **Keep responsibilities single-purpose**. Do not mix research, implement, and check responsibilities into one agent.
-2. **Specify the read order**. Agents must know to start from the active task, read jsonl/spec context, then read `prd.md`, `design.md` if present, and `implement.md` if present.
-3. **Specify write boundaries**. Research usually only writes `research/`; implement can write code; check can fix issues.
+2. **Specify the read order**. Start from dispatch scope and the supplied task path when present, then relevant existing manifests/specs and task artifacts. Taskless work uses the brief and applicable specs.
+3. **Specify write boundaries**. Research writes only its authorized output when persistence is needed; implement writes assigned code; check fixes only when authorized.
 4. **Keep semantics synchronized in multi-platform projects**. If the user configured Claude, Codex, and Cursor together, decide whether changes to one platform's agent also need to be applied to others.
 
 ## Do Not Default To Editing Upstream Templates

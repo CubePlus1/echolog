@@ -317,15 +317,14 @@ If you're unsure what to update, answer these prompts:
 
 ## Quality Checklist
 
-Before finishing your code-spec update:
+Before finishing, check applicable items only. Omit examples, signatures, matrices, case sets, or tests that do not clarify this change; missing inapplicable sections are not a completion failure.
 
 - [ ] Is the content specific and actionable?
-- [ ] Did you include a code example?
+- [ ] Is a code example included when needed to explain non-obvious behavior?
 - [ ] Did you explain WHY, not just WHAT?
-- [ ] Did you include executable signatures/contracts?
-- [ ] Did you include validation and error matrix?
-- [ ] Did you include Good/Base/Bad cases?
-- [ ] Did you include required tests with assertion points?
+- [ ] Are affected executable signatures/contracts recorded when relevant?
+- [ ] Are changed validation/error behavior and useful case distinctions clear?
+- [ ] Are meaningful required tests and assertions documented when the change needs them?
 - [ ] Is it in the right code-spec file?
 - [ ] Does it duplicate existing content?
 - [ ] Would a new team member understand it?
