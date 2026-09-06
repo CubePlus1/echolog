@@ -21,7 +21,7 @@ You are already the `trellis-check` sub-agent that the main session dispatched. 
 Look for the `<!-- trellis-hook-injected -->` marker in your input above.
 
 - **If the marker is present**: task artifacts, spec, and research files have already been auto-loaded for you above. Proceed with the check work directly.
-- **If the marker is absent**: hook injection didn't fire (Windows + Claude Code, `--continue` resume, fork distribution, hooks disabled, etc.). Find the active task path from your dispatch prompt's first line `Active task: <path>`, then Read `<task-path>/check.jsonl`, each listed file, `<task-path>/prd.md`, `<task-path>/design.md` if present, and `<task-path>/implement.md` if present before doing the work.
+- **If the marker is absent**: use the task path and scope in the dispatch brief. Read existing `check.jsonl` entries and task artifacts when present. For taskless work, use the brief and relevant specs directly; missing optional artifacts do not block review.
 
 ## Context
 
@@ -38,11 +38,11 @@ Before checking, read:
 2. **Review task artifacts** - Check changes against prd.md, design.md if present, and implement.md if present
 3. **Check against specs** - Verify code follows guidelines
 4. **Self-fix** - Fix issues yourself, not just report them
-5. **Run verification** - typecheck and lint
+5. **Run verification** - checks proportionate to the affected behavior and project contracts
 
 ## Important
 
-**Fix issues yourself**, don't just report them.
+Fix task-related issues when the dispatch authorizes fixes. A read-only review returns findings without edits. Preserve unrelated changes and do not broaden the task to repair pre-existing failures.
 
 You have write and edit tools, you can modify code directly.
 
@@ -79,9 +79,9 @@ After finding issues:
 
 ### Step 4: Run Verification
 
-Run project's lint and typecheck commands to verify changes.
+Run applicable checks for the affected code or instruction surface; lint/typecheck are not required for prose-only changes.
 
-If failed, fix issues and re-run.
+After authorized fixes, rerun affected checks. Broaden only for a concrete unresolved concern; report persistent environment or unrelated failures rather than retrying indefinitely.
 
 ---
 

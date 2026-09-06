@@ -25,10 +25,10 @@ trellis channel wait brainstorm-storage-layer \
   --as main --kind done --from cx-arch --timeout 10m
 ```
 
-Do not stop after one answer. Read the answer, identify vague areas, send a
-new probe, and repeat until the result is executable.
+Read the answer against the requested decision. Send another probe only when
+material uncertainty remains; stop once evidence supports an executable result.
 
-Minimum round structure:
+Possible topics, only where relevant:
 
 1. Direction split: should this live in an existing mechanism or a new one?
 2. MVP boundary: v1, v2, and what would force v2 back into v1.
@@ -42,9 +42,9 @@ Optional rounds:
 - Migration/release: breaking status, manifest, changelog, docs-site.
 - Opposition review: ask the peer agent to argue against the current plan.
 
-Every probe should request concrete file paths, commands, schema, rejected
-alternatives, and release-blocking issues. Reject hedging when a decision is
-needed.
+Ask for the evidence needed by that particular decision. Do not require every
+probe to cover paths, commands, schema, alternatives, and release concerns.
+Distinguish supported conclusions from uncertainty instead of forcing confidence.
 
 ## Pattern B: Implement / Check Agent
 

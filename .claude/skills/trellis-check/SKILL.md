@@ -1,11 +1,13 @@
 ---
 name: trellis-check
-description: "Comprehensive quality verification: spec compliance, lint, type-check, tests, cross-layer data flow, code reuse, and consistency checks. Use when code is written and needs quality verification, before committing changes, or to catch context drift during long sessions."
+description: "Verify changed behavior against acceptance and relevant contracts with checks proportionate to risk. Use after implementation or meaningful changes, before delivery or authorized commits."
 ---
 
 # Code Quality Check
 
-Comprehensive quality verification for recently written code. Combines spec compliance, cross-layer safety, and pre-commit checks.
+Verify the entire current task diff against acceptance and applicable specs. Preserve unrelated work and distinguish regressions from pre-existing failures or environment limits.
+
+When the request is a read-only review, return findings without edits. The fix steps below apply only when implementing or correcting the changes is authorized.
 
 ---
 
@@ -38,7 +40,7 @@ Read the specific guideline files referenced — the index is a pointer, not the
 
 ## Step 3: Run Project Checks
 
-Run the project's lint, type-check, and test commands. Fix any failures before proceeding.
+Run required repository checks applicable to affected layers, plus meaningful tests scaled to risk and blast radius. Prose/rule changes generally need consistency, links, and any relevant parser checks, not the full application suite. Fix this task's regressions or issues necessary for its outcome; report unrelated failures and environment limits without widening scope.
 
 ## Step 4: Review Against Checklist
 
@@ -52,9 +54,9 @@ Run the project's lint, type-check, and test commands. Fix any failures before p
 
 ### Test Coverage
 
-- [ ] New function → unit test added?
-- [ ] Bug fix → regression test added?
-- [ ] Changed behavior → existing tests updated?
+- [ ] Important new behavior or regression risk has meaningful coverage?
+- [ ] Existing tests reflect changed contracts where needed?
+- [ ] Reversible low-impact changes avoid tests that merely restate the implementation?
 
 ### Spec Sync
 
@@ -77,9 +79,9 @@ Skip this step if your change is confined to a single layer.
 
 - [ ] Searched for existing similar code before creating new?
   ```bash
-  grep -r "pattern" src/
+  rg "pattern" src/
   ```
-- [ ] If 2+ places define same value → extracted to shared constant?
+- [ ] Shared abstractions remove real complexity or meaningful duplication without coupling unrelated concepts?
 - [ ] After batch modification, all occurrences updated?
 
 ### C. Import/Dependency (creating new files)
@@ -95,4 +97,4 @@ Skip this step if your change is confined to a single layer.
 
 ## Step 6: Report and Fix
 
-Report violations found and fix them directly. Re-run project checks after fixes.
+Fix findings introduced by this task or needed for its acceptance, then rerun affected checks. Once applicable checks pass, proceed to completion. Broaden/repeat only for new edits, failures, or unresolved concerns. Report persistent blockers precisely; do not loop indefinitely or silently expand into unrelated cleanup.

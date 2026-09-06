@@ -7,7 +7,7 @@ Read the relevant development guidelines before starting your task.
 
 Execute these steps:
 
-1. **Read current task artifacts**:
+1. **Read current task artifacts when present** (taskless work uses its requested scope and inline acceptance plan):
    - `prd.md` for requirements and acceptance criteria
    - `design.md` if present for technical design
    - `implement.md` if present for execution order and validation plan
@@ -30,7 +30,7 @@ Execute these steps:
 
 5. **Read the specific guideline files** listed in the Pre-Development Checklist that are relevant to your task. The index is NOT the goal — it points you to the actual guideline files (e.g., `error-handling.md`, `conventions.md`, `mock-strategies.md`). Read those files to understand the coding standards and patterns.
 
-6. **Always read shared guides**:
+6. **Read shared guides when relevant** to reuse, cross-layer changes, or another concrete uncertainty; skip already loaded, unchanged guidance:
    ```bash
    cat .trellis/spec/guides/index.md
    ```
